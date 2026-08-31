@@ -1,7 +1,7 @@
 # NeverNether terrain profile
 
 Branch: `feature/never-nether-worldgen`
-Status: approved openness + mega-cavern + secondary-cave baseline; vertical chasms pending
+Status: approved openness + mega-cavern + secondary-cave + vertical-chasm baseline; hanging masses pending
 Worldgen version: `NN-DEV-1`
 
 ## Approved overall openness
@@ -119,6 +119,37 @@ These cave families connect dense terrain, ordinary biome spaces and mega-cavern
 - Near lower/upper bedrock boundaries, protection gradients override cave carving.
 - Secondary cave density is part of the terrain field, not a collection of independently random per-chunk spheres.
 
+## Vertical chasm profile — approved
+
+Vertical chasms are moderately rare landmark-scale voids that connect otherwise separated vertical play spaces. They must feel dramatic without appearing every few chunks.
+
+### Ordinary vertical chasm
+
+- typical width: **20–60 blocks**;
+- typical vertical extent: **80–220 blocks**;
+- may connect Upper to Main or Main to Lower/Lava;
+- may open into existing medium/large caverns instead of remaining a clean isolated shaft.
+
+### Large vertical chasm
+
+- typical width: **60–140 blocks**;
+- typical vertical extent: **180–400 blocks**;
+- distinctly rarer than ordinary chasms;
+- may connect Upper through Main into Lower/Lava;
+- exceptionally, a coherent chasm may extend toward Deep Nether if bedrock protection and regional density fields allow it.
+
+### Frequency and shape rules
+
+- Overall chasm frequency: **moderately rare**; they are navigation landmarks, not common chunk-scale carvers.
+- Main/Upper transitions are the primary host for ordinary chasms.
+- Main/Lower transitions are also common enough to expose lava seas and create dramatic drops.
+- Full-height or near-full-height chasms are exceptional events rather than normal generation.
+- Chasms should use irregular walls, ledges, natural bridges, side chambers and partial closures instead of smooth vertical cylinders.
+- Some chasms may terminate in lava basins, magma chambers or mega-caverns.
+- Natural bridge/ridge fields may cross chasms and provide occasional traversal opportunities.
+- Chasm carving is deterministic from regional low-frequency fields and must not require neighboring chunks to be generated first.
+- Bedrock protection gradients always override chasm carving near `Y=-128` and the upper roof boundary.
+
 ## Global terrain rules
 
 - NeverNether must not be generated as four literal stacked terrain layers.
@@ -131,14 +162,13 @@ These cave families connect dense terrain, ordinary biome spaces and mega-cavern
 
 ## Performance requirements
 
-- Large-cavern decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
+- Large-cavern and chasm decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
 - Terrain candidate evaluation must avoid synchronous chunk generation.
-- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification and secondary cave family weighting.
+- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification, secondary cave family weighting and vertical-chasm classification.
 - Generation behavior must degrade gracefully with 20–30 concurrent exploring/chunk-generating players.
 
 ## Still pending
 
-- Vertical chasm dimensions/frequency.
 - Hanging-island/mass frequency in Main/Upper Nether.
 - Deep magma chamber dimensions/frequency.
 - Exact density-function adaptation from Amplified Nether 256-block source to NeverNether 512-block generated body.
