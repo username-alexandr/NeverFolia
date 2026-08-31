@@ -1,7 +1,7 @@
 # NeverNether terrain profile
 
 Branch: `feature/never-nether-worldgen`
-Status: approved openness + mega-cavern + secondary-cave + vertical-chasm baseline; hanging masses pending
+Status: approved openness + mega-cavern + secondary-cave + vertical-chasm + hanging-mass baseline; deep magma chambers pending
 Worldgen version: `NN-DEV-1`
 
 ## Approved overall openness
@@ -150,6 +150,35 @@ Vertical chasms are moderately rare landmark-scale voids that connect otherwise 
 - Chasm carving is deterministic from regional low-frequency fields and must not require neighboring chunks to be generated first.
 - Bedrock protection gradients always override chasm carving near `Y=-128` and the upper roof boundary.
 
+## Hanging terrain masses and islands — approved
+
+Hanging masses are coherent suspended terrain bodies, shelves and island-like formations used primarily to give Main/Upper Nether strong vertical depth. They are terrain-field products, not isolated decorative structures.
+
+### Size classes
+
+- **Small hanging masses:** approximately **30–80 blocks** across.
+- **Medium hanging masses:** approximately **80–180 blocks** across.
+- **Large hanging islands:** approximately **180–350 blocks** across.
+- **Very large hanging islands:** up to approximately **500 blocks** across, intentionally rare landmark formations.
+
+### Band weighting
+
+- **Upper Nether:** highest frequency. Hanging shelves, inverted ridges, ceiling-attached masses and truly suspended islands are a defining terrain motif.
+- **Main Nether:** moderate frequency. Hanging masses should complement forests, cavern walls, bridges and vertical shafts without dominating normal traversal.
+- **Lower / Lava:** low frequency, mainly isolated islands and shelves over large lava basins/seas. These may serve as natural destinations or structure-supporting terrain when validation permits.
+- **Deep Nether:** almost absent. Any occurrence should be exceptional and tied to unusually large enclosed caverns rather than routine generation.
+
+### Shape and connectivity rules
+
+- Hanging terrain must not look like repeated spheres or copied floating-island templates.
+- Shapes should include asymmetric overhangs, tapered undersides, fractured shelves, attached arches, ridges and occasional thin natural bridges.
+- A mass may be fully suspended or partially attached to a wall/ceiling; both forms are valid.
+- Large and very large masses should commonly contain internal caves, ledges or traversable shelves rather than being solid featureless blobs.
+- Some Lower/Lava islands may rise from lava while visually reading as detached masses; strict geometric suspension is not required there.
+- Hanging-mass fields may interact with mega-caverns and chasms, but collision with bedrock protection zones and roof construction space is forbidden.
+- Structure placement may use a hanging mass only after terrain-volume and bounding-box validation; structures must not force-create an island synchronously.
+- Generation is deterministic from low-frequency terrain fields and remains independent of chunk generation order.
+
 ## Global terrain rules
 
 - NeverNether must not be generated as four literal stacked terrain layers.
@@ -162,13 +191,12 @@ Vertical chasms are moderately rare landmark-scale voids that connect otherwise 
 
 ## Performance requirements
 
-- Large-cavern and chasm decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
+- Large-cavern, chasm and hanging-mass decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
 - Terrain candidate evaluation must avoid synchronous chunk generation.
-- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification, secondary cave family weighting and vertical-chasm classification.
+- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification, secondary cave family weighting, vertical-chasm classification and hanging-mass classification.
 - Generation behavior must degrade gracefully with 20–30 concurrent exploring/chunk-generating players.
 
 ## Still pending
 
-- Hanging-island/mass frequency in Main/Upper Nether.
 - Deep magma chamber dimensions/frequency.
 - Exact density-function adaptation from Amplified Nether 256-block source to NeverNether 512-block generated body.
