@@ -1,7 +1,7 @@
 # NeverNether terrain profile
 
 Branch: `feature/never-nether-worldgen`
-Status: approved openness + mega-cavern baseline; secondary cave families pending
+Status: approved openness + mega-cavern + secondary-cave baseline; vertical chasms pending
 Worldgen version: `NN-DEV-1`
 
 ## Approved overall openness
@@ -76,6 +76,49 @@ Mega-cavern generation rules:
 - Bedrock protection gradients take priority near both lower and upper boundaries.
 - Mega-cavern classification must be sampleable mathematically for diagnostics and coarse structure validation without loading/generating neighboring chunks.
 
+## Secondary cave and tunnel profile — approved initial baseline
+
+These cave families connect dense terrain, ordinary biome spaces and mega-cavern regions. Values are initial gameplay/worldgen targets and may be tuned after DEV seed inspection without changing the overall design identity.
+
+### Small tunnels
+
+- typical width: **4–12 blocks**;
+- typical vertical height: **4–10 blocks**;
+- relatively common compared with larger cave families;
+- may branch and reconnect, but should avoid excessive spaghetti density;
+- most useful in Deep/Main terrain to preserve navigability through denser rock.
+
+### Medium caves
+
+- typical width: **15–45 blocks**;
+- typical vertical height: **10–30 blocks**;
+- typical longitudinal extent: **50–180 blocks**;
+- moderate frequency;
+- serve as transition chambers between tunnels and large cavern systems.
+
+### Large ordinary caverns
+
+- typical width: **45–120 blocks**;
+- typical vertical height: **25–70 blocks**;
+- typical longitudinal extent: **100–350 blocks**;
+- comparatively uncommon, clearly below mega-cavern frequency/scale;
+- may merge into regional mega-cavern edges but remain independently recognizable terrain features.
+
+### Band weighting
+
+- **Deep Nether:** higher tunnel density, moderate medium-cave density, low large-cavern density.
+- **Lower / Lava:** reduced tunnel emphasis; more of the available void budget goes to open basins, large ordinary caverns and mega-caverns.
+- **Main Nether:** balanced mix of all three secondary cave families.
+- **Upper Nether:** medium/large chambers preferred over dense tunnel networks, supporting hanging terrain and tall voids.
+
+### Connectivity and quality rules
+
+- Secondary caves should create usable traversal routes between major open spaces without guaranteeing universal connectivity.
+- Cave-carving fields must be deterministic and order-independent under Folia region execution.
+- Cave generation must not use neighbor chunk generation or post-hoc synchronous search to connect systems.
+- Near lower/upper bedrock boundaries, protection gradients override cave carving.
+- Secondary cave density is part of the terrain field, not a collection of independently random per-chunk spheres.
+
 ## Global terrain rules
 
 - NeverNether must not be generated as four literal stacked terrain layers.
@@ -90,12 +133,11 @@ Mega-cavern generation rules:
 
 - Large-cavern decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
 - Terrain candidate evaluation must avoid synchronous chunk generation.
-- Worldgen Inspector should eventually expose local openness/density classification, active terrain band and mega-cavern region id/classification.
+- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification and secondary cave family weighting.
 - Generation behavior must degrade gracefully with 20–30 concurrent exploring/chunk-generating players.
 
 ## Still pending
 
-- Medium cave/tunnel frequency and width profile.
 - Vertical chasm dimensions/frequency.
 - Hanging-island/mass frequency in Main/Upper Nether.
 - Deep magma chamber dimensions/frequency.
