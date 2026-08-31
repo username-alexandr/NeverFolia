@@ -19,12 +19,12 @@ permissions:
 
 jobs:
   build:
-    name: Java 25 / Gradle build
+    name: Java 25 / NeverFolia build
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
-      - name: Checkout repository
+      - name: Checkout NeverFolia repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -43,48 +43,61 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
 
-      - name: Verify Gradle wrapper
+      - name: Prepare Folia 26.2.x upstream
         shell: bash
         run: |
-          if [ ! -f ./gradlew ]; then
-            echo "Gradle wrapper is not present yet. Add the Folia/NeverFolia source tree before CI can produce a server JAR."
-            exit 1
-          fi
-          chmod +x ./gradlew
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
 
-      - name: Apply Folia/NeverFolia patches
-        shell: bash
+      - name: Apply Folia patches
+        working-directory: .work/Folia
         run: ./gradlew applyAllPatches --stacktrace
 
-      - name: Build NeverFolia
-        shell: bash
-        run: ./gradlew build --stacktrace
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
 
-      - name: Collect JARs
-        if: success()
+      - name: Collect NeverFolia JAR
         shell: bash
         run: |
+          set -euo pipefail
+          source ./build.env
           mkdir -p artifacts
-          find . -type f -path '*/build/libs/*.jar' \
-            ! -name '*sources.jar' \
-            ! -name '*javadoc.jar' \
-            -exec cp {} artifacts/ \;
 
-          if ! find artifacts -maxdepth 1 -type f -name '*.jar' | grep -q .; then
-            echo "Build completed, but no runnable JAR was found in */build/libs."
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' \
+            ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+
+          if [ -z "${JAR}" ]; then
+            echo "Runnable server JAR not found."
+            find .work/Folia/folia-server/build -maxdepth 4 -type f -name '*.jar' -print || true
             exit 1
           fi
+
+          OUT="artifacts/NeverFolia-${NEVERFOLIA_VERSION}-${GITHUB_SHA::7}.jar"
+          cp "${JAR}" "${OUT}"
+
+          {
+            echo "NeverFolia version: ${NEVERFOLIA_VERSION}"
+            echo "Git commit: ${GITHUB_SHA}"
+            echo "Folia ref: ${FOLIA_REF}"
+            echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
+            echo "Nether worldgen: ${WORLDGEN_NETHER}"
+            echo "End worldgen: ${WORLDGEN_END}"
+          } > artifacts/BUILD-INFO.txt
 
           cd artifacts
           sha256sum *.jar > SHA256SUMS.txt
 
-      - name: Upload NeverFolia JAR artifact
-        if: success()
+      - name: Upload NeverFolia build artifact
         uses: actions/upload-artifact@v4
         with:
           name: NeverFolia-${{ github.sha }}
           path: |
             artifacts/*.jar
             artifacts/SHA256SUMS.txt
+            artifacts/BUILD-INFO.txt
           if-no-files-found: error
           retention-days: 30
