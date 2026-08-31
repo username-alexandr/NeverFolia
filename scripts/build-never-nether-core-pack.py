@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -90,24 +89,43 @@ def build_pack(root: Path) -> None:
         root,
         "data/minecraft/dimension_type/the_nether.json",
         {
-            "ultrawarm": True,
-            "natural": False,
-            "piglin_safe": True,
-            "respawn_anchor_works": True,
-            "bed_works": False,
-            "has_raids": False,
-            "has_skylight": False,
-            "has_ceiling": True,
-            "coordinate_scale": 8.0,
             "ambient_light": 0.1,
-            "fixed_time": 18000,
-            "logical_height": 1024,
-            "effects": "minecraft:the_nether",
-            "infiniburn": "#minecraft:infiniburn_nether",
-            "min_y": -128,
+            "attributes": {
+                "minecraft:gameplay/bed_rule": {
+                    "can_set_spawn": "never",
+                    "can_sleep": "never",
+                    "explodes": True,
+                },
+                "minecraft:gameplay/can_start_raid": False,
+                "minecraft:gameplay/fast_lava": True,
+                "minecraft:gameplay/piglins_zombify": False,
+                "minecraft:gameplay/respawn_anchor_works": True,
+                "minecraft:gameplay/sky_light_level": 4.0,
+                "minecraft:gameplay/snow_golem_melts": True,
+                "minecraft:gameplay/water_evaporates": True,
+                "minecraft:visual/ambient_light_color": "#302821",
+                "minecraft:visual/default_dripstone_particle": {
+                    "type": "minecraft:dripping_dripstone_lava"
+                },
+                "minecraft:visual/fog_end_distance": 96.0,
+                "minecraft:visual/fog_start_distance": 10.0,
+                "minecraft:visual/sky_light_color": "#7a7aff",
+                "minecraft:visual/sky_light_factor": 0.0,
+            },
+            "cardinal_light": "nether",
+            "coordinate_scale": 8.0,
+            "has_ceiling": True,
+            "has_ender_dragon_fight": False,
+            "has_fixed_time": True,
+            "has_skylight": False,
             "height": 1024,
-            "monster_spawn_light_level": 11,
+            "infiniburn": "#minecraft:infiniburn_nether",
+            "logical_height": 1024,
+            "min_y": -128,
             "monster_spawn_block_light_limit": 15,
+            "monster_spawn_light_level": 7,
+            "skybox": "none",
+            "timelines": "#minecraft:in_nether",
         },
     )
 
