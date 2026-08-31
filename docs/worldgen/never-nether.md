@@ -58,19 +58,52 @@ Both lower and upper bedrock boundaries keep the **vanilla Nether bedrock profil
 
 Portal search/creation behavior above the upper bedrock roof must be specified separately. Build permission above the roof does not automatically imply that Nether portals should naturally target or spawn in the roof construction zone.
 
+## External worldgen/content sources — approved direction
+
+NeverNether will merge selected content from multiple datapacks into one controlled NeverLand worldgen/content layer. The source packs are references/content sources, not independently authoritative runtime generators once merged.
+
+### Terrain / biome feature sources
+
+- **Amplified Nether** — primary reference/source for amplified Nether terrain and large-scale vertical terrain character. It must be adapted to the NeverNether 512-block generated body; its original vertical assumptions must not be copied blindly.
+- **Hearths** — biome/detail feature layer for richer vanilla Nether biome decoration and environmental features.
+
+### Structure sources
+
+- **Dungeons and Taverns** — import only structures intended for Nether gameplay.
+- **Explorify** — import only structures that are explicitly Nether structures or are deliberately approved for Nether placement.
+- **Structory: Towers** — import only Nether-themed tower structures/pools and their required processors/loot dependencies.
+- **Repurposed Structures - Better Ocean Monuments Compat** — import only the **Nether Monument** content required for the NeverNether monument. No desert, icy, jungle or normal ocean monument variants are to be imported into NeverNether.
+
+### Structure merge rules
+
+- NeverFolia/NeverNether owns final placement rules, spacing, separation, salts, height ranges and terrain validation.
+- Source datapack `structure_set` placement is not accepted automatically; it is reviewed and replaced by NeverNether placement where needed.
+- Every imported structure receives a stable NeverLand logical ID or compatibility alias so future source-pack updates do not silently move or remove production structures.
+- Imported Jigsaw pools, processors, loot tables, tags and template dependencies must be copied only when actually required by an approved Nether structure.
+- Structures from Overworld/End portions of source datapacks are excluded unless separately approved later.
+- No imported structure may generate in the roof construction zone `Y=384..895` unless explicitly marked as a future roof structure.
+- All approved structures participate in NeverFolia Fast Locate, diagnostics, content validation and worldgen fingerprinting.
+- Missing optional pieces may be skipped according to NeverFolia content-severity rules; missing main templates/pools are fatal for that specific structure and cause it to be skipped rather than partially corrupted.
+- Production placement must be deterministic from Nether seed + structure salt + worldgen/content versions.
+
+### Source-version rule
+
+Before implementation/final merge, exact source archives/links and versions must be recorded. NeverNether must not depend on an unspecified "latest" archive in production. The selected archives are treated as immutable source inputs for a given content fingerprint.
+
 ## To define before implementation lock
 
 1. Overall terrain identity and vertical layers inside `Y=-128..383`.
 2. Lava sea level and lava-fluid rules.
-3. Biomes and biome remapping.
+3. Exact biome distribution/remapping and merged Hearths/Amplified Nether feature behavior.
 4. Cave/cavern/canyon system.
 5. Ores and geological richness maps.
-6. Vanilla and custom structures.
+6. Exact approved Nether structure list from all source datapacks and each structure's placement profile.
 7. Fortress and bastion placement rules.
 8. Portal safety and spawn validation, including roof-zone behavior.
 9. Pregeneration/border policy.
 10. Reset/resource-renewal policy.
 11. Performance budget and regression seeds.
+12. Exact source datapack versions/archives and license/distribution handling.
 
 ## Design rule
 
