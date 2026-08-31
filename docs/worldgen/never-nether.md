@@ -30,10 +30,20 @@ Initial coordinate layout:
 - Total dimension height: `1024`
 - Highest buildable Y: `895`
 - Generated Nether body: `Y=-128..383` (512 blocks total)
-- Upper bedrock roof top boundary: approximately `Y=383` (exact irregular bedrock thickness/profile will be defined separately)
 - Roof construction zone: `Y=384..895` (512 blocks total)
 
 The roof construction zone is part of the same Nether dimension; NeverFolia must not create a second dimension for it.
+
+## Bedrock boundaries — approved
+
+Both lower and upper bedrock boundaries keep the **vanilla Nether bedrock profile** rather than using a custom uniform slab.
+
+- Lower boundary uses the same irregular vanilla-style bedrock thickness/distribution pattern, translated to the NeverNether lower world boundary.
+- Upper roof uses the same irregular vanilla-style bedrock thickness/distribution pattern, translated to the NeverNether roof boundary.
+- The roof must remain recognizably vanilla-like: an irregular bedrock layer rather than a perfectly flat solid plate.
+- NeverFolia must not increase the bedrock layer solely because the generated Nether body is taller.
+- Bedrock placement is deterministic from the dimension seed/worldgen version.
+- Normal Nether terrain must terminate against the lower/upper bedrock boundaries without leaking terrain/features into the roof construction zone.
 
 ### Generation rules above the roof
 
@@ -50,18 +60,17 @@ Portal search/creation behavior above the upper bedrock roof must be specified s
 
 ## To define before implementation lock
 
-1. Exact lower/upper bedrock thickness and irregularity.
-2. Overall terrain identity and vertical layers inside `Y=-128..383`.
-3. Lava sea level and lava-fluid rules.
-4. Biomes and biome remapping.
-5. Cave/cavern/canyon system.
-6. Ores and geological richness maps.
-7. Vanilla and custom structures.
-8. Fortress and bastion placement rules.
-9. Portal safety and spawn validation, including roof-zone behavior.
-10. Pregeneration/border policy.
-11. Reset/resource-renewal policy.
-12. Performance budget and regression seeds.
+1. Overall terrain identity and vertical layers inside `Y=-128..383`.
+2. Lava sea level and lava-fluid rules.
+3. Biomes and biome remapping.
+4. Cave/cavern/canyon system.
+5. Ores and geological richness maps.
+6. Vanilla and custom structures.
+7. Fortress and bastion placement rules.
+8. Portal safety and spawn validation, including roof-zone behavior.
+9. Pregeneration/border policy.
+10. Reset/resource-renewal policy.
+11. Performance budget and regression seeds.
 
 ## Design rule
 
