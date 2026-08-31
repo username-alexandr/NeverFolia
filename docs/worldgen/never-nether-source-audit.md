@@ -1,7 +1,7 @@
 # NeverNether source datapack audit
 
 Branch: `feature/never-nether-worldgen`
-Status: initial archive audit
+Status: source archive audit
 
 This document records the exact source archives supplied for NeverNether. These archives are source inputs only; NeverFolia owns final placement, vertical ranges, salts, validation and compatibility.
 
@@ -74,12 +74,32 @@ This document records the exact source archives supplied for NeverNether. These 
   - `structory_towers:nether/warped_outpost`
 - Source structure set groups these under `structory_towers:nether_towers`; final NeverNether placement will be replaced/rebalanced.
 
-### Repurposed Structures compatibility pack
-- Supplied archive: `Repurposed_Structures-Better_Witch_Huts_v5.zip`
-- Internal description: `Repurposed Structures - Yung's Better Witch Huts v5`
-- This is **not** the requested Better Ocean Monuments compatibility archive and contains witch-hut compatibility content, not the Nether Monument.
-- Status: REJECTED AS WRONG SOURCE INPUT for NeverNether.
-- Required replacement: the exact `Repurposed Structures - Better Ocean Monuments Compat` archive containing the Nether Monument, preferably the intended 1.21.1 version.
+### Repurposed Structures - Better Ocean Monuments compatibility
+- Archive: `Repurposed_Structures-Better_Monuments_v7.zip`
+- Internal description: `Repurposed Structures - Yung's Better Ocean Monument v7`
+- Source pack format: `26`, with broad supported format range.
+- SHA-256 of supplied archive: `c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9`.
+- Status: **ACCEPTED as the correct Nether Monument source input**.
+- Approved import scope: only the Nether Monument and its required dependencies.
+- Nether Monument structure definition found:
+  - `repurposed_structures:monument_nether`
+- Source structure characteristics:
+  - custom type: `repurposed_structures:generic_jigsaw_structure`
+  - start pool: `betteroceanmonuments:nether/starts`
+  - Jigsaw size: `20`
+  - terrain adaptation: `none`
+  - source absolute start height: `31`
+  - custom monster spawn overrides: magma cubes, wither skeletons and ghasts
+- Nether Monument content inventory found in the compatibility archive:
+  - 46 Nether `.nbt` structure templates
+  - 10 Nether Jigsaw template pools
+  - 1 Nether processor list: `betteroceanmonuments:nether/main`
+  - dedicated Nether mob templates including magma cube, strider and custom super-wither template content
+- The source processor list depends on Repurposed Structures custom processor types, including noise/random property replacement, pillar processing and structure-void processing.
+- The archive also references the biome tag `#repurposed_structures:has_structure/monuments/nether`, but that Nether tag is not provided by this compatibility ZIP, indicating dependency on the base Repurposed Structures content/runtime.
+- NeverNether will therefore **not** depend on the original custom structure type or missing external biome tag at runtime. NeverFolia will provide its own native placement/validation and explicit Nether biome eligibility.
+- Required visual processor behavior will be ported/reimplemented in a deterministic NeverFolia-compatible form rather than requiring the full Repurposed Structures runtime solely for this monument.
+- The source absolute Y=31 is reference-only and will be replaced by a NeverNether placement profile suitable for the 512-block generated Nether body.
 
 ## Merge rules confirmed by audit
 
@@ -88,4 +108,5 @@ This document records the exact source archives supplied for NeverNether. These 
 - No imported structure or feature may generate in the 512-block roof construction zone unless explicitly approved later.
 - Source namespaces may be retained as compatibility aliases internally, but production NeverNether placement and fingerprinting are controlled by NeverFolia.
 - Dependencies are imported transitively only when required by approved Nether content: NBT templates, Jigsaw pools, processor lists, loot tables, biome tags and required configured/placed features.
+- Custom structure/processor types from source packs are not accepted as mandatory runtime dependencies when the approved content can be represented natively or by a small deterministic NeverFolia implementation.
 - Every imported source archive is immutable for a given content fingerprint.
