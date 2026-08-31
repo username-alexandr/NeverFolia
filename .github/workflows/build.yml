@@ -105,7 +105,7 @@ jobs:
           python3 ./scripts/build-never-nether-core-pack.py \
             --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
 
-      - name: Smoke test NeverNether registry loading
+      - name: Smoke test NeverNether runtime generation
         shell: bash
         run: |
           set -euo pipefail
@@ -163,11 +163,11 @@ jobs:
             exit 1
           fi
 
-          echo 'datapack list enabled' > console.pipe
-          sleep 3
+          # Minecraft 26.2 changed the datapack command syntax, so runtime validation
+          # is based on actual world creation instead of a command-list assertion.
           echo 'stop' > console.pipe
 
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 45); do
             if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
               break
             fi
@@ -177,19 +177,44 @@ jobs:
           kill "${KEEPER_PID}" 2>/dev/null || true
           wait "${SERVER_PID}" 2>/dev/null || true
 
-          if ! grep -q 'NeverNether-Core' server.log; then
-            echo "NeverNether core datapack was not reported as enabled."
+          if ! grep -q "Selecting spawn point for level 'minecraft:the_nether'" server.log; then
+            echo "Nether spawn generation was not observed."
             cat server.log
             exit 1
           fi
 
-          if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks" server.log; then
-            echo "NeverNether datapack registry error detected."
+          if ! grep -q "Saving chunks for level 'ServerLevel\[world\]'/minecraft:the_nether" server.log; then
+            echo "Nether chunk save was not observed."
             cat server.log
             exit 1
           fi
 
-          echo "NeverNether registry smoke test passed."
+          if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries" server.log; then
+            echo "NeverNether datapack/registry error detected."
+            cat server.log
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import gzip
+          from pathlib import Path
+
+          level = Path('world/level.dat')
+          if not level.is_file():
+              raise SystemExit('world/level.dat was not created')
+          with gzip.open(level, 'rb') as fh:
+              payload = fh.read()
+          if b'file/NeverNether-Core.zip' not in payload:
+              raise SystemExit('NeverNether-Core.zip is not recorded in the enabled datapack list')
+
+          region_dir = Path('world/DIM-1/region')
+          regions = list(region_dir.glob('*.mca')) if region_dir.is_dir() else []
+          if not regions:
+              raise SystemExit('No Nether region file was generated in world/DIM-1/region')
+          print(f'NeverNether runtime verification: {len(regions)} Nether region file(s) generated')
+          PY
+
+          echo "NeverNether runtime smoke test passed."
           tail -n 80 server.log
 
       - name: Generate artifact checksums
