@@ -1,0 +1,90 @@
+name: Build NeverFolia
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'fix/**'
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Java 25 / Gradle build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Verify Gradle wrapper
+        shell: bash
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "Gradle wrapper is not present yet. Add the Folia/NeverFolia source tree before CI can produce a server JAR."
+            exit 1
+          fi
+          chmod +x ./gradlew
+
+      - name: Apply Folia/NeverFolia patches
+        shell: bash
+        run: ./gradlew applyAllPatches --stacktrace
+
+      - name: Build NeverFolia
+        shell: bash
+        run: ./gradlew build --stacktrace
+
+      - name: Collect JARs
+        if: success()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          find . -type f -path '*/build/libs/*.jar' \
+            ! -name '*sources.jar' \
+            ! -name '*javadoc.jar' \
+            -exec cp {} artifacts/ \;
+
+          if ! find artifacts -maxdepth 1 -type f -name '*.jar' | grep -q .; then
+            echo "Build completed, but no runnable JAR was found in */build/libs."
+            exit 1
+          fi
+
+          cd artifacts
+          sha256sum *.jar > SHA256SUMS.txt
+
+      - name: Upload NeverFolia JAR artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-${{ github.sha }}
+          path: |
+            artifacts/*.jar
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
