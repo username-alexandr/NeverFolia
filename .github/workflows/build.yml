@@ -57,6 +57,12 @@ jobs:
         working-directory: .work/Folia
         run: ./gradlew applyAllPatches --stacktrace
 
+      - name: Apply NeverFolia post patches
+        shell: bash
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
@@ -89,11 +95,109 @@ jobs:
             echo "Folia ref: ${FOLIA_REF}"
             echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
+            echo "Nether test core: NN-DEV-1-core-test1"
             echo "End worldgen: ${WORLDGEN_END}"
           } > artifacts/BUILD-INFO.txt
 
+      - name: Build NeverNether core test datapack
+        shell: bash
+        run: |
+          python3 ./scripts/build-never-nether-core-pack.py \
+            --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+
+      - name: Smoke test NeverNether registry loading
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+
+          rm -rf smoke-test
+          mkdir -p smoke-test/world/datapacks
+          cp "${PACK}" smoke-test/world/datapacks/NeverNether-Core.zip
+
+          cat > smoke-test/eula.txt <<'EOF'
+          eula=true
+          EOF
+
+          cat > smoke-test/server.properties <<'EOF'
+          level-name=world
+          level-seed=NeverNether-CI-Test-1
+          level-type=minecraft:normal
+          initial-enabled-packs=vanilla,file/NeverNether-Core.zip
+          initial-disabled-packs=
+          online-mode=false
+          enforce-secure-profile=false
+          server-port=25575
+          view-distance=2
+          simulation-distance=2
+          spawn-protection=0
+          max-tick-time=-1
+          enable-status=false
+          EOF
+
+          cd smoke-test
+          mkfifo console.pipe
+          tail -f /dev/null > console.pipe &
+          KEEPER_PID=$!
+          java -Xms1G -Xmx2G -jar "../${JAR}" nogui < console.pipe > server.log 2>&1 &
+          SERVER_PID=$!
+
+          ready=0
+          for _ in $(seq 1 180); do
+            if grep -q 'Done (' server.log; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "${ready}" -ne 1 ]; then
+            echo "NeverFolia did not reach ready state during NeverNether smoke test."
+            cat server.log
+            kill "${SERVER_PID}" 2>/dev/null || true
+            kill "${KEEPER_PID}" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo 'datapack list enabled' > console.pipe
+          sleep 3
+          echo 'stop' > console.pipe
+
+          for _ in $(seq 1 30); do
+            if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          kill "${SERVER_PID}" 2>/dev/null || true
+          kill "${KEEPER_PID}" 2>/dev/null || true
+          wait "${SERVER_PID}" 2>/dev/null || true
+
+          if ! grep -q 'NeverNether-Core' server.log; then
+            echo "NeverNether core datapack was not reported as enabled."
+            cat server.log
+            exit 1
+          fi
+
+          if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks" server.log; then
+            echo "NeverNether datapack registry error detected."
+            cat server.log
+            exit 1
+          fi
+
+          echo "NeverNether registry smoke test passed."
+          tail -n 80 server.log
+
+      - name: Generate artifact checksums
+        shell: bash
+        run: |
+          set -euo pipefail
           cd artifacts
-          sha256sum *.jar > SHA256SUMS.txt
+          sha256sum *.jar *.zip > SHA256SUMS.txt
 
       - name: Upload NeverFolia build artifact
         uses: actions/upload-artifact@v4
@@ -101,6 +205,7 @@ jobs:
           name: NeverFolia-${{ github.sha }}
           path: |
             artifacts/*.jar
+            artifacts/*.zip
             artifacts/SHA256SUMS.txt
             artifacts/BUILD-INFO.txt
           if-no-files-found: error

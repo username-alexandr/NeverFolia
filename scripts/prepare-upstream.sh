@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${ROOT_DIR}/.work"
 FOLIA_DIR="${WORK_DIR}/Folia"
+PRE_PATCH_DIR="${ROOT_DIR}/neverfolia-patches/pre-apply"
 
 set -a
 source "${ROOT_DIR}/build.env"
@@ -40,14 +41,17 @@ for old, new in replacements.items():
 patch.write_text(text, encoding="utf-8")
 PY
 
-# Future NeverFolia source patches are applied here after the Folia base is prepared.
-# This directory is intentionally optional during bootstrap.
-if compgen -G "${ROOT_DIR}/neverfolia-patches/*.patch" > /dev/null; then
-  echo "[NeverFolia] Applying NeverFolia repository patches"
-  for patch_file in "${ROOT_DIR}"/neverfolia-patches/*.patch; do
+if compgen -G "${PRE_PATCH_DIR}/*.patch" > /dev/null; then
+  echo "[NeverFolia] Applying pre-apply patches"
+  for patch_file in "${PRE_PATCH_DIR}"/*.patch; do
     echo "  -> $(basename "${patch_file}")"
     git apply --whitespace=nowarn "${patch_file}"
   done
+fi
+
+if compgen -G "${ROOT_DIR}/neverfolia-patches/*.patch" > /dev/null; then
+  echo "[NeverFolia] ERROR: flat neverfolia-patches/*.patch is deprecated. Move patches into pre-apply/ or post-apply/." >&2
+  exit 2
 fi
 
 echo "[NeverFolia] Upstream prepared at ${FOLIA_DIR}"
