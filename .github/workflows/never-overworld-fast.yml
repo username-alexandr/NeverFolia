@@ -1,0 +1,45 @@
+name: Validate NeverOverworld
+
+on:
+  push:
+    branches:
+      - develop
+      - feature/never-overworld-worldgen
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NR-DEV-1 fast validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout NeverFolia repository
+        uses: actions/checkout@v6
+
+      - name: Validate NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Self-test NeverOverworld Core builder
+        run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
+
+      - name: Self-test NeverOverworld semantic hasher
+        run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
+
+      - name: Self-test NeverOverworld LIGHT-barrier flood hook
+        run: python3 ./scripts/apply-never-overworld-flood-hook.py --self-test
+
+      - name: Self-test NeverOverworld native fluid picker
+        run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint tool
+        run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint guard
+        run: python3 ./scripts/apply-never-overworld-fingerprint-guard.py --self-test
