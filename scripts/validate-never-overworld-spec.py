@@ -58,9 +58,11 @@ def main() -> None:
     forbid(builder, '"full_flood_min_y"', "NeverOverworld Core builder")
 
     for marker in (
-        "ChunkStatusTasks.java",
-        "NeverOverworldFlood.apply(context.level(), chunk);",
+        'TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")',
+        'FLOOD_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);"',
         "beginning of the LIGHT chunk status",
+        "public final class NeverOverworldFlood",
+        "public static void apply",
         "EXPECTED_MIN_Y = -512",
         "EXPECTED_HEIGHT = 1024",
         "FLOOD_LEVEL = 128",
@@ -68,14 +70,13 @@ def main() -> None:
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
         "floodSurfaceConnectedAir",
+        "chunk.setBlockState",
     ):
         require(flood, marker, "NeverOverworld flood hook")
-    for obsolete in (
-        "FULL_FLOOD_MIN_Y",
-        "applyBiomeDecoration",
-        "floodChunkLocalOceanConnections",
-    ):
-        forbid(flood, obsolete, "NeverOverworld flood hook")
+    # Check the actual active transformer path/call, rather than searching for old
+    # marker words that legitimately occur inside the hook's negative self-tests.
+    forbid(flood, 'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")', "NeverOverworld flood hook")
+    forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
 
     for marker in (
         'WORLDGEN_ID = "NR-DEV-1"',
