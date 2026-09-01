@@ -206,6 +206,7 @@ jobs:
               raise SystemExit('NeverNether-Core.zip is not recorded in the enabled datapack list')
 
           candidates = (
+              Path('world/dimensions/minecraft/the_nether/region'),
               Path('world_nether/region'),
               Path('world_nether/DIM-1/region'),
               Path('world/DIM-1/region'),
