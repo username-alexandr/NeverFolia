@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")
@@ -13,16 +14,108 @@ def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][NeverOverworld flood] {message}")
 
 
+def matching_delimiter(source: str, start: int, opening: str, closing: str) -> int:
+    depth = 0
+    in_string = False
+    in_char = False
+    escaped = False
+    index = start
+    while index < len(source):
+        ch = source[index]
+        nxt = source[index + 1] if index + 1 < len(source) else ""
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            index += 1
+            continue
+        if in_char:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == "'":
+                in_char = False
+            index += 1
+            continue
+        if ch == '"':
+            in_string = True
+            index += 1
+            continue
+        if ch == "'":
+            in_char = True
+            index += 1
+            continue
+        if ch == "/" and nxt == "/":
+            newline = source.find("\n", index + 2)
+            index = len(source) if newline < 0 else newline + 1
+            continue
+        if ch == "/" and nxt == "*":
+            end = source.find("*/", index + 2)
+            if end < 0:
+                fail("unterminated Java block comment while parsing LIGHT method")
+            index = end + 2
+            continue
+
+        if ch == opening:
+            depth += 1
+        elif ch == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    fail(f"unterminated Java delimiter {opening}{closing}")
+
+
 def patch_tasks(source: str) -> str:
-    if FLOOD_CALL in source:
+    if "NeverOverworldFlood.apply(" in source:
         fail("ChunkStatusTasks is already patched")
 
-    needle = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      boolean lighted = isLighted(chunk);\n"""
-    if source.count(needle) != 1:
-        fail("expected exactly one ChunkStatusTasks.light(...) insertion point")
+    method_pattern = re.compile(
+        r"(?:public\s+|private\s+|protected\s+)?static\s+CompletableFuture\s*<\s*ChunkAccess\s*>\s+light\s*\(",
+        re.MULTILINE,
+    )
+    matches = list(method_pattern.finditer(source))
+    if len(matches) != 1:
+        fail(f"expected exactly one ChunkStatusTasks.light(...) method, got {len(matches)}")
 
-    replacement = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every\n      // neighboring chunk that can write FEATURES into this chunk has therefore\n      // finished decoration before the chunk-owned flood mutates final blocks.\n      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);\n      boolean lighted = isLighted(chunk);\n"""
-    return source.replace(needle, replacement, 1)
+    match = matches[0]
+    params_open = source.find("(", match.start(), match.end())
+    params_close = matching_delimiter(source, params_open, "(", ")")
+    params = source[params_open + 1 : params_close]
+
+    context_match = re.search(r"\bWorldGenContext\s+(\w+)\b", params)
+    chunk_match = re.search(r"\bChunkAccess\s+(\w+)\b", params)
+    if context_match is None or chunk_match is None:
+        fail("could not resolve WorldGenContext/ChunkAccess parameter names in LIGHT method")
+    context_name = context_match.group(1)
+    chunk_name = chunk_match.group(1)
+
+    method_open = source.find("{", params_close)
+    if method_open < 0:
+        fail("ChunkStatusTasks.light(...) opening brace not found")
+
+    # Ensure the brace belongs to this method rather than a following declaration.
+    between = source[params_close + 1 : method_open]
+    if ";" in between:
+        fail("ChunkStatusTasks.light(...) appears to be a declaration without a body")
+
+    line_start = source.rfind("\n", 0, method_open) + 1
+    method_indent = source[line_start:method_open]
+    body_indent = method_indent + "   "
+    call = f"net.minecraft.world.level.chunk.NeverOverworldFlood.apply({context_name}.level(), {chunk_name});"
+    insertion = (
+        "\n"
+        f"{body_indent}// NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every\n"
+        f"{body_indent}// neighboring chunk that can write FEATURES into this chunk has therefore\n"
+        f"{body_indent}// finished decoration before the chunk-owned flood mutates final blocks.\n"
+        f"{body_indent}{call}\n"
+    )
+    return source[: method_open + 1] + insertion + source[method_open + 1 :]
 
 
 def helper_source() -> str:
@@ -227,7 +320,8 @@ public final class NeverOverworldFlood {
 
 
 def self_test() -> None:
-    fixture = '''package net.minecraft.world.level.chunk.status;
+    fixtures = (
+        '''package net.minecraft.world.level.chunk.status;
 class ChunkStatusTasks {
    static CompletableFuture<ChunkAccess> light(
       final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk
@@ -236,10 +330,30 @@ class ChunkStatusTasks {
       return null;
    }
 }
-'''
-    patched = patch_tasks(fixture)
-    if patched.count(FLOOD_CALL) != 1:
-        fail("SELF-TEST: qualified flood call was not injected exactly once at LIGHT")
+''',
+        '''class ChunkStatusTasks {
+   public static CompletableFuture < ChunkAccess > light(
+      final WorldGenContext worldContext,
+      final ChunkStep step,
+      final StaticCache2D<GenerationChunkHolder> cache,
+      final ChunkAccess centerChunk
+   )
+   {
+      // Folia formatting may differ from Mojmap.
+      return doLight(centerChunk);
+   }
+}
+''',
+    )
+    expected_calls = (
+        "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);",
+        "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(worldContext.level(), centerChunk);",
+    )
+    for fixture, expected in zip(fixtures, expected_calls):
+        patched = patch_tasks(fixture)
+        if patched.count(expected) != 1:
+            fail(f"SELF-TEST: structural LIGHT parser did not inject expected call: {expected}")
+
     helper = helper_source()
     for required in (
         "import net.minecraft.world.level.ChunkPos;",
@@ -263,7 +377,7 @@ class ChunkStatusTasks {
     ):
         if forbidden in helper:
             fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
-    print("[NeverFolia][NeverOverworld flood] LIGHT-BARRIER V3 SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld flood] STRUCTURAL LIGHT-BARRIER V3 SELF-TEST OK")
 
 
 def main() -> None:
@@ -284,7 +398,7 @@ def main() -> None:
         fail(f"ChunkStatusTasks source not found: {tasks}")
     tasks.write_text(patch_tasks(tasks.read_text(encoding="utf-8")), encoding="utf-8")
     helper.write_text(helper_source(), encoding="utf-8")
-    print("[NeverFolia][NeverOverworld flood] LIGHT-barrier v3 hook applied")
+    print("[NeverFolia][NeverOverworld flood] structural LIGHT-barrier v3 hook applied")
     print(f"  tasks: {tasks}")
     print(f"  helper: {helper}")
 
