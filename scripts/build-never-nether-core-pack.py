@@ -172,7 +172,7 @@ def build_pack(root: Path) -> None:
         },
     )
 
-    # Approved openness profile:
+    # Provisional TEST1 openness tuning; not yet design-locked by NeverLand.
     # Deep: denser; Lower/Lava: more open; Main: balanced; Upper: large chambers/hanging masses.
     lower_weight = minimum(
         gradient(-64, 16, 0.0, 1.0),
