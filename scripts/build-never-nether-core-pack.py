@@ -16,15 +16,13 @@ ROOF_BUILD_MAX_Y = DIM_MAX_Y
 LAVA_LEVEL = 32
 BEDROCK_ENVELOPE = 5
 
-# DIAGNOSTIC ONLY: #72 proved that a 3x3 FULL halo reduces but does not remove
-# the Basalt Deltas block-state race. Disable only the three generation-step-4
-# placed features so the next run can identify whether that family owns the
-# remaining cross-chunk nondeterminism. These overrides are not a production
-# content decision and must be removed/replaced after the diagnosis.
+# DIAGNOSTIC ONLY: #73 proved that disabling the whole Basalt Deltas
+# generation-step-4 trio restores order independence under the same 3x3 FULL
+# halo. Re-enable both basalt-column placed features and disable only delta so
+# the next run can prove whether delta alone owns the race. This override is
+# not a production content decision and must be removed/replaced after diagnosis.
 DIAGNOSTIC_DISABLED_PLACED_FEATURES = (
     "delta",
-    "small_basalt_columns",
-    "large_basalt_columns",
 )
 
 
