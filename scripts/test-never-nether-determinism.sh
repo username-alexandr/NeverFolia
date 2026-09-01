@@ -154,8 +154,8 @@ generate_world() {
     cat "${log}" >&2
     exit 1
   fi
-  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch" "${log}"; then
-    echo "NeverFolia determinism world ${label} contains startup/worldgen errors." >&2
+  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command" "${log}"; then
+    echo "NeverFolia determinism world ${label} contains startup/worldgen/command errors." >&2
     cat "${log}" >&2
     exit 1
   fi
@@ -172,7 +172,9 @@ generate_world "world-b" "${ORDER_B[@]}"
 
 HASH_ARGS=()
 for coord in "${CHUNKS[@]}"; do
-  HASH_ARGS+=(--chunk "${coord}")
+  # The '=' form is required for negative coordinates so argparse does not
+  # interpret values such as -23,19 as a new option.
+  HASH_ARGS+=("--chunk=${coord}")
 done
 
 python3 "${ROOT_DIR}/scripts/hash-never-nether-chunks.py" \

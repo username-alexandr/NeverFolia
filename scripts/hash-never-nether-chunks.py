@@ -189,12 +189,67 @@ def read_chunk_nbt(region_dir: Path, cx: int, cz: int):
     return parse_nbt(decompress_chunk(compression, payload))
 
 
-def canonical_chunk(root: dict) -> dict:
+def section_list(root: dict) -> list[dict]:
     sections = root.get("sections", root.get("Sections", []))
+    return [section for section in sections if isinstance(section, dict)]
+
+
+def palette_name(entry) -> str:
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        name = entry.get("Name", entry.get("name"))
+        if isinstance(name, str):
+            return name
+    raise ValueError(f"unsupported block-state palette entry: {entry!r}")
+
+
+def block_at(root: dict, x: int, y: int, z: int) -> str:
+    section_y = y // 16
+    section = next((item for item in section_list(root) if item.get("Y") == section_y), None)
+    if section is None:
+        return "minecraft:air"
+
+    states = section.get("block_states", section.get("BlockStates"))
+    if not isinstance(states, dict):
+        return "minecraft:air"
+    palette = states.get("palette")
+    if not isinstance(palette, list) or not palette:
+        return "minecraft:air"
+    if len(palette) == 1:
+        return palette_name(palette[0])
+
+    data_wrapper = states.get("data")
+    if not isinstance(data_wrapper, dict) or "$long_array" not in data_wrapper:
+        raise ValueError(
+            f"section Y={section_y} has {len(palette)} block states but no packed data"
+        )
+    longs = data_wrapper["$long_array"]
+    bits = max(4, (len(palette) - 1).bit_length())
+    values_per_long = 64 // bits
+    local_x = x & 15
+    local_y = y & 15
+    local_z = z & 15
+    index = (local_y << 8) | (local_z << 4) | local_x
+    long_index = index // values_per_long
+    bit_offset = (index % values_per_long) * bits
+    if long_index >= len(longs):
+        raise ValueError(
+            f"packed block-state data too short in section Y={section_y}: "
+            f"need long {long_index}, have {len(longs)}"
+        )
+    packed = longs[long_index] & 0xFFFFFFFFFFFFFFFF
+    palette_index = (packed >> bit_offset) & ((1 << bits) - 1)
+    if palette_index >= len(palette):
+        raise ValueError(
+            f"palette index {palette_index} out of range {len(palette)} in section Y={section_y}"
+        )
+    return palette_name(palette[palette_index])
+
+
+def canonical_chunk(root: dict) -> dict:
     body_sections = []
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
+    for section in section_list(root):
         y = section.get("Y")
         if not isinstance(y, int) or y < BODY_SECTION_MIN or y > BODY_SECTION_MAX:
             continue
@@ -242,6 +297,19 @@ def parse_chunk_arg(value: str) -> tuple[int, int]:
         ) from exc
 
 
+def parse_block_assertion(value: str) -> tuple[int, int, int, str]:
+    try:
+        coords, expected = value.split("=", 1)
+        x_text, y_text, z_text = coords.split(",", 2)
+        if ":" not in expected:
+            raise ValueError("expected block must be namespaced")
+        return int(x_text), int(y_text), int(z_text), expected
+    except Exception as exc:
+        raise argparse.ArgumentTypeError(
+            f"block assertion must be x,y,z=minecraft:block; got {value!r}"
+        ) from exc
+
+
 def build_manifest(world: Path, chunks: list[tuple[int, int]]) -> dict:
     region_dir = find_region_dir(world)
     entries = []
@@ -269,6 +337,24 @@ def build_manifest(world: Path, chunks: list[tuple[int, int]]) -> dict:
         "chunks": entries,
         "overall_sha256": digest.hexdigest(),
     }
+
+
+def verify_blocks(world: Path, assertions: list[tuple[int, int, int, str]]) -> None:
+    region_dir = find_region_dir(world)
+    cache: dict[tuple[int, int], dict] = {}
+    for x, y, z, expected in assertions:
+        chunk_key = (x // 16, z // 16)
+        root = cache.get(chunk_key)
+        if root is None:
+            root = read_chunk_nbt(region_dir, *chunk_key)
+            cache[chunk_key] = root
+        actual = block_at(root, x, y, z)
+        if actual != expected:
+            raise SystemExit(
+                f"NeverNether block assertion failed at {x},{y},{z}: "
+                f"expected {expected}, got {actual}"
+            )
+        print(f"[NeverFolia][NeverNether NBT] {x},{y},{z} = {actual} OK")
 
 
 def self_test() -> None:
@@ -313,15 +399,46 @@ def self_test() -> None:
     if chunk_digest(base) == chunk_digest(changed):
         raise SystemExit("canonical digest failed to detect terrain mutation")
 
+    if block_at(base, 16, -128, -32) != "minecraft:netherrack":
+        raise SystemExit("single-palette block decoder self-test failed")
+    if block_at(base, 16, 384, -32) != "minecraft:stone":
+        raise SystemExit("roof-zone block decoder self-test failed")
+    if block_at(base, 16, 400, -32) != "minecraft:air":
+        raise SystemExit("missing-section air decoder self-test failed")
+
+    packed = {
+        "sections": [
+            {
+                "Y": 0,
+                "block_states": {
+                    "palette": [
+                        {"Name": "minecraft:air"},
+                        {"Name": "minecraft:stone"},
+                    ],
+                    "data": {"$long_array": [1 << (4 * 3)] + [0] * 255},
+                },
+            }
+        ]
+    }
+    if block_at(packed, 3, 0, 0) != "minecraft:stone":
+        raise SystemExit("packed block-state decoder self-test failed")
+
     print("[NeverFolia][NeverNether determinism] HASHER SELF-TEST OK")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Hash canonical NeverNether chunk worldgen content from Anvil region files"
+        description="Hash/inspect canonical NeverNether chunk content from Anvil region files"
     )
     parser.add_argument("--world", type=Path)
     parser.add_argument("--chunk", action="append", type=parse_chunk_arg, default=[])
+    parser.add_argument(
+        "--assert-block",
+        action="append",
+        type=parse_block_assertion,
+        default=[],
+        help="Assert saved Nether block state: x,y,z=minecraft:block",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -331,15 +448,19 @@ def main() -> None:
         return
     if args.world is None:
         parser.error("--world is required")
-    if not args.chunk:
-        parser.error("at least one --chunk x,z is required")
+    if not args.chunk and not args.assert_block:
+        parser.error("at least one --chunk or --assert-block is required")
 
-    manifest = build_manifest(args.world, args.chunk)
-    payload = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(payload, encoding="utf-8")
-    sys.stdout.write(payload)
+    if args.assert_block:
+        verify_blocks(args.world, args.assert_block)
+
+    if args.chunk:
+        manifest = build_manifest(args.world, args.chunk)
+        payload = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        sys.stdout.write(payload)
 
 
 if __name__ == "__main__":
