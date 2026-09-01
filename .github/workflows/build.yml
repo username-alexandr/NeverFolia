@@ -19,7 +19,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Heavy NeverNether determinism runs are diagnostic evidence. Queue newer
+  # commits behind the active run instead of cancelling a nearly completed test.
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -41,6 +43,9 @@ jobs:
 
       - name: Self-test NeverNether chunk component diff
         run: python3 ./scripts/diff-never-nether-chunks.py --self-test
+
+      - name: Self-test NeverNether Basalt Columns ownership transformer
+        run: python3 ./scripts/apply-never-nether-basalt-columns-ownership.py --self-test
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
