@@ -185,14 +185,12 @@ generate_world() {
 
   wait_ready "${log}"
 
-  # Determinism here is about generation, not runtime evolution after a chunk
-  # reaches FULL. Disable random ticks and freeze gameplay ticks before issuing
-  # any Nether forceloads. Chunk loading/generation and console commands continue,
-  # while scheduled fluid/block ticks cannot turn identical generated lava into
-  # different flowing states simply because one test chunk was loaded earlier.
+  # Determinism here is about world generation, not about how long an already
+  # generated chunk happened to receive random block ticks while the harness
+  # waited for other chunks. Gamerules are registry-backed namespaced IDs in 26.2.
+  # Folia 26.2 does not expose vanilla `/tick freeze`, so scheduled fluid evolution
+  # is diagnosed separately from canonical generation differences.
   send_console "execute in minecraft:the_nether run gamerule minecraft:random_tick_speed 0"
-  send_console "tick freeze"
-  wait_log_literal "${log}" "The game is frozen" 10 "gameplay tick freeze"
 
   local index=0
   local total="$#"
@@ -242,8 +240,7 @@ generate_world() {
 
   # Folia 26.2 has no global save-all command. The normal stop path is the only
   # explicit persistence barrier: it halts chunk systems, saves every world and
-  # waits for RegionFile I/O before the process exits. `stop` remains available
-  # while gameplay ticks are frozen.
+  # waits for RegionFile I/O before the process exits.
   send_console "stop"
 
   for _ in $(seq 1 60); do
