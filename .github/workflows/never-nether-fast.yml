@@ -38,6 +38,9 @@ jobs:
       - name: Self-test startup fingerprint guard transformer
         run: python3 ./scripts/apply-never-nether-fingerprint-guard.py --self-test
 
+      - name: Self-test Basalt Columns ownership transformer
+        run: python3 ./scripts/apply-never-nether-basalt-columns-ownership.py --self-test
+
       - name: Self-test canonical chunk hasher
         run: python3 ./scripts/hash-never-nether-chunks.py --self-test
 
@@ -91,11 +94,21 @@ jobs:
           import zipfile
           from pathlib import Path
 
+          def walk(value):
+              if isinstance(value, dict):
+                  yield value
+                  for child in value.values():
+                      yield from walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      yield from walk(child)
+
           pack = Path('/tmp/nevernether-fast/NeverNether-Core.zip')
           with zipfile.ZipFile(pack) as zf:
               manifest = json.loads(zf.read('nevernether-core-manifest.json'))
               dimension = json.loads(zf.read('data/minecraft/dimension_type/the_nether.json'))
               noise = json.loads(zf.read('data/minecraft/worldgen/noise_settings/nether.json'))
+              delta_pf = json.loads(zf.read('data/minecraft/worldgen/placed_feature/delta.json'))
               root_fp = json.loads(zf.read('nevernether-worldgen-fingerprint.json'))
               resource_fp = json.loads(zf.read('data/neverfolia/nevernether/worldgen_fingerprint.json'))
 
@@ -104,11 +117,27 @@ jobs:
           assert manifest['roof_build_min_y'] == 384
           assert manifest['roof_build_max_y'] == 895
           assert manifest['lava_level'] == 32
+          assert manifest['replaced_vanilla_placed_features'] == ['delta']
+          assert manifest['deterministic_delta_mode'] == 'surface_noise_threshold_3d_v1'
+          assert manifest['basalt_columns_mode'] == 'vanilla_geometry_chunk_owned_v1'
           assert dimension['min_y'] == -128
           assert dimension['height'] == 1024
           assert noise['noise']['min_y'] == -128
           assert noise['noise']['height'] == 512
           assert noise['sea_level'] == 32
+          assert delta_pf['placement'][0] == {'type': 'minecraft:count', 'count': 0}
+
+          material_nodes = list(walk(noise['surface_rule']))
+          assert not any(node.get('type') == 'minecraft:noise_gradient' for node in material_nodes)
+          thresholds = [
+              node for node in material_nodes
+              if node.get('type') == 'minecraft:noise_threshold'
+              and node.get('noise') == 'neverfolia:never_nether/delta_surface'
+          ]
+          assert len(thresholds) == 2
+          assert all(node.get('is_3d') is True for node in thresholds)
+          assert sorted(node['min_threshold'] for node in thresholds) == [0.35, 0.55]
+
           assert root_fp == resource_fp
           assert root_fp['worldgen_id'] == 'NN-DEV-1'
           assert root_fp['algorithm'] == 'sha256-path-and-content-v1'
