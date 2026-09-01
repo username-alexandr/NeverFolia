@@ -131,13 +131,13 @@ generate_world() {
     echo "[NeverFolia][NeverNether determinism] ${label} ${index}/${total}: chunk ${cx},${cz}"
     send_console "execute in minecraft:the_nether run forceload add ${bx} ${bz}"
     sleep 4
-    send_console "save-all flush"
+    send_console "save-all"
     sleep 2
     send_console "execute in minecraft:the_nether run forceload remove ${bx} ${bz}"
     sleep 1
   done
 
-  send_console "save-all flush"
+  send_console "save-all"
   sleep 3
   send_console "stop"
 
@@ -154,7 +154,7 @@ generate_world() {
     cat "${log}" >&2
     exit 1
   fi
-  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command" "${log}"; then
+  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command|Unknown or incomplete command|Command exception" "${log}"; then
     echo "NeverFolia determinism world ${label} contains startup/worldgen/command errors." >&2
     cat "${log}" >&2
     exit 1
@@ -172,8 +172,6 @@ generate_world "world-b" "${ORDER_B[@]}"
 
 HASH_ARGS=()
 for coord in "${CHUNKS[@]}"; do
-  # The '=' form is required for negative coordinates so argparse does not
-  # interpret values such as -23,19 as a new option.
   HASH_ARGS+=("--chunk=${coord}")
 done
 
@@ -189,6 +187,7 @@ python3 "${ROOT_DIR}/scripts/hash-never-nether-chunks.py" \
   --output "${TEST_ROOT}/world-b-hash.json" \
   > "${TEST_ROOT}/world-b-hash.stdout.json"
 
+set +e
 python3 - "${TEST_ROOT}/world-a-hash.json" "${TEST_ROOT}/world-b-hash.json" <<'PY'
 import json
 import sys
@@ -218,3 +217,15 @@ print('  algorithm:', a['algorithm'])
 print('  chunks:', a['chunk_count'])
 print('  canonical_sha256:', a['overall_sha256'])
 PY
+COMPARE_RC=$?
+set -e
+
+if [ "${COMPARE_RC}" -ne 0 ]; then
+  python3 "${ROOT_DIR}/scripts/diff-never-nether-chunks.py" \
+    --world-a "${TEST_ROOT}/world-a/world" \
+    --world-b "${TEST_ROOT}/world-b/world" \
+    "${HASH_ARGS[@]}" \
+    --output "${TEST_ROOT}/component-diff.json" \
+    --allow-differences
+  exit "${COMPARE_RC}"
+fi

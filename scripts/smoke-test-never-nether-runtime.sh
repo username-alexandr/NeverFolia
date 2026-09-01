@@ -112,7 +112,6 @@ stop_interactive() {
 # ---------------------------------------------------------------------------
 # Pass 1: first fingerprinted startup, real Nether generation and boundaries.
 # Boundary reads are performed from the saved Anvil/NBT data after shutdown.
-# This avoids unsafe global-console block reads on Folia region threads.
 # ---------------------------------------------------------------------------
 echo '[NeverFolia][NeverNether CI] PASS 1: initial startup and geometry'
 start_interactive 'server-first.log'
@@ -120,10 +119,8 @@ wait_ready "${TEST_DIR}/server-first.log"
 
 send_console 'execute in minecraft:the_nether run forceload add 0 0'
 sleep 8
-# Prove the technical roof zone is writable. Leave the stone in this ephemeral
-# smoke world so the post-shutdown NBT inspector can verify it from disk.
 send_console 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:stone'
-send_console 'save-all flush'
+send_console 'save-all'
 sleep 5
 send_console 'execute in minecraft:the_nether run forceload remove 0 0'
 sleep 2
@@ -140,7 +137,7 @@ if ! grep -q "Saving chunks for level 'ServerLevel\[world\]'/minecraft:the_nethe
   cat "${FIRST_LOG}" >&2
   exit 1
 fi
-if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|NullPointerException|An unexpected error occurred while trying to execute that command|Command exception" "${FIRST_LOG}"; then
+if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|NullPointerException|An unexpected error occurred while trying to execute that command|Command exception|Unknown or incomplete command" "${FIRST_LOG}"; then
   echo 'NeverNether runtime/command error detected.' >&2
   cat "${FIRST_LOG}" >&2
   exit 1
