@@ -98,6 +98,57 @@ send_console() {
   printf '%s\n' "${command}" > "${cleanup_pipe}"
 }
 
+wait_log_literal() {
+  local log="$1"
+  local literal="$2"
+  local timeout_seconds="$3"
+  local description="$4"
+
+  for _ in $(seq 1 "${timeout_seconds}"); do
+    if grep -Fq -- "${literal}" "${log}" 2>/dev/null; then
+      return 0
+    fi
+    if ! kill -0 "${cleanup_pid}" 2>/dev/null; then
+      echo "NeverFolia exited while waiting for ${description}: ${log}" >&2
+      cat "${log}" >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+
+  echo "Timed out waiting for ${description}: ${literal}" >&2
+  cat "${log}" >&2 || true
+  return 1
+}
+
+wait_chunk_full() {
+  local log="$1"
+  local cx="$2"
+  local cz="$3"
+  local bx="$4"
+  local bz="$5"
+  local token="NEVERNETHER_FULL_${cx}_${cz}"
+
+  # `execute if loaded` only succeeds once the addressed chunk is fully loaded
+  # (Entity Ticking). Polling this condition makes FULL status the barrier instead
+  # of assuming that a fixed wall-clock sleep is enough for Folia's async pipeline.
+  for _ in $(seq 1 120); do
+    send_console "execute in minecraft:the_nether if loaded ${bx} 0 ${bz} run say ${token}"
+    if wait_log_literal "${log}" "${token}" 1 "chunk ${cx},${cz} FULL status"; then
+      return 0
+    fi
+    if ! kill -0 "${cleanup_pid}" 2>/dev/null; then
+      echo "NeverFolia exited while waiting for chunk ${cx},${cz} FULL status." >&2
+      cat "${log}" >&2 || true
+      return 1
+    fi
+  done
+
+  echo "Chunk ${cx},${cz} did not reach FULL/Entity Ticking status." >&2
+  cat "${log}" >&2 || true
+  return 1
+}
+
 generate_world() {
   local label="$1"
   shift
@@ -120,24 +171,32 @@ generate_world() {
 
   wait_ready "${log}"
 
+  # Determinism here is about world generation, not about how long an already
+  # generated chunk happened to receive random block ticks while the harness
+  # waited for other chunks. Disable random ticking before touching the Nether.
+  send_console "gamerule randomTickSpeed 0"
+
   local index=0
   local total="$#"
   for coord in "$@"; do
     IFS=',' read -r cx cz <<< "${coord}"
     local bx=$((cx * 16 + 8))
     local bz=$((cz * 16 + 8))
+    local marked="Marked chunk [${cx}, ${cz}] in minecraft:the_nether to be force loaded"
+    local unmarked="Unmarked chunk [${cx}, ${cz}] in minecraft:the_nether for force loading"
     index=$((index + 1))
 
     echo "[NeverFolia][NeverNether determinism] ${label} ${index}/${total}: chunk ${cx},${cz}"
     send_console "execute in minecraft:the_nether run forceload add ${bx} ${bz}"
-    # Folia has no global save-all command. Keep the target loaded long enough
-    # for the async chunk pipeline to settle, then rely on the normal server
-    # shutdown path below to synchronously persist every generated chunk.
-    sleep 6
+    wait_log_literal "${log}" "${marked}" 30 "forceload add for chunk ${cx},${cz}"
+    wait_chunk_full "${log}" "${cx}" "${cz}" "${bx}" "${bz}"
     send_console "execute in minecraft:the_nether run forceload remove ${bx} ${bz}"
-    sleep 1
+    wait_log_literal "${log}" "${unmarked}" 30 "forceload remove for chunk ${cx},${cz}"
   done
 
+  # Folia 26.2 has no global save-all command. The normal stop path is the only
+  # explicit persistence barrier: it halts chunk systems, saves every world and
+  # waits for RegionFile I/O before the process exits.
   send_console "stop"
 
   for _ in $(seq 1 60); do
