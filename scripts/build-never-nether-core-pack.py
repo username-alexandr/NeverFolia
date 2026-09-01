@@ -5,6 +5,17 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+DIM_MIN_Y = -128
+DIM_HEIGHT = 1024
+DIM_MAX_Y = DIM_MIN_Y + DIM_HEIGHT - 1
+BODY_MIN_Y = -128
+BODY_HEIGHT = 512
+BODY_MAX_Y = BODY_MIN_Y + BODY_HEIGHT - 1
+ROOF_BUILD_MIN_Y = BODY_MAX_Y + 1
+ROOF_BUILD_MAX_Y = DIM_MAX_Y
+LAVA_LEVEL = 32
+BEDROCK_ENVELOPE = 5
+
 
 def write_json(root: Path, rel: str, value) -> None:
     path = root / rel
@@ -73,6 +84,11 @@ def biome_floor(biome: str, block: str):
 
 
 def build_pack(root: Path) -> None:
+    assert DIM_MAX_Y == 895
+    assert BODY_MAX_Y == 383
+    assert ROOF_BUILD_MIN_Y == 384
+    assert ROOF_BUILD_MAX_Y == 895
+
     write_json(
         root,
         "pack.mcmeta",
@@ -118,10 +134,10 @@ def build_pack(root: Path) -> None:
             "has_ender_dragon_fight": False,
             "has_fixed_time": True,
             "has_skylight": False,
-            "height": 1024,
+            "height": DIM_HEIGHT,
             "infiniburn": "#minecraft:infiniburn_nether",
-            "logical_height": 1024,
-            "min_y": -128,
+            "logical_height": DIM_HEIGHT,
+            "min_y": DIM_MIN_Y,
             "monster_spawn_block_light_limit": 15,
             "monster_spawn_light_level": 7,
             "skybox": "none",
@@ -156,6 +172,8 @@ def build_pack(root: Path) -> None:
         },
     )
 
+    # Approved openness profile:
+    # Deep: denser; Lower/Lava: more open; Main: balanced; Upper: large chambers/hanging masses.
     lower_weight = minimum(
         gradient(-64, 16, 0.0, 1.0),
         gradient(96, 176, 1.0, 0.0),
@@ -173,8 +191,9 @@ def build_pack(root: Path) -> None:
         choice(noise("chasm", 1.8, 0.18), 0.68, 2.0, -0.48),
         mul(deep_weight, choice(noise("magma_chamber", 0.95, 0.55), 0.60, 2.0, -0.42)),
         mul(upper_weight, choice(noise("hanging_mass", 0.75, 0.55), 0.58, 2.0, 0.34)),
-        mul(gradient(-128, -96, 1.0, 0.0), 2.6),
-        mul(gradient(344, 384, 0.0, 1.0), 2.8),
+        # Density guards keep terrain closed against the lower/upper generated-body boundaries.
+        mul(gradient(BODY_MIN_Y, BODY_MIN_Y + 32, 1.0, 0.0), 2.6),
+        mul(gradient(BODY_MAX_Y - 39, BODY_MAX_Y + 1, 0.0, 1.0), 2.8),
     ]
 
     core = "neverfolia:never_nether/base_mass"
@@ -193,16 +212,20 @@ def build_pack(root: Path) -> None:
         },
     )
 
+    # Bottom bedrock keeps the vanilla irregular five-block envelope relative to min_y.
     bedrock_floor = {
         "type": "minecraft:condition",
         "if_true": {
             "type": "minecraft:vertical_gradient",
             "random_name": "neverfolia:bedrock_floor",
             "true_at_and_below": {"above_bottom": 0},
-            "false_at_and_above": {"above_bottom": 5},
+            "false_at_and_above": {"above_bottom": BEDROCK_ENVELOPE},
         },
         "then_run": {"type": "minecraft:block", "result_state": {"Name": "minecraft:bedrock"}},
     }
+
+    # IMPORTANT: the upper bedrock envelope is anchored to the generated body top (Y=383),
+    # not to the technical dimension top (Y=895). This leaves Y=384..895 empty/buildable.
     bedrock_roof = {
         "type": "minecraft:condition",
         "if_true": {
@@ -210,12 +233,13 @@ def build_pack(root: Path) -> None:
             "invert": {
                 "type": "minecraft:vertical_gradient",
                 "random_name": "neverfolia:bedrock_roof",
-                "true_at_and_below": {"below_top": 5},
-                "false_at_and_above": {"below_top": 0},
+                "true_at_and_below": {"absolute": BODY_MAX_Y - BEDROCK_ENVELOPE},
+                "false_at_and_above": {"absolute": BODY_MAX_Y},
             },
         },
         "then_run": {"type": "minecraft:block", "result_state": {"Name": "minecraft:bedrock"}},
     }
+
     surface_rule = {
         "type": "minecraft:sequence",
         "sequence": [
@@ -238,7 +262,12 @@ def build_pack(root: Path) -> None:
             "default_fluid": {"Name": "minecraft:lava", "Properties": {"level": "0"}},
             "disable_mob_generation": False,
             "legacy_random_source": True,
-            "noise": {"height": 512, "min_y": -128, "size_horizontal": 1, "size_vertical": 2},
+            "noise": {
+                "height": BODY_HEIGHT,
+                "min_y": BODY_MIN_Y,
+                "size_horizontal": 1,
+                "size_vertical": 2,
+            },
             "noise_router": {
                 "barrier": 0.0,
                 "continents": 0.0,
@@ -273,7 +302,7 @@ def build_pack(root: Path) -> None:
                 "vein_toggle": 0.0,
             },
             "ore_veins_enabled": False,
-            "sea_level": 32,
+            "sea_level": LAVA_LEVEL,
             "spawn_target": [],
             "surface_rule": surface_rule,
         },
@@ -285,14 +314,17 @@ def build_pack(root: Path) -> None:
         {
             "id": "NN-DEV-1-core-test1",
             "minecraft": "26.2",
-            "dimension_min_y": -128,
-            "dimension_height": 1024,
-            "generated_min_y": -128,
-            "generated_height": 512,
-            "generated_max_y": 383,
-            "roof_build_min_y": 384,
-            "roof_build_max_y": 895,
-            "lava_level": 32,
+            "dimension_min_y": DIM_MIN_Y,
+            "dimension_height": DIM_HEIGHT,
+            "dimension_max_y": DIM_MAX_Y,
+            "generated_min_y": BODY_MIN_Y,
+            "generated_height": BODY_HEIGHT,
+            "generated_max_y": BODY_MAX_Y,
+            "roof_build_min_y": ROOF_BUILD_MIN_Y,
+            "roof_build_max_y": ROOF_BUILD_MAX_Y,
+            "lava_level": LAVA_LEVEL,
+            "bedrock_envelope": BEDROCK_ENVELOPE,
+            "upper_bedrock_anchor": BODY_MAX_Y,
         },
     )
 
