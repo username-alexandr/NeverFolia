@@ -38,6 +38,9 @@ jobs:
       - name: Self-test startup fingerprint guard transformer
         run: python3 ./scripts/apply-never-nether-fingerprint-guard.py --self-test
 
+      - name: Self-test canonical chunk hasher
+        run: python3 ./scripts/hash-never-nether-chunks.py --self-test
+
       - name: Self-test placement log analyzer
         shell: bash
         run: |

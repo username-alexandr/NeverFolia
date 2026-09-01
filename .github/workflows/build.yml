@@ -110,6 +110,14 @@ jobs:
           chmod +x ./scripts/smoke-test-never-nether-runtime.sh
           ./scripts/smoke-test-never-nether-runtime.sh "${JAR}" "${PACK}"
 
+      - name: Verify NeverNether chunk-order determinism
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/test-never-nether-determinism.sh
+          ./scripts/test-never-nether-determinism.sh "${JAR}" "${PACK}"
+
       - name: Generate artifact checksums
         run: |
           set -euo pipefail
