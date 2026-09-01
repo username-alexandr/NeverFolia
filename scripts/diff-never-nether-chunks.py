@@ -27,6 +27,96 @@ def digest(value) -> str:
     return hashlib.sha256(HASHER.canonical_bytes(value)).hexdigest()
 
 
+def palette_entry_identity(entry) -> str:
+    if isinstance(entry, str):
+        return entry
+    if not isinstance(entry, dict):
+        raise ValueError(f"unsupported palette entry: {entry!r}")
+
+    name = entry.get("Name", entry.get("name"))
+    if not isinstance(name, str):
+        raise ValueError(f"palette entry has no namespaced name: {entry!r}")
+
+    properties = entry.get("Properties", entry.get("properties"))
+    if not isinstance(properties, dict) or not properties:
+        return name
+
+    encoded = ",".join(f"{key}={properties[key]}" for key in sorted(properties))
+    return f"{name}[{encoded}]"
+
+
+def long_array(value) -> list[int]:
+    if not isinstance(value, dict) or "$long_array" not in value:
+        raise ValueError("paletted container has no TAG_Long_Array data")
+    longs = value["$long_array"]
+    if not isinstance(longs, list):
+        raise ValueError("paletted container long-array wrapper is malformed")
+    return longs
+
+
+def decode_paletted_container(
+    container: dict | None,
+    *,
+    entry_count: int,
+    min_bits: int,
+) -> tuple[list[str], int]:
+    if not isinstance(container, dict):
+        raise ValueError("missing paletted container")
+    palette = container.get("palette")
+    if not isinstance(palette, list) or not palette:
+        raise ValueError("paletted container has no palette")
+
+    identities = [palette_entry_identity(entry) for entry in palette]
+    if len(identities) == 1:
+        return [identities[0]] * entry_count, 0
+
+    bits = max(min_bits, (len(identities) - 1).bit_length())
+    values_per_long = 64 // bits
+    if values_per_long <= 0:
+        raise ValueError(f"invalid palette bit width: {bits}")
+
+    longs = long_array(container.get("data"))
+    required_longs = (entry_count + values_per_long - 1) // values_per_long
+    if len(longs) < required_longs:
+        raise ValueError(
+            f"packed palette data too short: need {required_longs} longs for "
+            f"{entry_count} values at {bits} bits, have {len(longs)}"
+        )
+
+    mask = (1 << bits) - 1
+    decoded: list[str] = []
+    for index in range(entry_count):
+        packed = longs[index // values_per_long] & 0xFFFFFFFFFFFFFFFF
+        bit_offset = (index % values_per_long) * bits
+        palette_index = (packed >> bit_offset) & mask
+        if palette_index >= len(identities):
+            raise ValueError(
+                f"palette index {palette_index} out of range {len(identities)} "
+                f"at logical index {index}"
+            )
+        decoded.append(identities[palette_index])
+    return decoded, bits
+
+
+def section_map(root: dict) -> dict[int, dict]:
+    out: dict[int, dict] = {}
+    for section in HASHER.section_list(root):
+        y = section.get("Y")
+        if isinstance(y, int):
+            out[y] = section
+    return out
+
+
+def section_block_container(section: dict) -> dict | None:
+    value = section.get("block_states", section.get("BlockStates"))
+    return value if isinstance(value, dict) else None
+
+
+def section_biome_container(section: dict) -> dict | None:
+    value = section.get("biomes")
+    return value if isinstance(value, dict) else None
+
+
 def component_summary(root: dict) -> dict:
     canonical = HASHER.canonical_chunk(root)
     sections = []
@@ -88,6 +178,91 @@ def compare_components(a: dict, b: dict) -> dict:
     }
 
 
+def semantic_block_diff(
+    root_a: dict,
+    root_b: dict,
+    *,
+    chunk_x: int,
+    chunk_z: int,
+    changed_sections: list[dict],
+) -> dict:
+    sections_a = section_map(root_a)
+    sections_b = section_map(root_b)
+    details = []
+    total_differences = 0
+    semantic_changed_sections: list[int] = []
+    encoding_only_sections: list[int] = []
+
+    for raw_diff in changed_sections:
+        if not raw_diff.get("block_states_changed"):
+            continue
+        y = raw_diff["Y"]
+        section_a = sections_a.get(y)
+        section_b = sections_b.get(y)
+        if section_a is None or section_b is None:
+            continue
+
+        blocks_a, bits_a = decode_paletted_container(
+            section_block_container(section_a), entry_count=4096, min_bits=4
+        )
+        blocks_b, bits_b = decode_paletted_container(
+            section_block_container(section_b), entry_count=4096, min_bits=4
+        )
+        semantic_a = digest(blocks_a)
+        semantic_b = digest(blocks_b)
+        different_indices = [
+            index for index, (left, right) in enumerate(zip(blocks_a, blocks_b)) if left != right
+        ]
+        difference_count = len(different_indices)
+        total_differences += difference_count
+
+        if difference_count:
+            semantic_changed_sections.append(y)
+        else:
+            encoding_only_sections.append(y)
+
+        samples = []
+        for index in different_indices[:6]:
+            local_y = index >> 8
+            local_z = (index >> 4) & 15
+            local_x = index & 15
+            samples.append(
+                {
+                    "x": chunk_x * 16 + local_x,
+                    "y": y * 16 + local_y,
+                    "z": chunk_z * 16 + local_z,
+                    "a": blocks_a[index],
+                    "b": blocks_b[index],
+                }
+            )
+
+        container_a = section_block_container(section_a) or {}
+        container_b = section_block_container(section_b) or {}
+        palette_a = container_a.get("palette", [])
+        palette_b = container_b.get("palette", [])
+        details.append(
+            {
+                "Y": y,
+                "semantic_same": difference_count == 0,
+                "semantic_sha256_a": semantic_a,
+                "semantic_sha256_b": semantic_b,
+                "different_block_count": difference_count,
+                "storage_bits_a": bits_a,
+                "storage_bits_b": bits_b,
+                "palette_size_a": len(palette_a) if isinstance(palette_a, list) else None,
+                "palette_size_b": len(palette_b) if isinstance(palette_b, list) else None,
+                "samples": samples,
+            }
+        )
+
+    return {
+        "semantic_block_difference_count": total_differences,
+        "semantic_changed_sections": semantic_changed_sections,
+        "encoding_only_sections": encoding_only_sections,
+        "semantic_section_details": details,
+    }
+
+
 def build_report(world_a: Path, world_b: Path, chunks: list[tuple[int, int]]) -> dict:
     region_a = HASHER.find_region_dir(world_a)
     region_b = HASHER.find_region_dir(world_b)
@@ -108,12 +283,22 @@ def build_report(world_a: Path, world_b: Path, chunks: list[tuple[int, int]]) ->
             "b": summary_b,
         }
         if not same:
-            item.update(compare_components(summary_a, summary_b))
+            component_diff = compare_components(summary_a, summary_b)
+            item.update(component_diff)
+            item.update(
+                semantic_block_diff(
+                    root_a,
+                    root_b,
+                    chunk_x=cx,
+                    chunk_z=cz,
+                    changed_sections=component_diff["section_differences"],
+                )
+            )
             mismatches.append(item)
         compared.append(item)
 
     return {
-        "schema": 1,
+        "schema": 2,
         "algorithm": HASHER.ALGORITHM,
         "world_a": str(world_a),
         "world_b": str(world_b),
@@ -130,19 +315,32 @@ def print_report(report: dict) -> None:
     for item in report["mismatches"]:
         print(f"  chunk {item['x']},{item['z']}:")
         print("    components:", ", ".join(item["changed_components"]) or "none")
-        for section in item["section_differences"]:
-            if not section["present_a"] or not section["present_b"]:
+        print("    semantic block differences:", item["semantic_block_difference_count"])
+        if item["encoding_only_sections"]:
+            print("    encoding-only sections:", ", ".join(map(str, item["encoding_only_sections"])))
+        if item["semantic_changed_sections"]:
+            print("    semantic changed sections:", ", ".join(map(str, item["semantic_changed_sections"])))
+        for detail in item["semantic_section_details"]:
+            print(
+                f"    section Y={detail['Y']}: semantic_same={detail['semantic_same']} "
+                f"different_blocks={detail['different_block_count']} "
+                f"palette={detail['palette_size_a']}/{detail['palette_size_b']} "
+                f"bits={detail['storage_bits_a']}/{detail['storage_bits_b']}"
+            )
+            for sample in detail["samples"]:
                 print(
-                    f"    section Y={section['Y']}: present_a={section['present_a']} "
-                    f"present_b={section['present_b']}"
+                    f"      {sample['x']},{sample['y']},{sample['z']}: "
+                    f"{sample['a']} != {sample['b']}"
                 )
-                continue
-            changed = []
-            if section.get("block_states_changed"):
-                changed.append("block_states")
-            if section.get("biomes_changed"):
-                changed.append("biomes")
-            print(f"    section Y={section['Y']}: {', '.join(changed) or 'hash-only'}")
+
+
+def pack_indices(indices: list[int], bits: int) -> list[int]:
+    values_per_long = 64 // bits
+    longs = [0] * ((len(indices) + values_per_long - 1) // values_per_long)
+    mask = (1 << bits) - 1
+    for index, value in enumerate(indices):
+        longs[index // values_per_long] |= (value & mask) << ((index % values_per_long) * bits)
+    return longs
 
 
 def self_test() -> None:
@@ -175,6 +373,41 @@ def self_test() -> None:
         raise SystemExit(f"section diff self-test failed: {diff!r}")
     if not diff["section_differences"][0]["block_states_changed"]:
         raise SystemExit(f"block-state diff self-test failed: {diff!r}")
+
+    semantic = [0] * 4096
+    semantic[3] = 1
+    container_a = {
+        "palette": [
+            {"Name": "minecraft:air"},
+            {"Name": "minecraft:stone"},
+        ],
+        "data": {"$long_array": pack_indices(semantic, 4)},
+    }
+    reversed_indices = [1 if value == 0 else 0 for value in semantic]
+    container_b = {
+        "palette": [
+            {"Name": "minecraft:stone"},
+            {"Name": "minecraft:air"},
+        ],
+        "data": {"$long_array": pack_indices(reversed_indices, 4)},
+    }
+    decoded_a, _ = decode_paletted_container(container_a, entry_count=4096, min_bits=4)
+    decoded_b, _ = decode_paletted_container(container_b, entry_count=4096, min_bits=4)
+    if decoded_a != decoded_b:
+        raise SystemExit("semantic palette normalization self-test failed")
+    if digest(container_a) == digest(container_b):
+        raise SystemExit("raw palette self-test did not create distinct encodings")
+
+    mutated = list(semantic)
+    mutated[5] = 1
+    container_c = {
+        "palette": container_a["palette"],
+        "data": {"$long_array": pack_indices(mutated, 4)},
+    }
+    decoded_c, _ = decode_paletted_container(container_c, entry_count=4096, min_bits=4)
+    if decoded_a == decoded_c:
+        raise SystemExit("semantic block mutation self-test failed")
+
     print("[NeverFolia][NeverNether determinism] COMPONENT DIFF SELF-TEST OK")
 
 
