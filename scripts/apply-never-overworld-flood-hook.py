@@ -60,88 +60,115 @@ def helper_source() -> str:
     return r'''package net.minecraft.world.level.chunk;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
  * NeverRaft VANILLA_FLOODED post-decoration pass.
  *
- * <p>Every invocation reads and writes only the chunk currently being decorated.
- * This is deliberate: Folia may decorate neighboring chunks concurrently, so the
- * result must not depend on neighboring region ownership or completion order.</p>
+ * <p>The pass is deliberately chunk-owned: it never reads mutable neighboring
+ * chunks and never writes outside the chunk currently being decorated. That makes
+ * the result independent of Folia region ownership and chunk completion order.</p>
+ *
+ * <p>Flooding is surface-connected rather than a blanket Y fill. Generated
+ * groundwater/lava is removed first, then only air reachable from an externally
+ * open column at Y=128 is refilled. Sealed caves and enclosed structures therefore
+ * remain dry even when their Y is below the flood plane.</p>
  */
 final class NeverOverworldFlood {
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final int FLOOD_LEVEL = 128;
-    private static final int FULL_FLOOD_MIN_Y = 64;
-    private static final int CONNECTIVITY_SEED_Y = 63;
 
     private NeverOverworldFlood() {}
 
     static void apply(final WorldGenLevel level, final ChunkAccess chunk) {
-        if (level.getMinY() != EXPECTED_MIN_Y || level.getHeight() != EXPECTED_HEIGHT) {
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != EXPECTED_MIN_Y
+            || level.getHeight() != EXPECTED_HEIGHT) {
             return;
         }
 
-        final ChunkPos chunkPos = chunk.getPos();
-        final int minX = chunkPos.getMinBlockX();
-        final int minZ = chunkPos.getMinBlockZ();
-        final BlockState water = Blocks.WATER.defaultBlockState();
+        final int minY = level.getMinY() + 1;
         final BlockState air = Blocks.AIR.defaultBlockState();
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final BlockState water = Blocks.WATER.defaultBlockState();
 
-        // Remove generated underground groundwater/lava. Player-placed fluids are
-        // unaffected because this pass executes only during chunk generation.
-        final int undergroundMinY = level.getMinY() + 1;
-        for (int y = undergroundMinY; y < FULL_FLOOD_MIN_Y; ++y) {
-            for (int localZ = 0; localZ < 16; ++localZ) {
-                for (int localX = 0; localX < 16; ++localX) {
-                    pos.set(minX + localX, y, minZ + localZ);
-                    final BlockState state = chunk.getBlockState(pos);
-                    if (state.is(Blocks.WATER) || state.is(Blocks.LAVA)) {
-                        chunk.setBlockState(pos, air, 0);
-                    }
-                }
-            }
-        }
-
-        // Y=64..128 is the globally flooded band. Solid terrain and structure
-        // blocks survive; all air cells become stable source water.
-        for (int y = FULL_FLOOD_MIN_Y; y <= FLOOD_LEVEL; ++y) {
-            for (int localZ = 0; localZ < 16; ++localZ) {
-                for (int localX = 0; localX < 16; ++localX) {
-                    pos.set(minX + localX, y, minZ + localZ);
-                    final BlockState state = chunk.getBlockState(pos);
-                    if (state.is(Blocks.LAVA)) {
-                        chunk.setBlockState(pos, air, 0);
-                    }
-                    if (chunk.getBlockState(pos).isAir()) {
-                        chunk.setBlockState(pos, water, 0);
-                    }
-                }
-            }
-        }
-
-        floodChunkLocalOceanConnections(chunk, minX, minZ, undergroundMinY, water);
+        removeGeneratedFluids(chunk, minY, FLOOD_LEVEL, air);
+        floodSurfaceConnectedAir(chunk, minY, FLOOD_LEVEL, water);
     }
 
     /**
-     * Flood only sub-Y64 cavities connected to the flooded/ocean boundary inside
-     * this chunk. Closed caves remain dry. Cross-chunk connectivity is intentionally
-     * not inferred from mutable neighboring chunk state; that keeps the result
-     * strictly order-independent under Folia. A later NR revision can expand the
-     * connectivity solver with seed/base-density sampling if visual tests require it.
+     * Remove only pure generated water/lava blocks. Waterlogged structure blocks
+     * are preserved because replacing them would destroy the block itself. This
+     * runs during generation only, so later player-placed fluids are unaffected.
+     *
+     * <p>Sections without any fluid are skipped through LevelChunkSection's cached
+     * fluid count; solid deep sections therefore cost O(sections), not O(height).</p>
      */
-    private static void floodChunkLocalOceanConnections(
+    private static void removeGeneratedFluids(
         final ChunkAccess chunk,
-        final int minX,
-        final int minZ,
         final int minY,
+        final int maxY,
+        final BlockState air
+    ) {
+        final int minSectionY = SectionPos.blockToSectionCoord(minY);
+        final int maxSectionY = SectionPos.blockToSectionCoord(maxY);
+        final LevelChunkSection[] sections = chunk.getSections();
+        final ChunkPos chunkPos = chunk.getPos();
+        final int minX = chunkPos.getMinBlockX();
+        final int minZ = chunkPos.getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int sectionY = minSectionY; sectionY <= maxSectionY; ++sectionY) {
+            final int sectionIndex = chunk.getSectionIndexFromSectionY(sectionY);
+            if (sectionIndex < 0 || sectionIndex >= sections.length) {
+                continue;
+            }
+            final LevelChunkSection section = sections[sectionIndex];
+            if (!section.hasFluid()) {
+                continue;
+            }
+
+            final int sectionMinY = SectionPos.sectionToBlockCoord(sectionY);
+            final int scanMinY = Math.max(minY, sectionMinY);
+            final int scanMaxY = Math.min(maxY, sectionMinY + 15);
+            for (int y = scanMinY; y <= scanMaxY; ++y) {
+                final int localY = SectionPos.sectionRelative(y);
+                for (int localZ = 0; localZ < 16; ++localZ) {
+                    for (int localX = 0; localX < 16; ++localX) {
+                        final BlockState state = section.getBlockState(localX, localY, localZ);
+                        if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA)) {
+                            continue;
+                        }
+                        pos.set(minX + localX, y, minZ + localZ);
+                        chunk.setBlockState(pos, air, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Seed the flood only from columns whose motion-blocking terrain surface lies
+     * below Y=128. OCEAN_FLOOR_WG deliberately ignores fluid and is not confused by
+     * the water removed in the preceding pass. A sealed cavern under a mountain has
+     * a surface above the flood plane and therefore cannot become a seed.
+     *
+     * <p>BFS then follows only air inside this chunk. This floods coastlines, open
+     * valleys, ravines, cave mouths and local continuations down to the extended
+     * world floor while preserving enclosed caves/mineshafts/Trial Chambers/Ancient
+     * City spaces that have no open path to the flood surface.</p>
+     */
+    private static void floodSurfaceConnectedAir(
+        final ChunkAccess chunk,
+        final int minY,
+        final int maxY,
         final BlockState water
     ) {
-        final int maxY = CONNECTIVITY_SEED_Y;
         final int layerCount = maxY - minY + 1;
         if (layerCount <= 0) {
             return;
@@ -152,21 +179,24 @@ final class NeverOverworldFlood {
         final int[] queue = new int[capacity];
         int head = 0;
         int tail = 0;
+        final ChunkPos chunkPos = chunk.getPos();
+        final int minX = chunkPos.getMinBlockX();
+        final int minZ = chunkPos.getMinBlockZ();
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
-        // Seed from Y=63 cells that are directly exposed to the new flood band at
-        // Y=64. Existing ocean water at Y=63 is also considered connected.
         for (int localZ = 0; localZ < 16; ++localZ) {
             for (int localX = 0; localX < 16; ++localX) {
-                pos.set(minX + localX, maxY, minZ + localZ);
-                final BlockState state = chunk.getBlockState(pos);
-                pos.set(minX + localX, FULL_FLOOD_MIN_Y, minZ + localZ);
-                final boolean waterAbove = chunk.getBlockState(pos).is(Blocks.WATER);
-                if ((state.isAir() && waterAbove) || state.is(Blocks.WATER)) {
-                    final int encoded = encode(localX, maxY, localZ, minY);
-                    visited[encoded] = true;
-                    queue[tail++] = encoded;
+                final int surfaceY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ);
+                if (surfaceY >= maxY) {
+                    continue;
                 }
+                pos.set(minX + localX, maxY, minZ + localZ);
+                if (!chunk.getBlockState(pos).isAir()) {
+                    continue;
+                }
+                final int encoded = encode(localX, maxY, localZ, minY);
+                visited[encoded] = true;
+                queue[tail++] = encoded;
             }
         }
 
@@ -176,23 +206,22 @@ final class NeverOverworldFlood {
             final int localZ = (encoded >>> 4) & 15;
             final int y = minY + (encoded >>> 8);
             pos.set(minX + localX, y, minZ + localZ);
-            final BlockState state = chunk.getBlockState(pos);
-            if (state.isAir()) {
-                chunk.setBlockState(pos, water, 0);
-            } else if (!state.is(Blocks.WATER)) {
+            if (!chunk.getBlockState(pos).isAir()) {
                 continue;
             }
 
-            tail = enqueue(chunk, queue, visited, tail, localX - 1, y, localZ, minX, minZ, minY, maxY);
-            tail = enqueue(chunk, queue, visited, tail, localX + 1, y, localZ, minX, minZ, minY, maxY);
-            tail = enqueue(chunk, queue, visited, tail, localX, y, localZ - 1, minX, minZ, minY, maxY);
-            tail = enqueue(chunk, queue, visited, tail, localX, y, localZ + 1, minX, minZ, minY, maxY);
-            tail = enqueue(chunk, queue, visited, tail, localX, y - 1, localZ, minX, minZ, minY, maxY);
-            tail = enqueue(chunk, queue, visited, tail, localX, y + 1, localZ, minX, minZ, minY, maxY);
+            chunk.setBlockState(pos, water, 0);
+
+            tail = enqueueAir(chunk, queue, visited, tail, localX - 1, y, localZ, minX, minZ, minY, maxY);
+            tail = enqueueAir(chunk, queue, visited, tail, localX + 1, y, localZ, minX, minZ, minY, maxY);
+            tail = enqueueAir(chunk, queue, visited, tail, localX, y, localZ - 1, minX, minZ, minY, maxY);
+            tail = enqueueAir(chunk, queue, visited, tail, localX, y, localZ + 1, minX, minZ, minY, maxY);
+            tail = enqueueAir(chunk, queue, visited, tail, localX, y - 1, localZ, minX, minZ, minY, maxY);
+            tail = enqueueAir(chunk, queue, visited, tail, localX, y + 1, localZ, minX, minZ, minY, maxY);
         }
     }
 
-    private static int enqueue(
+    private static int enqueueAir(
         final ChunkAccess chunk,
         final int[] queue,
         final boolean[] visited,
@@ -213,8 +242,7 @@ final class NeverOverworldFlood {
             return tail;
         }
         final BlockPos pos = new BlockPos(minX + localX, y, minZ + localZ);
-        final BlockState state = chunk.getBlockState(pos);
-        if (!state.isAir() && !state.is(Blocks.WATER)) {
+        if (!chunk.getBlockState(pos).isAir()) {
             return tail;
         }
         visited[encoded] = true;
@@ -246,17 +274,25 @@ class ChunkGenerator {
     for required in (
         "EXPECTED_MIN_Y = -512",
         "FLOOD_LEVEL = 128",
-        "FULL_FLOOD_MIN_Y = 64",
-        "floodChunkLocalOceanConnections",
+        "Level.OVERWORLD",
+        "Heightmap.Types.OCEAN_FLOOR_WG",
+        "section.hasFluid()",
+        "floodSurfaceConnectedAir",
         "chunk.setBlockState",
     ):
         if required not in helper:
             fail(f"SELF-TEST: helper missing {required!r}")
-    print("[NeverFolia][NeverOverworld flood] SELF-TEST OK")
+    for forbidden in (
+        "FULL_FLOOD_MIN_Y",
+        "floodChunkLocalOceanConnections",
+    ):
+        if forbidden in helper:
+            fail(f"SELF-TEST: obsolete blanket-flood marker remains: {forbidden!r}")
+    print("[NeverFolia][NeverOverworld flood] SURFACE-CONNECTED V2 SELF-TEST OK")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Apply deterministic NeverOverworld flood hook")
+    parser = argparse.ArgumentParser(description="Apply deterministic NeverOverworld surface-connected flood hook")
     parser.add_argument("folia", nargs="?", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -274,7 +310,7 @@ def main() -> None:
     source = generator.read_text(encoding="utf-8")
     generator.write_text(patch_generator(source), encoding="utf-8")
     helper.write_text(helper_source(), encoding="utf-8")
-    print("[NeverFolia][NeverOverworld flood] hook applied")
+    print("[NeverFolia][NeverOverworld flood] surface-connected v2 hook applied")
     print(f"  generator: {generator}")
     print(f"  helper: {helper}")
 
