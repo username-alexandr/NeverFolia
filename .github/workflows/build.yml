@@ -167,6 +167,19 @@ jobs:
             exit 1
           fi
 
+          # Runtime geometry assertions. These inspect the actual generated dimension,
+          # not only the datapack JSON definition.
+          echo 'execute in minecraft:the_nether run forceload add 0 0' > console.pipe
+          sleep 8
+          echo 'execute in minecraft:the_nether if block 0 -128 0 minecraft:bedrock run say NEVERNETHER_CI_FLOOR_BEDROCK_OK' > console.pipe
+          echo 'execute in minecraft:the_nether if block 0 383 0 minecraft:bedrock run say NEVERNETHER_CI_ROOF_BEDROCK_OK' > console.pipe
+          echo 'execute in minecraft:the_nether if block 0 384 0 minecraft:air run say NEVERNETHER_CI_ROOF_AIR_OK' > console.pipe
+          echo 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:stone' > console.pipe
+          echo 'execute in minecraft:the_nether if block 0 500 0 minecraft:stone run say NEVERNETHER_CI_ROOF_BUILD_OK' > console.pipe
+          echo 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:air' > console.pipe
+          echo 'execute in minecraft:the_nether run forceload remove 0 0' > console.pipe
+          sleep 4
+
           echo 'stop' > console.pipe
 
           for _ in $(seq 1 45); do
@@ -190,6 +203,18 @@ jobs:
             cat server.log
             exit 1
           fi
+
+          for marker in \
+            NEVERNETHER_CI_FLOOR_BEDROCK_OK \
+            NEVERNETHER_CI_ROOF_BEDROCK_OK \
+            NEVERNETHER_CI_ROOF_AIR_OK \
+            NEVERNETHER_CI_ROOF_BUILD_OK; do
+            if ! grep -q "${marker}" server.log; then
+              echo "NeverNether runtime boundary assertion failed: ${marker}"
+              cat server.log
+              exit 1
+            fi
+          done
 
           if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries" server.log; then
             echo "NeverNether datapack/registry error detected."
@@ -235,7 +260,7 @@ jobs:
           PY
 
           echo "NeverNether runtime smoke test passed."
-          tail -n 80 server.log
+          tail -n 120 server.log
 
       - name: Generate artifact checksums
         shell: bash
