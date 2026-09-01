@@ -173,8 +173,8 @@ generate_world() {
 
   # Determinism here is about world generation, not about how long an already
   # generated chunk happened to receive random block ticks while the harness
-  # waited for other chunks. Disable random ticking before touching the Nether.
-  send_console "gamerule randomTickSpeed 0"
+  # waited for other chunks. Gamerules are registry-backed namespaced IDs in 26.2.
+  send_console "execute in minecraft:the_nether run gamerule minecraft:random_tick_speed 0"
 
   local index=0
   local total="$#"
@@ -212,7 +212,7 @@ generate_world() {
     cat "${log}" >&2
     exit 1
   fi
-  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command|Unknown or incomplete command|Command exception" "${log}"; then
+  if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command|Unknown or incomplete command|Incorrect argument for command|Command exception" "${log}"; then
     echo "NeverFolia determinism world ${label} contains startup/worldgen/command errors." >&2
     cat "${log}" >&2
     exit 1
