@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FOLIA_DIR="${ROOT_DIR}/.work/Folia"
 POST_PATCH_DIR="${ROOT_DIR}/neverfolia-patches/post-apply"
+HELPER_FILE="${FOLIA_DIR}/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement.java"
 
 if [ ! -d "${FOLIA_DIR}" ]; then
   echo "[NeverFolia] Folia worktree not found: ${FOLIA_DIR}" >&2
@@ -12,6 +13,15 @@ fi
 
 echo "[NeverFolia] Applying NeverNether native placement hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-placement-hook.py" "${FOLIA_DIR}"
+
+# Minecraft 26.2 renamed ResourceKey#location() to ResourceKey#identifier().
+# Keep this explicit compatibility normalization until the transformer is promoted
+# to a conventional post-apply source patch after TEST1 stabilizes.
+sed -i 's/key\.location()/key.identifier()/g' "${HELPER_FILE}"
+if grep -q 'key\.location()' "${HELPER_FILE}"; then
+  echo "[NeverFolia] Failed to normalize ResourceKey API in placement helper" >&2
+  exit 3
+fi
 
 if ! compgen -G "${POST_PATCH_DIR}/*.patch" > /dev/null; then
   echo "[NeverFolia] No additional post-apply patch files"
