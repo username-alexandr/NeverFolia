@@ -112,6 +112,8 @@ stop_interactive() {
 # ---------------------------------------------------------------------------
 # Pass 1: first fingerprinted startup, real Nether generation and boundaries.
 # Boundary reads are performed from the saved Anvil/NBT data after shutdown.
+# The shutdown path is the authoritative flush: Folia 26.2 does not expose
+# vanilla save-all as a usable global-console command in this runtime model.
 # ---------------------------------------------------------------------------
 echo '[NeverFolia][NeverNether CI] PASS 1: initial startup and geometry'
 start_interactive 'server-first.log'
@@ -119,9 +121,10 @@ wait_ready "${TEST_DIR}/server-first.log"
 
 send_console 'execute in minecraft:the_nether run forceload add 0 0'
 sleep 8
+# Prove the technical roof zone is writable. Leave the stone in this ephemeral
+# smoke world so the post-shutdown NBT inspector can verify persistence.
 send_console 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:stone'
-send_console 'save-all'
-sleep 5
+sleep 2
 send_console 'execute in minecraft:the_nether run forceload remove 0 0'
 sleep 2
 stop_interactive
