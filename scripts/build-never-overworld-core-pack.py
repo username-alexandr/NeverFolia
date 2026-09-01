@@ -18,7 +18,6 @@ DEEP_BLEND_START_Y = -96
 DEEP_FOCUS_Y = -180
 DEEP_BOTTOM_Y = -440
 FLOOD_LEVEL = 128
-FULL_FLOOD_MIN_Y = 64
 PACK_FORMAT_MIN = [107, 1]
 PACK_FORMAT_MAX = 107
 ORE_STAGE_INDEX = 6
@@ -291,9 +290,10 @@ def build_pack(root: Path, server_jar: Path) -> None:
             "deep_bottom_y": DEEP_BOTTOM_Y,
             "terrain_mode": "VANILLA_FLOODED",
             "flood_level": FLOOD_LEVEL,
-            "full_flood_min_y": FULL_FLOOD_MIN_Y,
-            "flood_phase": "neverfolia-post-decoration-chunk-owned-v1",
-            "underground_fluid_policy": "remove-generated-water-and-lava-then-refill-ocean-connected-cavities",
+            "flood_phase": "neverfolia-light-barrier-surface-connected-chunk-owned-v3",
+            "flood_seed": "minecraft:OCEAN_FLOOR_WG-open-columns-at-y128",
+            "sealed_cavity_policy": "remain-dry-without-surface-connected-air-path",
+            "underground_fluid_policy": "remove-generated-water-and-lava-then-refill-surface-connected-air",
             "blocked_vanilla_fluid_features": sorted(BLOCKED_WORLDGEN_FLUID_FEATURES),
             "removed_fluid_feature_references": removed_fluid_features,
             "upper_generation": "vanilla-26.2-from-built-server-jar",
@@ -326,7 +326,7 @@ def build_zip(server_jar: Path, output: Path) -> None:
     print(f"  worldgen: {WORLDGEN_ID}")
     print(f"  range: Y={DIM_MIN_Y}..{DIM_MAX_Y}")
     print(f"  vanilla upper: Y>={VANILLA_MIN_Y}")
-    print(f"  flood: Y={FULL_FLOOD_MIN_Y}..{FLOOD_LEVEL} + ocean-connected cavities below")
+    print(f"  flood: surface-connected air up to Y={FLOOD_LEVEL}; sealed cavities stay dry")
     print(f"  output: {output}")
 
 
@@ -335,7 +335,7 @@ def self_test() -> None:
         raise SystemExit("NR-DEV-1 dimension contract self-test failed")
     if VANILLA_MIN_Y != -64 or DEEP_BLEND_START_Y != -96:
         raise SystemExit("NR-DEV-1 vanilla/deep transition self-test failed")
-    if FLOOD_LEVEL != 128 or FULL_FLOOD_MIN_Y != 64:
+    if FLOOD_LEVEL != 128:
         raise SystemExit("NR-DEV-1 flood contract self-test failed")
     sample = placed_ore("ore_iron", 1, -480, -96, "uniform")
     if sample["placement"][2]["height"]["min_inclusive"]["absolute"] != -480:
