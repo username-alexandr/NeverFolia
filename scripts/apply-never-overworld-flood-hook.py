@@ -61,6 +61,7 @@ def helper_source() -> str:
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
@@ -272,6 +273,7 @@ class ChunkGenerator {
         fail("SELF-TEST: flood call was not injected exactly once")
     helper = helper_source()
     for required in (
+        "import net.minecraft.world.level.ChunkPos;",
         "EXPECTED_MIN_Y = -512",
         "FLOOD_LEVEL = 128",
         "Level.OVERWORLD",
