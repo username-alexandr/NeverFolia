@@ -60,7 +60,10 @@ def main() -> None:
 
     for marker in (
         'TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")',
-        'FLOOD_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);"',
+        "NeverOverworldFlood.apply(",
+        "WorldGenContext",
+        "ChunkAccess",
+        "matching_delimiter",
         "beginning of the LIGHT chunk status",
         "public final class NeverOverworldFlood",
         "public static void apply",
@@ -81,10 +84,10 @@ def main() -> None:
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
 
-    # NR-DEV-1 must suppress the vanilla deep lava aquifer at its source. The
-    # native picker is intentionally narrower than the later flood pass: it keeps
-    # the normal upper water branch for vanilla-compatible FEATURES, but the deep
-    # branch returns AIR instead of constructing a LAVA FluidStatus.
+    # NR-DEV-1 must suppress the vanilla deep lava aquifer at its source. Validate
+    # the transformer's generated-helper contract rather than banning a diagnostic
+    # string from the Python source itself: the self-test intentionally mentions
+    # Blocks.LAVA while asserting that helper_source() does not contain it.
     for marker in (
         'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java")',
         "NeverOverworldFluidPicker.matches(settings)",
@@ -95,9 +98,10 @@ def main() -> None:
         "Math.min(-54, seaLevel)",
         "return y < deepCutoff ? emptyStatus : seaStatus",
         "Native fluid picker active: lava aquifer disabled",
+        'if "Blocks.LAVA" in helper:',
+        "native NR fluid helper must not construct lava",
     ):
         require(native_fluid, marker, "NeverOverworld native fluid picker")
-    forbid(native_fluid, "Blocks.LAVA", "NeverOverworld native fluid picker")
 
     for marker in (
         'WORLDGEN_ID = "NR-DEV-1"',
