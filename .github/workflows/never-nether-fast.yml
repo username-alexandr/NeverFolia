@@ -41,6 +41,9 @@ jobs:
       - name: Self-test canonical chunk hasher
         run: python3 ./scripts/hash-never-nether-chunks.py --self-test
 
+      - name: Self-test chunk component diff
+        run: python3 ./scripts/diff-never-nether-chunks.py --self-test
+
       - name: Self-test placement log analyzer
         shell: bash
         run: |
