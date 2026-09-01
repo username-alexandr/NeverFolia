@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 
-GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")
+TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
 
 
@@ -13,47 +12,17 @@ def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][NeverOverworld flood] {message}")
 
 
-def matching_brace(source: str, open_brace: int) -> int:
-    depth = 0
-    in_string = False
-    escaped = False
-    for index in range(open_brace, len(source)):
-        ch = source[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return index
-    fail("unterminated Java block")
-
-
-def patch_generator(source: str) -> str:
-    marker = "NeverOverworldFlood.apply(level, chunk);"
+def patch_tasks(source: str) -> str:
+    marker = "NeverOverworldFlood.apply(context.level(), chunk);"
     if marker in source:
-        fail("ChunkGenerator is already patched")
-    match = re.search(
-        r"public\s+void\s+applyBiomeDecoration\s*\(\s*final\s+WorldGenLevel\s+level\s*,\s*final\s+ChunkAccess\s+chunk\s*,\s*final\s+StructureManager\s+structureManager\s*\)\s*\{",
-        source,
-        re.DOTALL,
-    )
-    if match is None:
-        fail("ChunkGenerator.applyBiomeDecoration(...) not found")
-    method_open = source.find("{", match.start(), match.end())
-    method_close = matching_brace(source, method_open)
-    insertion = "\n      // NeverFolia: deterministic NeverRaft flooding after structures/decorations.\n      NeverOverworldFlood.apply(level, chunk);\n"
-    return source[:method_close] + insertion + source[method_close:]
+        fail("ChunkStatusTasks is already patched")
+
+    needle = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      boolean lighted = isLighted(chunk);\n"""
+    if source.count(needle) != 1:
+        fail("expected exactly one ChunkStatusTasks.light(...) insertion point")
+
+    replacement = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every\n      // neighboring chunk that can write FEATURES into this chunk has therefore\n      // finished decoration before the chunk-owned flood mutates final blocks.\n      NeverOverworldFlood.apply(context.level(), chunk);\n      boolean lighted = isLighted(chunk);\n"""
+    return source.replace(needle, replacement, 1)
 
 
 def helper_source() -> str:
@@ -69,25 +38,25 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
- * NeverRaft VANILLA_FLOODED post-decoration pass.
+ * NeverRaft VANILLA_FLOODED pass.
  *
- * <p>The pass is deliberately chunk-owned: it never reads mutable neighboring
- * chunks and never writes outside the chunk currently being decorated. That makes
- * the result independent of Folia region ownership and chunk completion order.</p>
+ * <p>The hook runs at the beginning of the LIGHT chunk status. Minecraft 26.2
+ * requires radius-1 INITIALIZE_LIGHT for LIGHT, and every INITIALIZE_LIGHT chunk
+ * has already completed FEATURES. Consequently all neighboring decoration that
+ * may write into the owning chunk is complete before the flood is applied.</p>
  *
- * <p>Flooding is surface-connected rather than a blanket Y fill. Generated
- * groundwater/lava is removed first, then only air reachable from an externally
- * open column at Y=128 is refilled. Sealed caves and enclosed structures therefore
- * remain dry even when their Y is below the flood plane.</p>
+ * <p>The pass itself is chunk-owned: it never reads mutable neighboring chunks
+ * and never writes outside the current chunk. Flooding is surface-connected rather
+ * than a blanket Y fill, so sealed caves and enclosed structures stay dry.</p>
  */
-final class NeverOverworldFlood {
+public final class NeverOverworldFlood {
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final int FLOOD_LEVEL = 128;
 
     private NeverOverworldFlood() {}
 
-    static void apply(final WorldGenLevel level, final ChunkAccess chunk) {
+    public static void apply(final WorldGenLevel level, final ChunkAccess chunk) {
         if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != EXPECTED_MIN_Y
             || level.getHeight() != EXPECTED_HEIGHT) {
@@ -103,12 +72,12 @@ final class NeverOverworldFlood {
     }
 
     /**
-     * Remove only pure generated water/lava blocks. Waterlogged structure blocks
-     * are preserved because replacing them would destroy the block itself. This
-     * runs during generation only, so later player-placed fluids are unaffected.
+     * Remove pure generated water/lava only. Waterlogged structure blocks are
+     * preserved because replacing them would destroy the block itself. This pass
+     * executes during generation, so later player-placed fluids are unaffected.
      *
      * <p>Sections without any fluid are skipped through LevelChunkSection's cached
-     * fluid count; solid deep sections therefore cost O(sections), not O(height).</p>
+     * fluid count; solid deep sections cost O(sections), not O(height).</p>
      */
     private static void removeGeneratedFluids(
         final ChunkAccess chunk,
@@ -154,15 +123,14 @@ final class NeverOverworldFlood {
     }
 
     /**
-     * Seed the flood only from columns whose motion-blocking terrain surface lies
-     * below Y=128. OCEAN_FLOOR_WG deliberately ignores fluid and is not confused by
-     * the water removed in the preceding pass. A sealed cavern under a mountain has
-     * a surface above the flood plane and therefore cannot become a seed.
+     * Seed only columns whose fluid-ignoring terrain surface lies below Y=128.
+     * OCEAN_FLOOR_WG is not confused by water removed immediately beforehand.
+     * A sealed cavern below a mountain is not a seed because its exterior terrain
+     * surface remains above the flood plane.
      *
-     * <p>BFS then follows only air inside this chunk. This floods coastlines, open
-     * valleys, ravines, cave mouths and local continuations down to the extended
-     * world floor while preserving enclosed caves/mineshafts/Trial Chambers/Ancient
-     * City spaces that have no open path to the flood surface.</p>
+     * <p>BFS follows air inside the owning chunk only. Coastlines, valleys, ravines
+     * and cave mouths connected to the flooded exterior fill with source water;
+     * enclosed caves/mineshafts/Trial Chambers/Ancient City spaces remain dry.</p>
      */
     private static void floodSurfaceConnectedAir(
         final ChunkAccess chunk,
@@ -259,18 +227,19 @@ final class NeverOverworldFlood {
 
 
 def self_test() -> None:
-    fixture = '''package net.minecraft.world.level.chunk;
-class ChunkGenerator {
-    public void applyBiomeDecoration(final WorldGenLevel level, final ChunkAccess chunk, final StructureManager structureManager) {
-        if (true) {
-            doSomething();
-        }
-    }
+    fixture = '''package net.minecraft.world.level.chunk.status;
+class ChunkStatusTasks {
+   static CompletableFuture<ChunkAccess> light(
+      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk
+   ) {
+      boolean lighted = isLighted(chunk);
+      return null;
+   }
 }
 '''
-    patched = patch_generator(fixture)
-    if patched.count("NeverOverworldFlood.apply(level, chunk);") != 1:
-        fail("SELF-TEST: flood call was not injected exactly once")
+    patched = patch_tasks(fixture)
+    if patched.count("NeverOverworldFlood.apply(context.level(), chunk);") != 1:
+        fail("SELF-TEST: flood call was not injected exactly once at LIGHT")
     helper = helper_source()
     for required in (
         "import net.minecraft.world.level.ChunkPos;",
@@ -281,20 +250,22 @@ class ChunkGenerator {
         "section.hasFluid()",
         "floodSurfaceConnectedAir",
         "chunk.setBlockState",
+        "beginning of the LIGHT chunk status",
     ):
         if required not in helper:
             fail(f"SELF-TEST: helper missing {required!r}")
     for forbidden in (
         "FULL_FLOOD_MIN_Y",
+        "applyBiomeDecoration",
         "floodChunkLocalOceanConnections",
     ):
         if forbidden in helper:
-            fail(f"SELF-TEST: obsolete blanket-flood marker remains: {forbidden!r}")
-    print("[NeverFolia][NeverOverworld flood] SURFACE-CONNECTED V2 SELF-TEST OK")
+            fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
+    print("[NeverFolia][NeverOverworld flood] LIGHT-BARRIER V3 SELF-TEST OK")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Apply deterministic NeverOverworld surface-connected flood hook")
+    parser = argparse.ArgumentParser(description="Apply deterministic NeverOverworld LIGHT-barrier flood hook")
     parser.add_argument("folia", nargs="?", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -305,15 +276,14 @@ def main() -> None:
         parser.error("folia worktree path is required unless --self-test is used")
 
     folia = args.folia.resolve()
-    generator = folia / GENERATOR_REL
+    tasks = folia / TASKS_REL
     helper = folia / HELPER_REL
-    if not generator.is_file():
-        fail(f"ChunkGenerator source not found: {generator}")
-    source = generator.read_text(encoding="utf-8")
-    generator.write_text(patch_generator(source), encoding="utf-8")
+    if not tasks.is_file():
+        fail(f"ChunkStatusTasks source not found: {tasks}")
+    tasks.write_text(patch_tasks(tasks.read_text(encoding="utf-8")), encoding="utf-8")
     helper.write_text(helper_source(), encoding="utf-8")
-    print("[NeverFolia][NeverOverworld flood] surface-connected v2 hook applied")
-    print(f"  generator: {generator}")
+    print("[NeverFolia][NeverOverworld flood] LIGHT-barrier v3 hook applied")
+    print(f"  tasks: {tasks}")
     print(f"  helper: {helper}")
 
 
