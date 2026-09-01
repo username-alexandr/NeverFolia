@@ -16,6 +16,17 @@ ROOF_BUILD_MAX_Y = DIM_MAX_Y
 LAVA_LEVEL = 32
 BEDROCK_ENVELOPE = 5
 
+# DIAGNOSTIC ONLY: #72 proved that a 3x3 FULL halo reduces but does not remove
+# the Basalt Deltas block-state race. Disable only the three generation-step-4
+# placed features so the next run can identify whether that family owns the
+# remaining cross-chunk nondeterminism. These overrides are not a production
+# content decision and must be removed/replaced after the diagnosis.
+DIAGNOSTIC_DISABLED_PLACED_FEATURES = (
+    "delta",
+    "small_basalt_columns",
+    "large_basalt_columns",
+)
+
 
 def write_json(root: Path, rel: str, value) -> None:
     path = root / rel
@@ -83,6 +94,25 @@ def biome_floor(biome: str, block: str):
     }
 
 
+def disable_placed_feature(root: Path, name: str) -> None:
+    # Preserve the vanilla configured feature reference but provide zero origins.
+    # CountPlacement accepts zero, making this a registry-native no-op without
+    # replacing the biome or the configured feature itself.
+    write_json(
+        root,
+        f"data/minecraft/worldgen/placed_feature/{name}.json",
+        {
+            "feature": f"minecraft:{name}",
+            "placement": [
+                {
+                    "type": "minecraft:count",
+                    "count": 0,
+                }
+            ],
+        },
+    )
+
+
 def build_pack(root: Path) -> None:
     assert DIM_MAX_Y == 895
     assert BODY_MAX_Y == 383
@@ -100,6 +130,9 @@ def build_pack(root: Path) -> None:
             }
         },
     )
+
+    for feature_name in DIAGNOSTIC_DISABLED_PLACED_FEATURES:
+        disable_placed_feature(root, feature_name)
 
     write_json(
         root,
@@ -325,6 +358,7 @@ def build_pack(root: Path) -> None:
             "lava_level": LAVA_LEVEL,
             "bedrock_envelope": BEDROCK_ENVELOPE,
             "upper_bedrock_anchor": BODY_MAX_Y,
+            "diagnostic_disabled_placed_features": list(DIAGNOSTIC_DISABLED_PLACED_FEATURES),
         },
     )
 
