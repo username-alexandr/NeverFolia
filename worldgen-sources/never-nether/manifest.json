@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "worldgen_id": "NN-DEV-1",
+  "minecraft": "26.2",
+  "policy": {
+    "allow_latest": false,
+    "exact_filename_required": true,
+    "record_observed_sha256_in_output": true,
+    "release_requires_all_sha256_pinned": true,
+    "third_party_archives_committed_to_repository": false
+  },
+  "sources": {
+    "amplified_nether": {
+      "version": "1.2.15",
+      "filename": "Amplified_Nether_v1.2.15.zip",
+      "role": "terrain_noise_reference",
+      "required_for_test1_structure_pack": false,
+      "sha256": null,
+      "hash_status": "pending_reverification"
+    },
+    "hearths": {
+      "version": "1.0.5",
+      "filename": "Hearths v1.0.5.dp.zip",
+      "role": "nether_biome_detail_and_structures",
+      "required_for_test1_structure_pack": true,
+      "sha256": null,
+      "hash_status": "pending_reverification"
+    },
+    "dungeons_and_taverns": {
+      "version": "5.3.2",
+      "filename": "Dungeons and Taverns v5.3.2.zip",
+      "role": "approved_nether_structures",
+      "required_for_test1_structure_pack": true,
+      "sha256": null,
+      "hash_status": "pending_reverification"
+    },
+    "explorify": {
+      "version": "1.6.5",
+      "filename": "Explorify v1.6.5.dp.zip",
+      "role": "approved_nether_structures",
+      "required_for_test1_structure_pack": true,
+      "sha256": null,
+      "hash_status": "pending_reverification"
+    },
+    "structory_towers": {
+      "version": "1.0.17",
+      "filename": "Structory_Towers_v1.0.17.zip",
+      "role": "approved_nether_towers",
+      "required_for_test1_structure_pack": true,
+      "sha256": null,
+      "hash_status": "pending_reverification"
+    },
+    "better_monuments": {
+      "version": "7",
+      "filename": "Repurposed_Structures-Better_Monuments_v7.zip",
+      "role": "nether_monument_content_source",
+      "required_for_test1_structure_pack": true,
+      "sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+      "hash_status": "pinned"
+    }
+  }
+}
