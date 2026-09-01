@@ -45,7 +45,7 @@ def patch_source(source: str) -> str:
         + indent
         + "// NeverNether: keep Basalt Columns writes inside the generating chunk.\n"
         + indent
-        + f"ChunkPos neverNetherOwner = isNeverNether(context.level()) ? new ChunkPos({origin}) : null;"
+        + f"ChunkPos neverNetherOwner = isNeverNether(context.level()) ? new ChunkPos({origin}.getX() >> 4, {origin}.getZ() >> 4) : null;"
     )
     source = source[: origin_match.start()] + owner_decl + source[origin_match.end() :]
 
@@ -190,6 +190,7 @@ class BasaltColumnsFeature {
 '''
     patched = patch_source(fixture)
     assert "ChunkPos neverNetherOwner" in patched
+    assert "new ChunkPos(origin.getX() >> 4, origin.getZ() >> 4)" in patched
     assert "int reach, ChunkPos neverNetherOwner" in patched
     assert "neverNetherOwner)" in patched
     assert "!isOwnedBy(neverNetherOwner, pos)" in patched
