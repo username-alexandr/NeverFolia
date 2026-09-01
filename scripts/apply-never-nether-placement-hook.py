@@ -120,7 +120,7 @@ final class NeverNetherStructurePlacement {{
         int vanillaStartY
     ) {{
         final String poolId = startPool.unwrapKey()
-            .map(key -> key.location().toString())
+            .map(key -> key.identifier().toString())
             .orElse("");
         final Profile profile = PROFILES.get(poolId);
         if (profile == null) {{
@@ -197,8 +197,6 @@ final class NeverNetherStructurePlacement {{
         int anchorX,
         int anchorZ
     ) {{
-        // 3x3 deterministic footprint, 24 blocks apart. A rare monument requires
-        // at least 7/9 columns to contain lava at the global sea-level band.
         int lavaColumns = 0;
         for (int dx = -24; dx <= 24; dx += 24) {{
             for (int dz = -24; dz <= 24; dz += 24) {{
@@ -264,33 +262,38 @@ final class NeverNetherStructurePlacement {{
 '''
 
 
-def patch_jigsaw(source: str) -> tuple[str, str]:
+def patch_jigsaw(source: str) -> tuple[str, str, str]:
     if "NeverNetherStructurePlacement.resolveStartY" in source:
         fail("JigsawStructure is already patched")
 
-    method_match = re.search(
-        r"findGenerationPoint\s*\(\s*(?:Structure\.)?GenerationContext\s+(\w+)\s*\)",
-        source,
-    )
-    if not method_match:
-        fail("could not locate JigsawStructure.findGenerationPoint GenerationContext parameter")
-    context_name = method_match.group(1)
-
-    # Mojang's implementation samples startHeight once before calling JigsawPlacement.
-    # Capture the whole assignment independent of local variable name and formatting.
     assignment = re.compile(
         r"(?P<indent>^[ \t]*)int\s+(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*"
         r"(?P<sample>this\.startHeight\.sample\([\s\S]*?\))\s*;",
         re.MULTILINE,
     )
     matches = list(assignment.finditer(source))
-    # Restrict to the findGenerationPoint body region to avoid future unrelated samples.
-    method_start = method_match.start()
-    method_matches = [m for m in matches if m.start() > method_start]
-    if len(method_matches) != 1:
-        fail(f"expected exactly one startHeight assignment after findGenerationPoint, got {len(method_matches)}")
+    if len(matches) != 1:
+        fail(f"expected exactly one this.startHeight.sample assignment, got {len(matches)}")
+    m = matches[0]
 
-    m = method_matches[0]
+    method_start = source.rfind("findGenerationPoint", 0, m.start())
+    if method_start < 0:
+        fail("startHeight sample is not inside findGenerationPoint")
+    header_and_prefix = source[method_start : m.start()]
+
+    context_candidates = re.findall(
+        r"(?:Structure\.)?GenerationContext\s+([A-Za-z_$][A-Za-z0-9_$]*)",
+        header_and_prefix,
+    )
+    if not context_candidates:
+        context_candidates = re.findall(
+            r"([A-Za-z_$][A-Za-z0-9_$]*)\.(?:chunkPos|chunkGenerator|heightAccessor|randomState|random)\(\)",
+            header_and_prefix + m.group("sample"),
+        )
+    if not context_candidates:
+        fail("could not infer GenerationContext local name near startHeight sample")
+    context_name = context_candidates[-1]
+
     indent = m.group("indent")
     var = m.group("var")
     sample = m.group("sample")
@@ -301,7 +304,7 @@ def patch_jigsaw(source: str) -> tuple[str, str]:
         f"{indent}    return Optional.empty();\n"
         f"{indent}}}"
     )
-    return source[: m.start()] + replacement + source[m.end() :], var
+    return source[: m.start()] + replacement + source[m.end() :], var, context_name
 
 
 def main() -> None:
@@ -315,13 +318,14 @@ def main() -> None:
 
     spec = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
     source = jigsaw.read_text(encoding="utf-8")
-    patched, variable = patch_jigsaw(source)
+    patched, variable, context_name = patch_jigsaw(source)
     jigsaw.write_text(patched, encoding="utf-8")
     helper.write_text(helper_source(spec), encoding="utf-8")
 
     print("[NeverFolia][NeverNether placement hook] applied")
     print(f"  JigsawStructure: {jigsaw}")
     print(f"  helper: {helper}")
+    print(f"  GenerationContext local: {context_name}")
     print(f"  patched local start-Y variable: {variable}")
     print("  custom profiles: 20")
 
