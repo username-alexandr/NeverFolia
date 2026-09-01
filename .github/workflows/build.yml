@@ -34,11 +34,9 @@ jobs:
           fetch-depth: 0
 
       - name: Validate NeverNether worldgen specification
-        shell: bash
         run: python3 ./scripts/validate-never-nether-spec.py
 
       - name: Self-test NeverNether structure importer
-        shell: bash
         run: python3 ./scripts/build-never-nether-structure-pack.py --self-test
 
       - name: Set up JDK 25
@@ -56,7 +54,6 @@ jobs:
           git config --global user.name "NeverFolia CI"
 
       - name: Prepare Folia 26.2.x upstream
-        shell: bash
         run: |
           chmod +x ./scripts/prepare-upstream.sh
           ./scripts/prepare-upstream.sh
@@ -66,7 +63,6 @@ jobs:
         run: ./gradlew applyAllPatches --stacktrace
 
       - name: Apply NeverFolia post patches
-        shell: bash
         run: |
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
@@ -79,24 +75,17 @@ jobs:
         run: ./gradlew :folia-server:createPaperclipJar --stacktrace
 
       - name: Collect NeverFolia JAR
-        shell: bash
         run: |
           set -euo pipefail
           source ./build.env
           mkdir -p artifacts
-
-          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' \
-            ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
-
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           if [ -z "${JAR}" ]; then
-            echo "Runnable server JAR not found."
-            find .work/Folia/folia-server/build -maxdepth 4 -type f -name '*.jar' -print || true
+            echo 'Runnable server JAR not found.'
             exit 1
           fi
-
           OUT="artifacts/NeverFolia-${NEVERFOLIA_VERSION}-${GITHUB_SHA::7}.jar"
           cp "${JAR}" "${OUT}"
-
           {
             echo "NeverFolia version: ${NEVERFOLIA_VERSION}"
             echo "Git commit: ${GITHUB_SHA}"
@@ -107,167 +96,21 @@ jobs:
             echo "End worldgen: ${WORLDGEN_END}"
           } > artifacts/BUILD-INFO.txt
 
-      - name: Build NeverNether core test datapack
-        shell: bash
+      - name: Build and fingerprint NeverNether core test datapack
         run: |
-          python3 ./scripts/build-never-nether-core-pack.py \
-            --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+          python3 ./scripts/build-never-nether-core-pack.py --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
 
-      - name: Smoke test NeverNether runtime generation
-        shell: bash
+      - name: Smoke test NeverNether runtime and fingerprint guard
         run: |
           set -euo pipefail
           JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
-
-          rm -rf smoke-test
-          mkdir -p smoke-test/world/datapacks
-          cp "${PACK}" smoke-test/world/datapacks/NeverNether-Core.zip
-
-          cat > smoke-test/eula.txt <<'EOF'
-          eula=true
-          EOF
-
-          cat > smoke-test/server.properties <<'EOF'
-          level-name=world
-          level-seed=NeverNether-CI-Test-1
-          level-type=minecraft:normal
-          initial-enabled-packs=vanilla,file/NeverNether-Core.zip
-          initial-disabled-packs=
-          online-mode=false
-          enforce-secure-profile=false
-          server-port=25575
-          view-distance=2
-          simulation-distance=2
-          spawn-protection=0
-          max-tick-time=-1
-          enable-status=false
-          EOF
-
-          cd smoke-test
-          mkfifo console.pipe
-          tail -f /dev/null > console.pipe &
-          KEEPER_PID=$!
-          java -Xms1G -Xmx2G -jar "../${JAR}" nogui < console.pipe > server.log 2>&1 &
-          SERVER_PID=$!
-
-          ready=0
-          for _ in $(seq 1 180); do
-            if grep -q 'Done (' server.log; then
-              ready=1
-              break
-            fi
-            if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-
-          if [ "${ready}" -ne 1 ]; then
-            echo "NeverFolia did not reach ready state during NeverNether smoke test."
-            cat server.log
-            kill "${SERVER_PID}" 2>/dev/null || true
-            kill "${KEEPER_PID}" 2>/dev/null || true
-            exit 1
-          fi
-
-          # Runtime geometry assertions. These inspect the actual generated dimension,
-          # not only the datapack JSON definition.
-          echo 'execute in minecraft:the_nether run forceload add 0 0' > console.pipe
-          sleep 8
-          echo 'execute in minecraft:the_nether if block 0 -128 0 minecraft:bedrock run say NEVERNETHER_CI_FLOOR_BEDROCK_OK' > console.pipe
-          echo 'execute in minecraft:the_nether if block 0 383 0 minecraft:bedrock run say NEVERNETHER_CI_ROOF_BEDROCK_OK' > console.pipe
-          echo 'execute in minecraft:the_nether if block 0 384 0 minecraft:air run say NEVERNETHER_CI_ROOF_AIR_OK' > console.pipe
-          echo 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:stone' > console.pipe
-          echo 'execute in minecraft:the_nether if block 0 500 0 minecraft:stone run say NEVERNETHER_CI_ROOF_BUILD_OK' > console.pipe
-          echo 'execute in minecraft:the_nether run setblock 0 500 0 minecraft:air' > console.pipe
-          echo 'execute in minecraft:the_nether run forceload remove 0 0' > console.pipe
-          sleep 4
-
-          echo 'stop' > console.pipe
-
-          for _ in $(seq 1 45); do
-            if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          kill "${SERVER_PID}" 2>/dev/null || true
-          kill "${KEEPER_PID}" 2>/dev/null || true
-          wait "${SERVER_PID}" 2>/dev/null || true
-
-          if ! grep -q "Selecting spawn point for level 'minecraft:the_nether'" server.log; then
-            echo "Nether spawn generation was not observed."
-            cat server.log
-            exit 1
-          fi
-
-          if ! grep -q "Saving chunks for level 'ServerLevel\[world\]'/minecraft:the_nether" server.log; then
-            echo "Nether chunk save was not observed."
-            cat server.log
-            exit 1
-          fi
-
-          for marker in \
-            NEVERNETHER_CI_FLOOR_BEDROCK_OK \
-            NEVERNETHER_CI_ROOF_BEDROCK_OK \
-            NEVERNETHER_CI_ROOF_AIR_OK \
-            NEVERNETHER_CI_ROOF_BUILD_OK; do
-            if ! grep -q "${marker}" server.log; then
-              echo "NeverNether runtime boundary assertion failed: ${marker}"
-              cat server.log
-              exit 1
-            fi
-          done
-
-          if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries" server.log; then
-            echo "NeverNether datapack/registry error detected."
-            cat server.log
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import gzip
-          from pathlib import Path
-
-          level = Path('world/level.dat')
-          if not level.is_file():
-              raise SystemExit('world/level.dat was not created')
-          with gzip.open(level, 'rb') as fh:
-              payload = fh.read()
-          if b'file/NeverNether-Core.zip' not in payload:
-              raise SystemExit('NeverNether-Core.zip is not recorded in the enabled datapack list')
-
-          candidates = (
-              Path('world/dimensions/minecraft/the_nether/region'),
-              Path('world_nether/region'),
-              Path('world_nether/DIM-1/region'),
-              Path('world/DIM-1/region'),
-          )
-          discovered = []
-          for region_dir in candidates:
-              if region_dir.is_dir():
-                  files = sorted(region_dir.glob('*.mca'))
-                  if files:
-                      discovered.append((region_dir, files))
-
-          if not discovered:
-              all_regions = sorted(Path('.').glob('**/region/*.mca'))
-              listing = '\n'.join(f'  - {path}' for path in all_regions) or '  (none)'
-              raise SystemExit(
-                  'No Nether region file was generated in any supported Paper/Folia layout.\n'
-                  f'Region files found:\n{listing}'
-              )
-
-          for region_dir, files in discovered:
-              print(f'NeverNether runtime verification: {len(files)} region file(s) in {region_dir}')
-          PY
-
-          echo "NeverNether runtime smoke test passed."
-          tail -n 120 server.log
+          chmod +x ./scripts/smoke-test-never-nether-runtime.sh
+          ./scripts/smoke-test-never-nether-runtime.sh "${JAR}" "${PACK}"
 
       - name: Generate artifact checksums
-        shell: bash
         run: |
           set -euo pipefail
           cd artifacts
