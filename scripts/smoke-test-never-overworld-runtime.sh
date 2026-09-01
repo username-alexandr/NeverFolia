@@ -134,6 +134,36 @@ if all(block == 'minecraft:air' for block in deep):
     raise SystemExit('deep geology sample at Y=-200 is entirely air')
 print('NR-DEV-1 deep sample:', sorted(set(deep)))
 
+# VANILLA_FLOODED must create water above the vanilla sea level. Sample five
+# complete horizontal planes so the assertion is not tied to one terrain column.
+flood_water = 0
+for y in (64, 80, 96, 112, 128):
+    for z in range(16):
+        for x in range(16):
+            if module.block_at(chunk, x, y, z) == 'minecraft:water':
+                flood_water += 1
+if flood_water == 0:
+    raise SystemExit('VANILLA_FLOODED produced no water in sampled Y=64..128 planes')
+print('NR-DEV-1 flood sample water blocks:', flood_water)
+
+# Generated underground lava/water sources are removed before the controlled
+# connectivity flood. The resulting deep world must still contain dry cave air.
+deep_air = 0
+deep_lava = 0
+for y in (-440, -360, -280, -200, -120, -80, -40, 0, 32, 63):
+    for z in range(0, 16, 2):
+        for x in range(0, 16, 2):
+            block = module.block_at(chunk, x, y, z)
+            if block == 'minecraft:air':
+                deep_air += 1
+            elif block == 'minecraft:lava':
+                deep_lava += 1
+if deep_air == 0:
+    raise SystemExit('no dry cave air observed below Y=64; closed caves were over-flooded')
+if deep_lava != 0:
+    raise SystemExit(f'generated underground lava remained in NR smoke sample: {deep_lava}')
+print('NR-DEV-1 dry-cave sample air blocks:', deep_air)
+
 level = world / 'level.dat'
 if not level.is_file():
     raise SystemExit('world/level.dat was not created')
@@ -141,7 +171,7 @@ with gzip.open(level,'rb') as fh:
     payload = fh.read()
 if b'file/NeverOverworld-Core.zip' not in payload:
     raise SystemExit('NeverOverworld-Core.zip is not recorded as enabled')
-print('[NeverFolia][NeverOverworld CI] runtime geometry verification OK')
+print('[NeverFolia][NeverOverworld CI] runtime geometry + flood verification OK')
 PY
 
 echo '[NeverFolia][NeverOverworld CI] smoke test passed.'
