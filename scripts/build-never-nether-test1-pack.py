@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE_BUILDER = ROOT / "scripts" / "build-never-nether-core-pack.py"
+CORE_BUILDER = ROOT / "scripts" / "build-never-nether-core-test1-pack.py"
 STRUCTURE_IMPORTER = ROOT / "scripts" / "build-never-nether-structure-pack.py"
 STRUCTURE_HARDENER = ROOT / "scripts" / "harden-never-nether-structure-pack.py"
 FINGERPRINT_TOOL = ROOT / "scripts" / "fingerprint-never-nether-pack.py"
