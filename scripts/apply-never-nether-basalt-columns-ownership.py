@@ -31,7 +31,7 @@ def patch_source(source: str) -> str:
     )
 
     origin_match = re.search(
-        r"(?P<indent>^[ \\t]*)BlockPos\\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*context\\.origin\\(\\);",
+        r"(?P<indent>^[ \t]*)BlockPos\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*context\.origin\(\);",
         source,
         re.MULTILINE,
     )
@@ -50,9 +50,9 @@ def patch_source(source: str) -> str:
     source = source[: origin_match.start()] + owner_decl + source[origin_match.end() :]
 
     call_pattern = re.compile(
-        r"this\\.placeColumn\\("
-        r"(?P<args>[^;\\n]*?config\\.reach\\(\\)\\.sample\\(random\\))"
-        r"\\)"
+        r"this\.placeColumn\("
+        r"(?P<args>[^;\n]*?config\.reach\(\)\.sample\(random\))"
+        r"\)"
     )
     call_matches = list(call_pattern.finditer(source))
     if len(call_matches) != 1:
@@ -61,12 +61,12 @@ def patch_source(source: str) -> str:
     source = source[: m.start()] + f"this.placeColumn({m.group('args')}, neverNetherOwner)" + source[m.end() :]
 
     signature_pattern = re.compile(
-        r"private\\s+boolean\\s+placeColumn\\("
-        r"LevelAccessor\\s+(?P<level>[A-Za-z_$][A-Za-z0-9_$]*)\\s*,\\s*"
-        r"int\\s+(?P<sea>[A-Za-z_$][A-Za-z0-9_$]*)\\s*,\\s*"
-        r"BlockPos\\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\\s*,\\s*"
-        r"int\\s+(?P<height>[A-Za-z_$][A-Za-z0-9_$]*)\\s*,\\s*"
-        r"int\\s+(?P<reach>[A-Za-z_$][A-Za-z0-9_$]*)\\s*\\)"
+        r"private\s+boolean\s+placeColumn\("
+        r"LevelAccessor\s+(?P<level>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
+        r"int\s+(?P<sea>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
+        r"BlockPos\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
+        r"int\s+(?P<height>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
+        r"int\s+(?P<reach>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)"
     )
     sig_matches = list(signature_pattern.finditer(source))
     if len(sig_matches) != 1:
@@ -83,7 +83,7 @@ def patch_source(source: str) -> str:
     # clipping only setBlock would still allow cross-chunk mutable reads to affect
     # the decision tree and therefore would not establish order independence.
     loop_pattern = re.compile(
-        r"(?P<indent>^[ \\t]*)(?:[A-Za-z_$][A-Za-z0-9_$]*:\\s*)?for\\s*\\(BlockPos\\s+(?P<pos>[A-Za-z_$][A-Za-z0-9_$]*)\\s*:\\s*BlockPos\\.betweenClosed\\([^\\n]+\\)\\)\\s*\\{",
+        r"(?P<indent>^[ \t]*)(?:[A-Za-z_$][A-Za-z0-9_$]*:\s*)?for\s*\(BlockPos\s+(?P<pos>[A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*BlockPos\.betweenClosed\([^\n]+\)\)\s*\{",
         re.MULTILINE,
     )
     loop_matches = list(loop_pattern.finditer(source))
