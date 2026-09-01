@@ -47,6 +47,15 @@ jobs:
       - name: Self-test NeverNether Basalt Columns ownership transformer
         run: python3 ./scripts/apply-never-nether-basalt-columns-ownership.py --self-test
 
+      - name: Self-test NeverNether NetherrackReplaceBlobs ownership transformer
+        run: python3 ./scripts/apply-never-nether-netherrack-blobs-ownership.py --self-test
+
+      - name: Self-test finalized NeverNether Core TEST1 pack
+        run: python3 ./scripts/build-never-nether-core-test1-pack.py --self-test
+
+      - name: Self-test semantic NeverNether generation hasher
+        run: python3 ./scripts/hash-never-nether-generation-chunks.py --self-test
+
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
@@ -106,7 +115,7 @@ jobs:
 
       - name: Build and fingerprint NeverNether core test datapack
         run: |
-          python3 ./scripts/build-never-nether-core-pack.py --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+          python3 ./scripts/build-never-nether-core-test1-pack.py --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
 
@@ -118,13 +127,13 @@ jobs:
           chmod +x ./scripts/smoke-test-never-nether-runtime.sh
           ./scripts/smoke-test-never-nether-runtime.sh "${JAR}" "${PACK}"
 
-      - name: Verify NeverNether chunk-order determinism
+      - name: Verify NeverNether strict chunk-order generation determinism
         run: |
           set -euo pipefail
           JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
-          chmod +x ./scripts/test-never-nether-determinism.sh
-          ./scripts/test-never-nether-determinism.sh "${JAR}" "${PACK}"
+          chmod +x ./scripts/test-never-nether-generation-determinism.sh
+          ./scripts/test-never-nether-generation-determinism.sh "${JAR}" "${PACK}"
 
       - name: Upload NeverNether determinism diagnostics
         if: always()
