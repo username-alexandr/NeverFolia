@@ -20,6 +20,20 @@ CHUNKS=(
   "44,-16"
 )
 
+# Keep the neighborhood generation order identical for every target in both
+# worlds. Only the order of the six center chunks changes between A and B.
+HALO_OFFSETS=(
+  "-1,-1"
+  "-1,0"
+  "-1,1"
+  "0,-1"
+  "0,0"
+  "0,1"
+  "1,-1"
+  "1,0"
+  "1,1"
+)
+
 ORDER_A=("${CHUNKS[@]}")
 ORDER_B=()
 for ((i=${#CHUNKS[@]}-1; i>=0; i--)); do
@@ -178,20 +192,48 @@ generate_world() {
 
   local index=0
   local total="$#"
+  local expected_forceloads=$((total * ${#HALO_OFFSETS[@]}))
   for coord in "$@"; do
     IFS=',' read -r cx cz <<< "${coord}"
-    local bx=$((cx * 16 + 8))
-    local bz=$((cz * 16 + 8))
-    local marked="Marked chunk [${cx}, ${cz}] in minecraft:the_nether to be force loaded"
-    local unmarked="Unmarked chunk [${cx}, ${cz}] in minecraft:the_nether for force loading"
     index=$((index + 1))
 
-    echo "[NeverFolia][NeverNether determinism] ${label} ${index}/${total}: chunk ${cx},${cz}"
-    send_console "execute in minecraft:the_nether run forceload add ${bx} ${bz}"
-    wait_log_literal "${log}" "${marked}" 30 "forceload add for chunk ${cx},${cz}"
-    wait_chunk_full "${log}" "${cx}" "${cz}" "${bx}" "${bz}"
-    send_console "execute in minecraft:the_nether run forceload remove ${bx} ${bz}"
-    wait_log_literal "${log}" "${unmarked}" 30 "forceload remove for chunk ${cx},${cz}"
+    echo "[NeverFolia][NeverNether determinism] ${label} ${index}/${total}: center ${cx},${cz} with 3x3 FULL halo"
+
+    local halo_coords=()
+    local offset
+    for offset in "${HALO_OFFSETS[@]}"; do
+      IFS=',' read -r dx dz <<< "${offset}"
+      local hx=$((cx + dx))
+      local hz=$((cz + dz))
+      local hbx=$((hx * 16 + 8))
+      local hbz=$((hz * 16 + 8))
+      local marked="Marked chunk [${hx}, ${hz}] in minecraft:the_nether to be force loaded"
+
+      halo_coords+=("${hx},${hz}")
+      send_console "execute in minecraft:the_nether run forceload add ${hbx} ${hbz}"
+      wait_log_literal "${log}" "${marked}" 30 "forceload add for halo chunk ${hx},${hz} around ${cx},${cz}"
+    done
+
+    # Keep the complete 3x3 neighborhood force-loaded while every member reaches
+    # FULL. This tests whether order dependence is caused by FEATURES/block writes
+    # observing neighbors in different availability states.
+    local halo_coord
+    for halo_coord in "${halo_coords[@]}"; do
+      IFS=',' read -r hx hz <<< "${halo_coord}"
+      local hbx=$((hx * 16 + 8))
+      local hbz=$((hz * 16 + 8))
+      wait_chunk_full "${log}" "${hx}" "${hz}" "${hbx}" "${hbz}"
+    done
+
+    for halo_coord in "${halo_coords[@]}"; do
+      IFS=',' read -r hx hz <<< "${halo_coord}"
+      local hbx=$((hx * 16 + 8))
+      local hbz=$((hz * 16 + 8))
+      local unmarked="Unmarked chunk [${hx}, ${hz}] in minecraft:the_nether for force loading"
+
+      send_console "execute in minecraft:the_nether run forceload remove ${hbx} ${hbz}"
+      wait_log_literal "${log}" "${unmarked}" 30 "forceload remove for halo chunk ${hx},${hz} around ${cx},${cz}"
+    done
   done
 
   # Folia 26.2 has no global save-all command. The normal stop path is the only
@@ -222,8 +264,8 @@ generate_world() {
   local unmarked_count
   marked_count="$(grep -c 'Marked chunk \[' "${log}" || true)"
   unmarked_count="$(grep -c 'Unmarked chunk \[' "${log}" || true)"
-  if [ "${marked_count}" -ne "${total}" ] || [ "${unmarked_count}" -ne "${total}" ]; then
-    echo "NeverFolia determinism world ${label} did not execute every forceload command: marked=${marked_count}/${total}, unmarked=${unmarked_count}/${total}" >&2
+  if [ "${marked_count}" -ne "${expected_forceloads}" ] || [ "${unmarked_count}" -ne "${expected_forceloads}" ]; then
+    echo "NeverFolia determinism world ${label} did not execute every halo forceload command: marked=${marked_count}/${expected_forceloads}, unmarked=${unmarked_count}/${expected_forceloads}" >&2
     cat "${log}" >&2
     exit 1
   fi
