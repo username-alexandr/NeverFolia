@@ -6,12 +6,12 @@ import sys
 from pathlib import Path
 
 REL = Path(
-    "folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/NetherrackReplaceBlobsFeature.java"
+    "folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/ReplaceBlobsFeature.java"
 )
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f"[NeverFolia][NeverNether netherrack blobs] {message}")
+    raise SystemExit(f"[NeverFolia][NeverNether replace blobs] {message}")
 
 
 def matching_brace(source: str, open_brace: int) -> int:
@@ -82,9 +82,12 @@ def split_top_level_args(text: str) -> list[str]:
 
 
 def patch_source(source: str) -> str:
-    marker = "NeverNether: keep NetherrackReplaceBlobs writes inside the generating chunk"
+    marker = "NeverNether: keep ReplaceBlobsFeature writes inside the generating chunk"
     if marker in source:
-        fail("NetherrackReplaceBlobsFeature is already patched")
+        fail("ReplaceBlobsFeature is already patched")
+
+    if "class ReplaceBlobsFeature" not in source:
+        fail("ReplaceBlobsFeature class declaration not found")
 
     place_match = re.search(
         r"\bboolean\s+place\s*\([^)]*\)\s*\{",
@@ -95,28 +98,28 @@ def patch_source(source: str) -> str:
         fail("place(...) method not found")
     method_open = source.find("{", place_match.start(), place_match.end())
     method_close = matching_brace(source, method_open)
-
     method = source[method_open + 1 : method_close]
-    origin_match = re.search(
-        r"(?P<indent>^[ \t]*)BlockPos\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*context\.origin\(\);",
+
+    level_match = re.search(
+        r"(?P<indent>^[ \t]*)WorldGenLevel\s+(?P<level>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*context\.level\(\);",
         method,
         re.MULTILINE,
     )
-    if origin_match is None:
-        fail("context.origin() assignment not found in place method")
-    origin = origin_match.group("origin")
-    indent = origin_match.group("indent")
+    if level_match is None:
+        fail("context.level() assignment not found in place method")
+    indent = level_match.group("indent")
+    level = level_match.group("level")
     owner_decl = (
-        origin_match.group(0)
+        level_match.group(0)
         + "\n"
         + indent
-        + "// NeverNether: keep NetherrackReplaceBlobs writes inside the generating chunk.\n"
+        + "// NeverNether: keep ReplaceBlobsFeature writes inside the generating chunk.\n"
         + indent
         + "net.minecraft.world.level.ChunkPos neverNetherOwner = "
-        + "isNeverNether(context.level()) ? new net.minecraft.world.level.ChunkPos("
-        + f"{origin}.getX() >> 4, {origin}.getZ() >> 4) : null;"
+        + f"isNeverNether({level}) ? new net.minecraft.world.level.ChunkPos("
+        + "context.origin().getX() >> 4, context.origin().getZ() >> 4) : null;"
     )
-    method = method[: origin_match.start()] + owner_decl + method[origin_match.end() :]
+    method = method[: level_match.start()] + owner_decl + method[level_match.end() :]
 
     call_token = "this.setBlock("
     positions: list[tuple[int, int, str]] = []
@@ -163,13 +166,13 @@ def patch_source(source: str) -> str:
     if class_close < 0:
         fail("class closing brace not found")
     helpers = '''
-    private static boolean isNeverNether(net.minecraft.world.level.WorldGenLevel level) {
-        return level.getMinY() == -128 && level.getHeight() == 1024;
-    }
+   private static boolean isNeverNether(WorldGenLevel level) {
+      return level.getMinY() == -128 && level.getHeight() == 1024;
+   }
 
-    private static boolean isOwnedBy(net.minecraft.world.level.ChunkPos owner, BlockPos pos) {
-        return (pos.getX() >> 4) == owner.x() && (pos.getZ() >> 4) == owner.z();
-    }
+   private static boolean isOwnedBy(net.minecraft.world.level.ChunkPos owner, BlockPos pos) {
+      return (pos.getX() >> 4) == owner.x() && (pos.getZ() >> 4) == owner.z();
+   }
 
 '''
     source = source[:class_close] + helpers + source[class_close:]
@@ -177,26 +180,40 @@ def patch_source(source: str) -> str:
 
 
 def self_test() -> None:
+    # Mirrors Minecraft 26.2 Mojmap structure closely enough that source-shape
+    # drift in the real class is detected before the expensive Folia build.
     fixture = '''package net.minecraft.world.level.levelgen.feature;
 import net.minecraft.core.BlockPos;
-class NetherrackReplaceBlobsFeature {
-    public boolean place(FeaturePlaceContext context) {
-        BlockPos origin = context.origin();
-        WorldGenLevel level = context.level();
-        BlockPos.MutableBlockPos mutable = origin.mutable();
-        if (level.getBlockState(mutable).is(config.targetState.getBlock())) {
-            this.setBlock(level, mutable, config.state);
-        }
-        return true;
-    }
+import net.minecraft.world.level.WorldGenLevel;
+public class ReplaceBlobsFeature extends Feature<ReplaceSphereConfiguration> {
+   @Override
+   public boolean place(final FeaturePlaceContext<ReplaceSphereConfiguration> context) {
+      ReplaceSphereConfiguration config = context.config();
+      WorldGenLevel level = context.level();
+      RandomSource random = context.random();
+      Block targetBlock = config.targetState.getBlock();
+      BlockPos centerPos = findTarget(level, context.origin().mutable(), targetBlock);
+      if (centerPos == null) {
+         return false;
+      } else {
+         for (BlockPos pos : BlockPos.withinManhattan(centerPos, 3, 3, 3)) {
+            BlockState blockState = level.getBlockState(pos);
+            if (blockState.is(targetBlock)) {
+               this.setBlock(level, pos, config.replaceState);
+            }
+         }
+         return true;
+      }
+   }
 }
 '''
     patched = patch_source(fixture)
     assert "ChunkPos neverNetherOwner" in patched
-    assert "new net.minecraft.world.level.ChunkPos(origin.getX() >> 4, origin.getZ() >> 4)" in patched
-    assert "if (neverNetherOwner == null || isOwnedBy(neverNetherOwner, mutable))" in patched
+    assert "new net.minecraft.world.level.ChunkPos(context.origin().getX() >> 4, context.origin().getZ() >> 4)" in patched
+    assert "if (neverNetherOwner == null || isOwnedBy(neverNetherOwner, pos))" in patched
     assert "level.getMinY() == -128 && level.getHeight() == 1024" in patched
-    print("[NeverFolia][NeverNether netherrack blobs] SELF-TEST OK")
+    assert patched.count("this.setBlock(") == 1
+    print("[NeverFolia][NeverNether replace blobs] SELF-TEST OK")
 
 
 def main() -> None:
@@ -208,11 +225,11 @@ def main() -> None:
     folia = Path(sys.argv[1]).resolve()
     target = folia / REL
     if not target.is_file():
-        fail(f"NetherrackReplaceBlobsFeature source not found: {target}")
+        fail(f"ReplaceBlobsFeature source not found: {target}")
     source = target.read_text(encoding="utf-8")
     patched = patch_source(source)
     target.write_text(patched, encoding="utf-8")
-    print("[NeverFolia][NeverNether netherrack blobs] chunk-ownership hook applied")
+    print("[NeverFolia][NeverNether replace blobs] chunk-ownership hook applied")
     print(f"  target: {target}")
 
 
