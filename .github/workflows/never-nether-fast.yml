@@ -1,0 +1,64 @@
+name: Validate NeverNether
+
+on:
+  push:
+    branches:
+      - develop
+      - 'feature/never-nether-worldgen'
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NeverNether fast validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout NeverFolia repository
+        uses: actions/checkout@v6
+
+      - name: Validate worldgen and placement specification
+        run: python3 ./scripts/validate-never-nether-spec.py
+
+      - name: Self-test structure importer
+        run: python3 ./scripts/build-never-nether-structure-pack.py --self-test
+
+      - name: Self-test structure safety hardener
+        run: python3 ./scripts/harden-never-nether-structure-pack.py --self-test
+
+      - name: Build and inspect NeverNether Core pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nevernether-fast
+          python3 ./scripts/build-never-nether-core-pack.py \
+            --output /tmp/nevernether-fast/NeverNether-Core.zip
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          pack = Path('/tmp/nevernether-fast/NeverNether-Core.zip')
+          with zipfile.ZipFile(pack) as zf:
+              manifest = json.loads(zf.read('nevernether-core-manifest.json'))
+              dimension = json.loads(zf.read('data/minecraft/dimension_type/the_nether.json'))
+              noise = json.loads(zf.read('data/minecraft/worldgen/noise_settings/nether.json'))
+
+          assert manifest['generated_min_y'] == -128
+          assert manifest['generated_max_y'] == 383
+          assert manifest['roof_build_min_y'] == 384
+          assert manifest['roof_build_max_y'] == 895
+          assert manifest['lava_level'] == 32
+          assert dimension['min_y'] == -128
+          assert dimension['height'] == 1024
+          assert noise['noise']['min_y'] == -128
+          assert noise['noise']['height'] == 512
+          assert noise['sea_level'] == 32
+          print('[NeverFolia][NeverNether core] FAST CHECK OK')
+          PY
