@@ -32,6 +32,7 @@ def main() -> None:
     env = text("build.env")
     builder = text("scripts/build-never-overworld-core-pack.py")
     flood = text("scripts/apply-never-overworld-flood-hook.py")
+    native_fluid = text("scripts/apply-never-overworld-fluid-picker.py")
     fingerprint = text("scripts/fingerprint-never-overworld-pack.py")
     guard = text("scripts/apply-never-overworld-fingerprint-guard.py")
     hasher = text("scripts/hash-never-overworld-generation-chunks.py")
@@ -73,10 +74,30 @@ def main() -> None:
         "chunk.setBlockState",
     ):
         require(flood, marker, "NeverOverworld flood hook")
-    # Check the actual active transformer path/call, rather than searching for old
-    # marker words that legitimately occur inside the hook's negative self-tests.
-    forbid(flood, 'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")', "NeverOverworld flood hook")
+    forbid(
+        flood,
+        'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")',
+        "NeverOverworld flood hook",
+    )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
+
+    # NR-DEV-1 must suppress the vanilla deep lava aquifer at its source. The
+    # native picker is intentionally narrower than the later flood pass: it keeps
+    # the normal upper water branch for vanilla-compatible FEATURES, but the deep
+    # branch returns AIR instead of constructing a LAVA FluidStatus.
+    for marker in (
+        'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java")',
+        "NeverOverworldFluidPicker.matches(settings)",
+        "NeverOverworldFluidPicker.create(settings)",
+        "EXPECTED_MIN_Y = -512",
+        "EXPECTED_HEIGHT = 1024",
+        "settings.defaultFluid().is(Blocks.WATER)",
+        "Math.min(-54, seaLevel)",
+        "return y < deepCutoff ? emptyStatus : seaStatus",
+        "Native fluid picker active: lava aquifer disabled",
+    ):
+        require(native_fluid, marker, "NeverOverworld native fluid picker")
+    forbid(native_fluid, "Blocks.LAVA", "NeverOverworld native fluid picker")
 
     for marker in (
         'WORLDGEN_ID = "NR-DEV-1"',
@@ -126,6 +147,7 @@ def main() -> None:
     print("[NeverFolia][NeverOverworld spec] NR-DEV-1 CONTRACT OK")
     print("  dimension: Y=-512..511 (1024)")
     print("  upper: vanilla 26.2 from Y>=-64")
+    print("  aquifer: native lava branch disabled")
     print("  flood: surface-connected to Y=128 at LIGHT barrier")
     print("  fingerprint: independent NR-DEV-1 lock")
 
