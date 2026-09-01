@@ -85,22 +85,58 @@ def patch_source(source: str) -> str:
     )
     source = source[: m.start()] + replacement + source[m.end() :]
 
-    # Guard every candidate before findSurface/findAir reads it. This is critical:
-    # clipping only setBlock would still allow cross-chunk mutable reads to affect
-    # the decision tree and therefore would not establish order independence.
-    loop_pattern = re.compile(
-        r"(?P<indent>^[ \t]*)(?:[A-Za-z_$][A-Za-z0-9_$]*:\s*)?for\s*\(BlockPos\s+(?P<pos>[A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*BlockPos\.betweenClosed\([^\n]+\)\)\s*\{",
-        re.MULTILINE,
-    )
-    loop_matches = list(loop_pattern.finditer(source))
-    if len(loop_matches) != 1:
-        fail(f"expected exactly one placeColumn betweenClosed loop, got {len(loop_matches)}")
-    m = loop_matches[0]
-    loop_indent = m.group("indent")
-    pos = m.group("pos")
-    guarded_loop = (
-        m.group(0)
-        + "\n"
+    # Guard every candidate before findSurface/findAir reads it. Paper may wrap
+    # the enhanced-for header across lines, so do not parse the complete loop with
+    # a format-sensitive regex. Locate the unique betweenClosed call, find the
+    # containing enhanced-for, balance its parentheses and inject after its `{`.
+    between_matches = list(re.finditer(r"\bBlockPos\.betweenClosed\s*\(", source))
+    if len(between_matches) != 1:
+        fail(f"expected exactly one BlockPos.betweenClosed call, got {len(between_matches)}")
+    between_start = between_matches[0].start()
+
+    for_matches = list(re.finditer(r"\bfor\s*\(", source[:between_start]))
+    if not for_matches:
+        fail("enhanced-for before BlockPos.betweenClosed not found")
+    for_match = for_matches[-1]
+    open_paren = source.find("(", for_match.start(), between_start)
+    if open_paren < 0:
+        fail("enhanced-for opening parenthesis not found")
+
+    colon = source.rfind(":", open_paren, between_start)
+    if colon < 0:
+        fail("enhanced-for colon before BlockPos.betweenClosed not found")
+    declaration = source[open_paren + 1 : colon]
+    pos_match = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*$", declaration)
+    if pos_match is None:
+        fail("enhanced-for block-position variable not found")
+    pos = pos_match.group(1)
+
+    depth = 0
+    close_paren = -1
+    for index in range(open_paren, len(source)):
+        ch = source[index]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                close_paren = index
+                break
+    if close_paren < 0:
+        fail("enhanced-for closing parenthesis not found")
+
+    brace = close_paren + 1
+    while brace < len(source) and source[brace].isspace():
+        brace += 1
+    if brace >= len(source) or source[brace] != "{":
+        fail("enhanced-for opening brace not found")
+
+    line_start = source.rfind("\n", 0, for_match.start()) + 1
+    line_prefix = source[line_start : for_match.start()]
+    indent_match = re.match(r"[ \t]*", line_prefix)
+    loop_indent = indent_match.group(0) if indent_match else ""
+    guard = (
+        "\n"
         + loop_indent
         + "    if (neverNetherOwner != null && !isOwnedBy(neverNetherOwner, "
         + pos
@@ -110,7 +146,7 @@ def patch_source(source: str) -> str:
         + loop_indent
         + "    }"
     )
-    source = source[: m.start()] + guarded_loop + source[m.end() :]
+    source = source[: brace + 1] + guard + source[brace + 1 :]
 
     helper_anchor = "    private static boolean isAirOrLavaOcean("
     idx = source.find(helper_anchor)
@@ -141,7 +177,10 @@ class BasaltColumnsFeature {
     }
     private boolean placeColumn(PatchedLevelReader level, int lavaSeaLevel, BlockPos origin,
                                 int columnHeight, int reach) {
-        block0: for (BlockPos pos : BlockPos.betweenClosed(origin.getX() - reach, origin.getY(), origin.getZ() - reach, origin.getX() + reach, origin.getY(), origin.getZ() + reach)) {
+        block0: for (BlockPos pos : BlockPos.betweenClosed(
+                origin.getX() - reach, origin.getY(), origin.getZ() - reach,
+                origin.getX() + reach, origin.getY(), origin.getZ() + reach
+        )) {
             BlockPos columnPos = null;
         }
         return false;
