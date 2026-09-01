@@ -60,22 +60,28 @@ def patch_source(source: str) -> str:
     m = call_matches[0]
     source = source[: m.start()] + f"this.placeColumn({m.group('args')}, neverNetherOwner)" + source[m.end() :]
 
+    # Paper/Folia may change the concrete first-parameter type or formatting of
+    # this private helper. Match the method structurally instead of pinning the
+    # upstream decompile signature to LevelAccessor and single-line formatting.
     signature_pattern = re.compile(
-        r"private\s+boolean\s+placeColumn\("
-        r"LevelAccessor\s+(?P<level>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
-        r"int\s+(?P<sea>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
-        r"BlockPos\s+(?P<origin>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
-        r"int\s+(?P<height>[A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*"
-        r"int\s+(?P<reach>[A-Za-z_$][A-Za-z0-9_$]*)\s*\)"
+        r"(?P<prefix>private\s+boolean\s+placeColumn\s*\()"
+        r"(?P<params>[^)]*?)"
+        r"(?P<suffix>\)\s*\{)",
+        re.DOTALL,
     )
     sig_matches = list(signature_pattern.finditer(source))
     if len(sig_matches) != 1:
         fail(f"expected exactly one placeColumn signature, got {len(sig_matches)}")
     m = sig_matches[0]
+    params = m.group("params")
+    trimmed = params.rstrip()
+    trailing = params[len(trimmed) :]
     replacement = (
-        "private boolean placeColumn("
-        f"LevelAccessor {m.group('level')}, int {m.group('sea')}, BlockPos {m.group('origin')}, "
-        f"int {m.group('height')}, int {m.group('reach')}, ChunkPos neverNetherOwner)"
+        m.group("prefix")
+        + trimmed
+        + ", ChunkPos neverNetherOwner"
+        + trailing
+        + m.group("suffix")
     )
     source = source[: m.start()] + replacement + source[m.end() :]
 
@@ -133,7 +139,8 @@ class BasaltColumnsFeature {
         this.placeColumn(level, lavaSeaLevel, pos, blocksToPlaceY, config.reach().sample(random));
         return true;
     }
-    private boolean placeColumn(LevelAccessor level, int lavaSeaLevel, BlockPos origin, int columnHeight, int reach) {
+    private boolean placeColumn(PatchedLevelReader level, int lavaSeaLevel, BlockPos origin,
+                                int columnHeight, int reach) {
         block0: for (BlockPos pos : BlockPos.betweenClosed(origin.getX() - reach, origin.getY(), origin.getZ() - reach, origin.getX() + reach, origin.getY(), origin.getZ() + reach)) {
             BlockPos columnPos = null;
         }
@@ -144,6 +151,7 @@ class BasaltColumnsFeature {
 '''
     patched = patch_source(fixture)
     assert "ChunkPos neverNetherOwner" in patched
+    assert "int reach, ChunkPos neverNetherOwner" in patched
     assert "neverNetherOwner)" in patched
     assert "!isOwnedBy(neverNetherOwner, pos)" in patched
     assert "level.getMinY() == -128 && level.getHeight() == 1024" in patched
