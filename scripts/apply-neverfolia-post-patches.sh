@@ -29,7 +29,10 @@ python3 "${ROOT_DIR}/scripts/apply-never-nether-basalt-columns-ownership.py" "${
 echo "[NeverFolia] Applying NeverNether NetherrackReplaceBlobs chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-netherrack-blobs-ownership.py" "${FOLIA_DIR}"
 
-echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED chunk-owned post-decoration hook"
+echo "[NeverFolia] Applying NeverOverworld native lava-free aquifer picker"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED LIGHT-barrier hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Adding optional NeverNether placement diagnostics"
