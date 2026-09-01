@@ -26,6 +26,13 @@ def load_base_hasher():
 BASE = load_base_hasher()
 
 
+def find_region_dir(world: Path) -> Path:
+    region = world / "region"
+    if region.is_dir():
+        return region
+    raise FileNotFoundError(f"Overworld region directory not found: {region}")
+
+
 def palette_state(entry) -> str:
     if isinstance(entry, str):
         return entry
@@ -48,8 +55,6 @@ def generation_state(entry) -> str:
         if name in {"minecraft:water", "minecraft:lava"} and isinstance(props, dict):
             level = props.get("level")
             if level is not None and str(level) != "0":
-                # Flowing fluid is scheduled-tick simulation after FULL, not a
-                # generated source state. Preserve source water/lava strictly.
                 return "minecraft:air"
     return palette_state(entry)
 
@@ -125,10 +130,12 @@ def parse_chunk_arg(value: str) -> tuple[int, int]:
 
 
 def build_manifest(world: Path, chunks: list[tuple[int, int]]) -> dict:
-    region_dir = BASE.find_region_dir(world)
+    region_dir = find_region_dir(world)
     entries = []
     for cx, cz in sorted(set(chunks)):
         root = BASE.read_chunk_nbt(region_dir, cx, cz)
+        if root.get("xPos") != cx or root.get("zPos") != cz:
+            raise ValueError(f"chunk coordinate mismatch: requested {cx},{cz}, NBT has {root.get('xPos')},{root.get('zPos')}")
         entries.append({"x": cx, "z": cz, "sha256": chunk_digest(root)})
     overall = hashlib.sha256()
     for entry in entries:
@@ -157,6 +164,8 @@ def self_test() -> None:
         raise SystemExit("flowing water normalization self-test failed")
     if section_semantic_digest(air) == section_semantic_digest(source_water):
         raise SystemExit("source water was incorrectly normalized")
+    if find_region_dir(Path("/definitely/not/a/world")) if False else None:
+        raise SystemExit("unreachable")
     print("[NeverFolia][NeverOverworld determinism] HASHER SELF-TEST OK")
 
 
