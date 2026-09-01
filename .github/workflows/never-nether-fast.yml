@@ -109,6 +109,7 @@ jobs:
               dimension = json.loads(zf.read('data/minecraft/dimension_type/the_nether.json'))
               noise = json.loads(zf.read('data/minecraft/worldgen/noise_settings/nether.json'))
               delta_pf = json.loads(zf.read('data/minecraft/worldgen/placed_feature/delta.json'))
+              basalt_blobs_pf = json.loads(zf.read('data/minecraft/worldgen/placed_feature/basalt_blobs.json'))
               root_fp = json.loads(zf.read('nevernether-worldgen-fingerprint.json'))
               resource_fp = json.loads(zf.read('data/neverfolia/nevernether/worldgen_fingerprint.json'))
 
@@ -117,7 +118,7 @@ jobs:
           assert manifest['roof_build_min_y'] == 384
           assert manifest['roof_build_max_y'] == 895
           assert manifest['lava_level'] == 32
-          assert manifest['replaced_vanilla_placed_features'] == ['delta']
+          assert manifest['replaced_vanilla_placed_features'] == ['delta', 'basalt_blobs']
           assert manifest['deterministic_delta_mode'] == 'surface_noise_threshold_3d_v1'
           assert manifest['basalt_columns_mode'] == 'vanilla_geometry_chunk_owned_v1'
           assert dimension['min_y'] == -128
@@ -126,6 +127,7 @@ jobs:
           assert noise['noise']['height'] == 512
           assert noise['sea_level'] == 32
           assert delta_pf['placement'][0] == {'type': 'minecraft:count', 'count': 0}
+          assert basalt_blobs_pf['placement'][0] == {'type': 'minecraft:count', 'count': 0}
 
           material_nodes = list(walk(noise['surface_rule']))
           assert not any(node.get('type') == 'minecraft:noise_gradient' for node in material_nodes)
