@@ -9,7 +9,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-FINGERPRINT_ENTRY = "nevernether-worldgen-fingerprint.json"
+ROOT_FINGERPRINT_ENTRY = "nevernether-worldgen-fingerprint.json"
+RESOURCE_FINGERPRINT_ENTRY = "data/neverfolia/nevernether/worldgen_fingerprint.json"
+FINGERPRINT_ENTRIES = frozenset((ROOT_FINGERPRINT_ENTRY, RESOURCE_FINGERPRINT_ENTRY))
 ALGORITHM = "sha256-path-and-content-v1"
 WORLDGEN_ID = "NN-DEV-1"
 
@@ -38,7 +40,7 @@ def read_entries(path: Path) -> dict[str, bytes]:
 def content_digest(entries: dict[str, bytes]) -> str:
     digest = hashlib.sha256()
     for name in sorted(entries):
-        if name == FINGERPRINT_ENTRY:
+        if name in FINGERPRINT_ENTRIES:
             continue
         name_bytes = name.encode("utf-8")
         payload = entries[name]
@@ -56,7 +58,7 @@ def fingerprint_document(entries: dict[str, bytes]) -> dict:
         "algorithm": ALGORITHM,
         "content_sha256": content_digest(entries),
         "entry_count_excluding_fingerprint": sum(
-            1 for name in entries if name != FINGERPRINT_ENTRY
+            1 for name in entries if name not in FINGERPRINT_ENTRIES
         ),
     }
 
@@ -77,11 +79,12 @@ def write_zip(path: Path, entries: dict[str, bytes]) -> None:
 
 def inject(path: Path) -> dict:
     entries = read_entries(path)
-    entries.pop(FINGERPRINT_ENTRY, None)
+    for name in FINGERPRINT_ENTRIES:
+        entries.pop(name, None)
     document = fingerprint_document(entries)
-    entries[FINGERPRINT_ENTRY] = (
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n"
-    ).encode("utf-8")
+    encoded = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    entries[ROOT_FINGERPRINT_ENTRY] = encoded
+    entries[RESOURCE_FINGERPRINT_ENTRY] = encoded
     write_zip(path, entries)
     verify(path)
     print("[NeverFolia][NeverNether fingerprint] INJECT OK")
@@ -92,11 +95,16 @@ def inject(path: Path) -> dict:
 
 def verify(path: Path) -> dict:
     entries = read_entries(path)
-    raw = entries.get(FINGERPRINT_ENTRY)
-    if raw is None:
-        fail(f"{FINGERPRINT_ENTRY} is missing")
+    root_raw = entries.get(ROOT_FINGERPRINT_ENTRY)
+    resource_raw = entries.get(RESOURCE_FINGERPRINT_ENTRY)
+    if root_raw is None:
+        fail(f"{ROOT_FINGERPRINT_ENTRY} is missing")
+    if resource_raw is None:
+        fail(f"{RESOURCE_FINGERPRINT_ENTRY} is missing")
+    if root_raw != resource_raw:
+        fail("root and datapack-resource fingerprints differ")
     try:
-        document = json.loads(raw.decode("utf-8"))
+        document = json.loads(root_raw.decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         fail(f"invalid fingerprint JSON: {exc}")
 
@@ -110,7 +118,7 @@ def verify(path: Path) -> dict:
     if actual != expected:
         fail(f"content fingerprint mismatch: expected {expected}, got {actual}")
 
-    expected_count = sum(1 for name in entries if name != FINGERPRINT_ENTRY)
+    expected_count = sum(1 for name in entries if name not in FINGERPRINT_ENTRIES)
     if document.get("entry_count_excluding_fingerprint") != expected_count:
         fail("entry count mismatch")
 
@@ -133,6 +141,10 @@ def self_test() -> None:
         if first != second:
             fail("SELF-TEST: injected and verified digests differ")
 
+        entries = read_entries(pack)
+        if entries[ROOT_FINGERPRINT_ENTRY] != entries[RESOURCE_FINGERPRINT_ENTRY]:
+            fail("SELF-TEST: dual fingerprint entries differ")
+
         # Repack identical content in reverse order. ZIP metadata/order may differ,
         # but the canonical content fingerprint must remain stable.
         repacked = tmp / "repacked.zip"
@@ -143,7 +155,7 @@ def self_test() -> None:
         if repacked_digest != first:
             fail("SELF-TEST: fingerprint depends on ZIP order/compression")
 
-        # Any payload mutation must be detected.
+        # Any payload mutation must be detected even if the embedded document is left untouched.
         entries = read_entries(pack)
         entries["a.txt"] = b"changed"
         write_zip(pack, entries)

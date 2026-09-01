@@ -26,6 +26,9 @@ fi
 echo "[NeverFolia] Adding optional NeverNether placement diagnostics"
 python3 "${ROOT_DIR}/scripts/instrument-never-nether-placement-debug.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverNether startup fingerprint guard"
+python3 "${ROOT_DIR}/scripts/apply-never-nether-fingerprint-guard.py" "${FOLIA_DIR}"
+
 if ! compgen -G "${POST_PATCH_DIR}/*.patch" > /dev/null; then
   echo "[NeverFolia] No additional post-apply patch files"
   exit 0

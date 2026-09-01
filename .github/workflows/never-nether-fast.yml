@@ -35,6 +35,9 @@ jobs:
       - name: Self-test TEST1 source lock and pack pipeline
         run: python3 ./scripts/build-never-nether-test1-pack.py --self-test
 
+      - name: Self-test startup fingerprint guard transformer
+        run: python3 ./scripts/apply-never-nether-fingerprint-guard.py --self-test
+
       - name: Self-test placement log analyzer
         shell: bash
         run: |
@@ -67,13 +70,16 @@ jobs:
           print('[NeverFolia][NeverNether placement analyzer] SELF-TEST OK')
           PY
 
-      - name: Build and inspect NeverNether Core pack
+      - name: Build, fingerprint and inspect NeverNether Core pack
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/nevernether-fast
           python3 ./scripts/build-never-nether-core-pack.py \
             --output /tmp/nevernether-fast/NeverNether-Core.zip
+          python3 ./scripts/fingerprint-never-nether-pack.py \
+            --input /tmp/nevernether-fast/NeverNether-Core.zip \
+            --inject
           python3 - <<'PY'
           import json
           import zipfile
@@ -84,6 +90,8 @@ jobs:
               manifest = json.loads(zf.read('nevernether-core-manifest.json'))
               dimension = json.loads(zf.read('data/minecraft/dimension_type/the_nether.json'))
               noise = json.loads(zf.read('data/minecraft/worldgen/noise_settings/nether.json'))
+              root_fp = json.loads(zf.read('nevernether-worldgen-fingerprint.json'))
+              resource_fp = json.loads(zf.read('data/neverfolia/nevernether/worldgen_fingerprint.json'))
 
           assert manifest['generated_min_y'] == -128
           assert manifest['generated_max_y'] == 383
@@ -95,5 +103,8 @@ jobs:
           assert noise['noise']['min_y'] == -128
           assert noise['noise']['height'] == 512
           assert noise['sea_level'] == 32
+          assert root_fp == resource_fp
+          assert root_fp['worldgen_id'] == 'NN-DEV-1'
+          assert root_fp['algorithm'] == 'sha256-path-and-content-v1'
           print('[NeverFolia][NeverNether core] FAST CHECK OK')
           PY
