@@ -12,6 +12,7 @@ PACK="$(realpath "$2")"
 TEST_DIR="${ROOT_DIR}/overworld-smoke-test"
 WORLD_DIR="${TEST_DIR}/world"
 DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
+NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
 
 rm -rf "${TEST_DIR}"
 mkdir -p "${WORLD_DIR}/datapacks"
@@ -79,6 +80,7 @@ wait_literal() {
 
 start_server
 wait_ready
+wait_literal "${NATIVE_FLUID_MARKER}" 15
 send_console 'execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0'
 wait_literal 'Gamerule random_tick_speed is now set to: 0' 15
 send_console 'execute in minecraft:overworld run forceload add 0 0'
@@ -97,6 +99,11 @@ done
 cleanup_server
 
 LOG="${TEST_DIR}/server.log"
+if ! grep -Fq -- "${NATIVE_FLUID_MARKER}" "${LOG}"; then
+  echo 'NeverOverworld native fluid picker did not activate.' >&2
+  cat "${LOG}" >&2
+  exit 1
+fi
 if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|NullPointerException|An unexpected error occurred while trying to execute that command|Unknown or incomplete command|Incorrect argument for command|Command exception" "${LOG}"; then
   echo 'NeverOverworld runtime/command error detected.' >&2
   cat "${LOG}" >&2
@@ -168,7 +175,7 @@ with gzip.open(level,'rb') as fh:
     payload = fh.read()
 if b'file/NeverOverworld-Core.zip' not in payload:
     raise SystemExit('NeverOverworld-Core.zip is not recorded as enabled')
-print('[NeverFolia][NeverOverworld CI] runtime geometry + flood verification OK')
+print('[NeverFolia][NeverOverworld CI] native aquifer + runtime geometry + flood verification OK')
 PY
 
 echo '[NeverFolia][NeverOverworld CI] smoke test passed.'
