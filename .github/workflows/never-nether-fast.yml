@@ -32,6 +32,38 @@ jobs:
       - name: Self-test structure safety hardener
         run: python3 ./scripts/harden-never-nether-structure-pack.py --self-test
 
+      - name: Self-test placement log analyzer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nevernether-fast
+          cat > /tmp/nevernether-fast/placement.log <<'EOF'
+          [NeverNetherPlacement] pool=neverfolia:never_nether/start/nova_structures__nether_keep profile=main_surface mode=CAVERN_FLOOR chunk=10,-4 result=144 reason=preferred_band
+          [NeverNetherPlacement] pool=neverfolia:never_nether/start/nova_structures__nether_keep profile=main_surface mode=CAVERN_FLOOR chunk=20,-4 result=REJECT reason=no_cavern_floor
+          [NeverNetherPlacement] pool=neverfolia:never_nether/start/repurposed_structures__monument_nether profile=lava_sea_landmark mode=LAVA_BASIN chunk=40,40 result=REJECT reason=lava_basin_too_small
+          [NeverNetherPlacement] pool=neverfolia:never_nether/start/repurposed_structures__monument_nether profile=lava_sea_landmark mode=LAVA_BASIN chunk=80,80 result=18 reason=lava_basin_floor
+          EOF
+          python3 ./scripts/analyze-never-nether-placement-log.py \
+            /tmp/nevernether-fast/placement.log \
+            --json \
+            --output /tmp/nevernether-fast/placement-summary.json \
+            > /tmp/nevernether-fast/placement-stdout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path('/tmp/nevernether-fast/placement-summary.json').read_text())
+          assert summary['decisions'] == 4
+          assert summary['accepted'] == 2
+          assert summary['rejected'] == 2
+          assert summary['accept_rate'] == 0.5
+          assert summary['rejection_reasons']['lava_basin_too_small'] == 1
+          assert summary['rejection_reasons']['no_cavern_floor'] == 1
+          assert summary['by_structure']['nova_structures:nether_keep']['accepted_y_median'] == 144
+          assert summary['by_structure']['repurposed_structures:monument_nether']['accepted_y_median'] == 18
+          print('[NeverFolia][NeverNether placement analyzer] SELF-TEST OK')
+          PY
+
       - name: Build and inspect NeverNether Core pack
         shell: bash
         run: |
