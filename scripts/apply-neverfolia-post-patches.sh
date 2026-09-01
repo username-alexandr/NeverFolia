@@ -23,6 +23,9 @@ if grep -q 'key\.location()' "${HELPER_FILE}"; then
   exit 3
 fi
 
+echo "[NeverFolia] Applying NeverNether Basalt Columns chunk ownership hook"
+python3 "${ROOT_DIR}/scripts/apply-never-nether-basalt-columns-ownership.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Adding optional NeverNether placement diagnostics"
 python3 "${ROOT_DIR}/scripts/instrument-never-nether-placement-debug.py" "${FOLIA_DIR}"
 
