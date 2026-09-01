@@ -17,9 +17,20 @@ VANILLA_MIN_Y = -64
 DEEP_BLEND_START_Y = -96
 DEEP_FOCUS_Y = -180
 DEEP_BOTTOM_Y = -440
+FLOOD_LEVEL = 128
+FULL_FLOOD_MIN_Y = 64
 PACK_FORMAT_MIN = [107, 1]
 PACK_FORMAT_MAX = 107
 ORE_STAGE_INDEX = 6
+BLOCKED_WORLDGEN_FLUID_FEATURES = frozenset(
+    {
+        "minecraft:lake_lava_underground",
+        "minecraft:lake_lava_surface",
+        "minecraft:spring_water",
+        "minecraft:spring_lava",
+        "minecraft:spring_lava_frozen",
+    }
+)
 
 
 def write_json(root: Path, rel: str, value) -> None:
@@ -89,6 +100,24 @@ def placed_ore(feature: str, count: int, min_y: int, max_y: int, distribution: s
     }
 
 
+def strip_generated_fluid_features(biome: dict) -> int:
+    features = biome.get("features")
+    if not isinstance(features, list):
+        return 0
+    removed = 0
+    for stage in features:
+        if not isinstance(stage, list):
+            continue
+        kept = []
+        for entry in stage:
+            if isinstance(entry, str) and entry in BLOCKED_WORLDGEN_FLUID_FEATURES:
+                removed += 1
+            else:
+                kept.append(entry)
+        stage[:] = kept
+    return removed
+
+
 def inner_server_jar(server_jar: Path) -> zipfile.ZipFile:
     with zipfile.ZipFile(server_jar) as outer:
         candidates = [
@@ -148,9 +177,8 @@ def build_pack(root: Path, server_jar: Path) -> None:
         )
 
     # Preserve the complete vanilla 26.2 Overworld above its old floor and only
-    # widen the legal dimension/noise interval. This file is extracted from the
-    # exact built NeverFolia server JAR, so the pack cannot silently drift from
-    # the server's registry schema.
+    # widen the legal dimension/noise interval. These vanilla inputs are extracted
+    # from the exact NeverFolia server JAR used for the test/build.
     dimension_type["min_y"] = DIM_MIN_Y
     dimension_type["height"] = DIM_HEIGHT
     dimension_type["logical_height"] = DIM_HEIGHT
@@ -196,7 +224,7 @@ def build_pack(root: Path, server_jar: Path) -> None:
     }
 
     # Extra placements are strictly below the vanilla range. Existing vanilla
-    # ore distributions at Y>=-64 therefore remain byte-for-byte unchanged.
+    # ore distributions at Y>=-64 therefore remain unchanged.
     deep_features = {
         "deep_ore_iron": placed_ore("ore_iron", 14, -480, -96, "trapezoid"),
         "deep_ore_gold": placed_ore("ore_gold", 5, -420, -96, "uniform"),
@@ -208,13 +236,18 @@ def build_pack(root: Path, server_jar: Path) -> None:
     }
     deep_feature_ids = [f"neverfolia:{name}" for name in deep_features]
 
+    removed_fluid_features = 0
     for name, biome in biomes.items():
+        removed_fluid_features += strip_generated_fluid_features(biome)
         stages = biome.get("features")
         if not isinstance(stages, list) or len(stages) <= ORE_STAGE_INDEX:
             raise SystemExit(f"Overworld biome {name!r} has no ore feature stage {ORE_STAGE_INDEX}")
         if not isinstance(stages[ORE_STAGE_INDEX], list):
             raise SystemExit(f"Overworld biome {name!r} ore feature stage is not a list")
         stages[ORE_STAGE_INDEX].extend(deep_feature_ids)
+
+    if removed_fluid_features == 0:
+        raise SystemExit("NR-DEV-1 expected vanilla generated-fluid features but removed none")
 
     write_json(
         root,
@@ -256,6 +289,13 @@ def build_pack(root: Path, server_jar: Path) -> None:
             "deep_blend_start_y": DEEP_BLEND_START_Y,
             "deep_focus_y": DEEP_FOCUS_Y,
             "deep_bottom_y": DEEP_BOTTOM_Y,
+            "terrain_mode": "VANILLA_FLOODED",
+            "flood_level": FLOOD_LEVEL,
+            "full_flood_min_y": FULL_FLOOD_MIN_Y,
+            "flood_phase": "neverfolia-post-decoration-chunk-owned-v1",
+            "underground_fluid_policy": "remove-generated-water-and-lava-then-refill-ocean-connected-cavities",
+            "blocked_vanilla_fluid_features": sorted(BLOCKED_WORLDGEN_FLUID_FEATURES),
+            "removed_fluid_feature_references": removed_fluid_features,
             "upper_generation": "vanilla-26.2-from-built-server-jar",
             "deep_generation": "neverfolia-density-v1",
             "deep_biomes": [
@@ -286,6 +326,7 @@ def build_zip(server_jar: Path, output: Path) -> None:
     print(f"  worldgen: {WORLDGEN_ID}")
     print(f"  range: Y={DIM_MIN_Y}..{DIM_MAX_Y}")
     print(f"  vanilla upper: Y>={VANILLA_MIN_Y}")
+    print(f"  flood: Y={FULL_FLOOD_MIN_Y}..{FLOOD_LEVEL} + ocean-connected cavities below")
     print(f"  output: {output}")
 
 
@@ -294,12 +335,27 @@ def self_test() -> None:
         raise SystemExit("NR-DEV-1 dimension contract self-test failed")
     if VANILLA_MIN_Y != -64 or DEEP_BLEND_START_Y != -96:
         raise SystemExit("NR-DEV-1 vanilla/deep transition self-test failed")
+    if FLOOD_LEVEL != 128 or FULL_FLOOD_MIN_Y != 64:
+        raise SystemExit("NR-DEV-1 flood contract self-test failed")
     sample = placed_ore("ore_iron", 1, -480, -96, "uniform")
     if sample["placement"][2]["height"]["min_inclusive"]["absolute"] != -480:
         raise SystemExit("NR-DEV-1 placed ore self-test failed")
     density = choice("minecraft:y", -512, -64, 1.0, 0.0)
     if density["type"] != "minecraft:range_choice" or density["input"] != "minecraft:y":
         raise SystemExit("NR-DEV-1 density self-test failed")
+    synthetic = {
+        "features": [
+            ["minecraft:lake_lava_surface", "minecraft:other"],
+            [], [], [], [], [], [], [],
+            ["minecraft:spring_water", "minecraft:spring_lava", "minecraft:other2"],
+        ]
+    }
+    removed = strip_generated_fluid_features(synthetic)
+    if removed != 3:
+        raise SystemExit(f"NR-DEV-1 generated-fluid stripping self-test failed: {removed}")
+    flattened = [item for stage in synthetic["features"] for item in stage]
+    if any(item in BLOCKED_WORLDGEN_FLUID_FEATURES for item in flattened):
+        raise SystemExit("NR-DEV-1 generated-fluid stripping left blocked feature")
     print("[NeverFolia][NeverOverworld] CORE BUILDER SELF-TEST OK")
 
 
