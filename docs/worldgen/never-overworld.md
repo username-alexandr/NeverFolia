@@ -49,24 +49,51 @@ order in which neighboring chunks reach worldgen stages.
 
 Additional ore placements exist only below the old vanilla range. Vanilla ore
 placement at and above `Y=-64` is not intentionally replaced by NR-DEV-1.
-Current deep placements include iron, gold, redstone, lapis, diamond, copper and
-tuff distributions.
+Current TEST1 deep placements include iron, gold, redstone, lapis, diamond,
+copper and tuff distributions.
+
+These count/height placed features are transitional. The production architecture
+is a NeverFolia-owned geological province/vein model based on world seed and
+absolute coordinates, so multi-chunk deposits can be reproduced independently in
+each owning chunk without reading neighboring mutable chunk state.
 
 The normal Overworld biome registry remains available, including cave biomes such
 as lush caves, dripstone caves, deep dark and sulfur caves where present in the
 exact bundled vanilla 26.2 resources.
 
+## Native aquifer policy
+
+NR-DEV-1 does not accept the vanilla Overworld deep lava aquifer rule.
+`NoiseBasedChunkGenerator.createFluidPicker()` is patched by NeverFolia for the
+extended Overworld contract:
+
+- activation requires noise `minY=-512`, noise `height=1024` and water as the
+  default fluid;
+- the normal upper water branch remains available during vanilla-compatible
+  FEATURES generation;
+- the vanilla branch that would return lava below `min(-54, seaLevel)` returns an
+  AIR `FluidStatus` instead;
+- the native NR helper must not construct or reference `Blocks.LAVA`.
+
+This is intentionally the first native fluid milestone. It removes lava at the
+source rather than generating it and deleting it later. The later flood pass still
+normalizes generated water connectivity while the remaining water policy is moved
+into native NeverFolia code incrementally.
+
 ## VANILLA_FLOODED contract
 
-The flood is a NeverFolia post-decoration operation. It runs after vanilla
-structures and biome decoration for the owning chunk.
+The controlled flood runs at the beginning of the `LIGHT` chunk status. Minecraft
+26.2 requires radius-1 `INITIALIZE_LIGHT` dependencies for `LIGHT`; every neighbor
+that can write `FEATURES` blocks into the owning chunk has therefore completed
+FEATURES before the flood mutates the final block state.
 
 Required behavior:
 
 1. The target water surface is `Y=128`.
 2. Existing solid terrain and generated structure blocks are preserved.
-3. Generated standalone underground water and lava are removed before the
-   controlled flood pass.
+3. Remaining generated standalone water/lava is scrubbed as a safety layer before
+   the controlled flood pass. The long-term target is for lava scrub to become a
+   diagnostic assertion after all lava-producing generation paths are native-disabled.
 4. Vanilla generated-fluid features that would reintroduce uncontrolled lakes or
    springs are removed from the NR Core biome feature lists.
 5. Only air connected to an externally open flooded surface is filled with source
@@ -77,9 +104,21 @@ Required behavior:
 7. Player-placed fluids are not part of this generation pass and must not be
    modified after chunk generation.
 
-NR-DEV-1 currently seeds the chunk-local flood using `OCEAN_FLOOR_WG` columns
-whose terrain surface is below the flood plane, then performs a six-direction BFS
-through air cells in the owning chunk.
+NR-DEV-1 seeds the chunk-local flood using `OCEAN_FLOOR_WG` columns whose terrain
+surface is below the flood plane, then performs a six-direction BFS through air
+cells in the owning chunk.
+
+## Vanilla structures and future NeverRaft structures
+
+Vanilla structure registries and structure-start stages are not replaced by the
+current NR Core. Vanilla villages, mineshafts, strongholds, Trial Chambers,
+Ancient Cities and other normal Overworld structures therefore keep their vanilla
+26.2 generator/placement behavior unless a later NR patch explicitly overrides a
+specific structure.
+
+Production NR architecture will add NeverRaft-owned structure sets and placement
+policies for deep mineshafts, Trial Chambers and NeverLand dungeons while keeping
+placement deterministic from seed + absolute coordinates.
 
 ## Folia ownership and determinism
 
@@ -119,11 +158,12 @@ A combined NeverFolia TEST build is acceptable only when the exact same JAR pass
 2. NeverOverworld Core build from that JAR's vanilla resources.
 3. NeverOverworld registry/runtime smoke.
 4. Extended-height persistence checks at both high and deep Y.
-5. Flood presence below the new Y=128 surface.
-6. Presence of dry underground cave air after the flood pass.
-7. Absence of uncontrolled generated underground lava in the smoke sample.
-8. Strict NeverOverworld forward-vs-reverse chunk-order semantic hashing.
-9. NeverOverworld fingerprint create/verify/mismatch rejection.
+5. Native NR fluid picker activation and absence of the vanilla lava-aquifer branch.
+6. Flood presence below the new Y=128 surface.
+7. Presence of dry underground cave air after the flood pass.
+8. Absence of uncontrolled generated underground lava in the smoke sample.
+9. Strict NeverOverworld forward-vs-reverse chunk-order semantic hashing.
+10. NeverOverworld fingerprint create/verify/mismatch rejection.
 
 The final test artifact must contain one NeverFolia JAR together with independently
 versioned NeverOverworld and NeverNether Core packs and SHA-256 checksums.
