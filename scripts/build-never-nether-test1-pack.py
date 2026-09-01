@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE_BUILDER = ROOT / "scripts" / "build-never-nether-core-pack.py"
 STRUCTURE_IMPORTER = ROOT / "scripts" / "build-never-nether-structure-pack.py"
 STRUCTURE_HARDENER = ROOT / "scripts" / "harden-never-nether-structure-pack.py"
+FINGERPRINT_TOOL = ROOT / "scripts" / "fingerprint-never-nether-pack.py"
 SOURCE_MANIFEST = ROOT / "worldgen-sources" / "never-nether" / "manifest.json"
 
 SOURCE_KEYS = (
@@ -145,6 +146,7 @@ def build(
         run(STRUCTURE_HARDENER, "--input", imported, "--output", output)
 
     inject_source_lock(output, observed_sources)
+    run(FINGERPRINT_TOOL, "--input", output, "--inject")
 
     digest = sha256(output)
     checksum_path = output.with_suffix(output.suffix + ".sha256")
@@ -173,6 +175,7 @@ def self_test() -> None:
 
     run(STRUCTURE_IMPORTER, "--self-test")
     run(STRUCTURE_HARDENER, "--self-test")
+    run(FINGERPRINT_TOOL, "--self-test")
     with tempfile.TemporaryDirectory(prefix="nevernether-test1-core-") as tmp_raw:
         core = Path(tmp_raw) / "core.zip"
         run(CORE_BUILDER, "--output", core)
