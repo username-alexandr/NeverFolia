@@ -6,6 +6,7 @@ from pathlib import Path
 
 TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
+FLOOD_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);"
 
 
 def fail(message: str) -> None:
@@ -13,15 +14,14 @@ def fail(message: str) -> None:
 
 
 def patch_tasks(source: str) -> str:
-    marker = "NeverOverworldFlood.apply(context.level(), chunk);"
-    if marker in source:
+    if FLOOD_CALL in source:
         fail("ChunkStatusTasks is already patched")
 
     needle = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      boolean lighted = isLighted(chunk);\n"""
     if source.count(needle) != 1:
         fail("expected exactly one ChunkStatusTasks.light(...) insertion point")
 
-    replacement = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every\n      // neighboring chunk that can write FEATURES into this chunk has therefore\n      // finished decoration before the chunk-owned flood mutates final blocks.\n      NeverOverworldFlood.apply(context.level(), chunk);\n      boolean lighted = isLighted(chunk);\n"""
+    replacement = """   static CompletableFuture<ChunkAccess> light(\n      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk\n   ) {\n      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every\n      // neighboring chunk that can write FEATURES into this chunk has therefore\n      // finished decoration before the chunk-owned flood mutates final blocks.\n      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);\n      boolean lighted = isLighted(chunk);\n"""
     return source.replace(needle, replacement, 1)
 
 
@@ -238,11 +238,13 @@ class ChunkStatusTasks {
 }
 '''
     patched = patch_tasks(fixture)
-    if patched.count("NeverOverworldFlood.apply(context.level(), chunk);") != 1:
-        fail("SELF-TEST: flood call was not injected exactly once at LIGHT")
+    if patched.count(FLOOD_CALL) != 1:
+        fail("SELF-TEST: qualified flood call was not injected exactly once at LIGHT")
     helper = helper_source()
     for required in (
         "import net.minecraft.world.level.ChunkPos;",
+        "public final class NeverOverworldFlood",
+        "public static void apply",
         "EXPECTED_MIN_Y = -512",
         "FLOOD_LEVEL = 128",
         "Level.OVERWORLD",
