@@ -38,6 +38,9 @@ jobs:
       - name: Validate NeverNether worldgen specification
         run: python3 ./scripts/validate-never-nether-spec.py
 
+      - name: Validate NeverOverworld worldgen specification
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
       - name: Self-test NeverNether structure importer
         run: python3 ./scripts/build-never-nether-structure-pack.py --self-test
 
@@ -126,6 +129,7 @@ jobs:
             echo "Overworld test core: NR-DEV-1-core-test1"
             echo "Overworld mode: VANILLA_FLOODED"
             echo "Overworld flood level: Y=128"
+            echo "Overworld flood phase: LIGHT barrier / surface-connected / chunk-owned v3"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
             echo "Nether test core: NN-DEV-1-core-test1"
             echo "End worldgen: ${WORLDGEN_END}"
@@ -162,6 +166,14 @@ jobs:
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
           chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
           ./scripts/smoke-test-never-overworld-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Smoke test NeverOverworld fingerprint guard
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-fingerprint.sh
+          ./scripts/smoke-test-never-overworld-fingerprint.sh "${JAR}" "${PACK}"
 
       - name: Verify NeverNether strict chunk-order generation determinism
         run: |
