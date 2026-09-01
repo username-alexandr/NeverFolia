@@ -18,8 +18,9 @@ BEDROCK_ENVELOPE = 5
 
 # Vanilla DeltaFeature + count_on_every_layer reads mutable decorated block
 # states across chunk boundaries. Under Folia that makes Basalt Deltas depend on
-# generation order. NeverNether replaces only minecraft:delta with a deterministic
-# 3D surface-noise rule; both vanilla basalt-column features stay enabled.
+# generation order. NeverNether replaces minecraft:delta with a deterministic
+# 3D surface-noise rule. Basalt columns remain enabled but are made chunk-owned
+# by the NeverFolia post-apply source hook.
 REPLACED_VANILLA_PLACED_FEATURES = (
     "delta",
 )
@@ -91,55 +92,95 @@ def biome_floor(biome: str, block: str):
     }
 
 
+def noise_threshold_3d(noise_id: str, min_threshold: float, max_threshold: float):
+    # Minecraft 26.2's registered noise_threshold material condition exposes
+    # is_3d=true. Unlike FEATURES placement it samples RandomState only and never
+    # reads already-decorated neighbour chunks, so the result is order-independent.
+    return {
+        "type": "minecraft:noise_threshold",
+        "noise": noise_id,
+        "min_threshold": min_threshold,
+        "max_threshold": max_threshold,
+        "is_3d": True,
+    }
+
+
 def basalt_delta_floor():
-    # Minecraft 26.2 noise_gradient samples X/Y/Z, so each cavern level receives
-    # independent coherent patches instead of vertically repeated 2D bands.
-    # Null gradient entries fall through to blackstone; the magma band surrounds
-    # the higher-noise lava core. Threshold density is provisional TEST1 tuning.
-    delta_gradient = [
-        {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-        {"state": {"Name": "minecraft:magma_block"}},
-        {"state": {"Name": "minecraft:magma_block"}},
-        {"state": {"Name": "minecraft:lava", "Properties": {"level": "0"}}},
-        {"state": {"Name": "minecraft:lava", "Properties": {"level": "0"}}},
-        {"state": {"Name": "minecraft:lava", "Properties": {"level": "0"}}},
-        {"state": {"Name": "minecraft:lava", "Properties": {"level": "0"}}},
-        {"state": {"Name": "minecraft:lava", "Properties": {"level": "0"}}},
-    ]
+    # Provisional TEST1 tuning. The same 3D scalar field creates a high-noise lava
+    # core and a lower-noise magma rim. Only the top floor block can become
+    # lava/magma; the normal deeper Basalt Deltas surface remains blackstone.
+    noise_id = "neverfolia:never_nether/delta_surface"
+    max_double = 1.7976931348623157e308
+    strict_floor = {
+        "type": "minecraft:stone_depth",
+        "surface_type": "floor",
+        "offset": 0,
+        "add_surface_depth": False,
+        "secondary_depth_range": 0,
+    }
+    surface_floor = {
+        "type": "minecraft:stone_depth",
+        "surface_type": "floor",
+        "offset": 0,
+        "add_surface_depth": True,
+        "secondary_depth_range": 0,
+    }
+    top_delta = {
+        "type": "minecraft:sequence",
+        "sequence": [
+            {
+                "type": "minecraft:condition",
+                "if_true": noise_threshold_3d(noise_id, 0.55, max_double),
+                "then_run": {
+                    "type": "minecraft:block",
+                    "result_state": {
+                        "Name": "minecraft:lava",
+                        "Properties": {"level": "0"},
+                    },
+                },
+            },
+            {
+                "type": "minecraft:condition",
+                "if_true": noise_threshold_3d(noise_id, 0.35, 0.55),
+                "then_run": {
+                    "type": "minecraft:block",
+                    "result_state": {"Name": "minecraft:magma_block"},
+                },
+            },
+            {
+                "type": "minecraft:block",
+                "result_state": {"Name": "minecraft:blackstone"},
+            },
+        ],
+    }
     return {
         "type": "minecraft:condition",
         "if_true": {"type": "minecraft:biome", "biome_is": "minecraft:basalt_deltas"},
         "then_run": {
-            "type": "minecraft:condition",
-            "if_true": {
-                "type": "minecraft:stone_depth",
-                "surface_type": "floor",
-                "offset": 0,
-                "add_surface_depth": True,
-                "secondary_depth_range": 0,
-            },
-            "then_run": {
-                "type": "minecraft:sequence",
-                "sequence": [
-                    {
-                        "type": "minecraft:noise_gradient",
-                        "noise": "neverfolia:never_nether/delta_surface",
-                        "gradient": delta_gradient,
-                    },
-                    {
+            "type": "minecraft:sequence",
+            "sequence": [
+                {
+                    "type": "minecraft:condition",
+                    "if_true": strict_floor,
+                    "then_run": top_delta,
+                },
+                {
+                    "type": "minecraft:condition",
+                    "if_true": surface_floor,
+                    "then_run": {
                         "type": "minecraft:block",
                         "result_state": {"Name": "minecraft:blackstone"},
                     },
-                ],
-            },
+                },
+            ],
         },
     }
 
 
 def disable_placed_feature(root: Path, name: str) -> None:
     # Keep the vanilla configured-feature registry entry intact but provide zero
-    # origins. This removes only its order-sensitive placement path; NeverNether's
-    # deterministic surface rule supplies the visual lava/magma delta replacement.
+    # origins. This removes only the order-sensitive delta placement path; the
+    # deterministic 3D surface rule supplies its lava/magma visual role.
     write_json(
         root,
         f"data/minecraft/worldgen/placed_feature/{name}.json",
@@ -226,8 +267,8 @@ def build_pack(root: Path) -> None:
         "chasm": (-7, [1.0, 0.5]),
         "hanging_mass": (-8, [1.0, 0.55]),
         "magma_chamber": (-8, [1.0, 0.6]),
-        # Same base scale family as vanilla nether_state_selector, but sampled
-        # in 3D by noise_gradient to form coherent floor deltas at every layer.
+        # Same broad scale family as vanilla Nether surface selector; unlike
+        # vanilla 2D thresholds this one is sampled with is_3d=true.
         "delta_surface": (-4, [1.0]),
     }
     for name, (first_octave, amplitudes) in custom_noises.items():
@@ -404,8 +445,9 @@ def build_pack(root: Path) -> None:
             "bedrock_envelope": BEDROCK_ENVELOPE,
             "upper_bedrock_anchor": BODY_MAX_Y,
             "replaced_vanilla_placed_features": list(REPLACED_VANILLA_PLACED_FEATURES),
-            "deterministic_delta_mode": "surface_noise_gradient_v1",
+            "deterministic_delta_mode": "surface_noise_threshold_3d_v1",
             "deterministic_delta_noise": "neverfolia:never_nether/delta_surface",
+            "basalt_columns_mode": "vanilla_geometry_chunk_owned_v1",
         },
     )
 
