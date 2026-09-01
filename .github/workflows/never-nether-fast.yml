@@ -32,6 +32,9 @@ jobs:
       - name: Self-test structure safety hardener
         run: python3 ./scripts/harden-never-nether-structure-pack.py --self-test
 
+      - name: Self-test TEST1 source lock and pack pipeline
+        run: python3 ./scripts/build-never-nether-test1-pack.py --self-test
+
       - name: Self-test placement log analyzer
         shell: bash
         run: |
