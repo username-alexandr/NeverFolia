@@ -32,5 +32,9 @@ world_the_end/
 dev_worlds/
 staging_worlds/
 
+# Licensing-safe third-party worldgen inputs.
+# Operators place exact approved source ZIPs here locally; they are never committed.
+third-party-input/
+
 # Build artifacts checked by CI
 artifacts/
