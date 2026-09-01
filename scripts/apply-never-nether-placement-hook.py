@@ -130,10 +130,12 @@ final class NeverNetherStructurePlacement {{
         final ChunkPos chunkPos = context.chunkPos();
         final int anchorX = chunkPos.getMinBlockX();
         final int anchorZ = chunkPos.getMinBlockZ();
+        final int chunkX = anchorX >> 4;
+        final int chunkZ = anchorZ >> 4;
         final long hash = mix64(
             context.seed()
-                ^ ((long) chunkPos.x * 0x9E3779B97F4A7C15L)
-                ^ ((long) chunkPos.z * 0xC2B2AE3D27D4EB4FL)
+                ^ ((long) chunkX * 0x9E3779B97F4A7C15L)
+                ^ ((long) chunkZ * 0xC2B2AE3D27D4EB4FL)
                 ^ poolId.hashCode()
         );
 
