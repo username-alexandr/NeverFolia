@@ -130,15 +130,14 @@ generate_world() {
 
     echo "[NeverFolia][NeverNether determinism] ${label} ${index}/${total}: chunk ${cx},${cz}"
     send_console "execute in minecraft:the_nether run forceload add ${bx} ${bz}"
-    sleep 4
-    send_console "save-all"
-    sleep 2
+    # Folia has no global save-all command. Keep the target loaded long enough
+    # for the async chunk pipeline to settle, then rely on the normal server
+    # shutdown path below to synchronously persist every generated chunk.
+    sleep 6
     send_console "execute in minecraft:the_nether run forceload remove ${bx} ${bz}"
     sleep 1
   done
 
-  send_console "save-all"
-  sleep 3
   send_console "stop"
 
   for _ in $(seq 1 60); do
@@ -156,6 +155,16 @@ generate_world() {
   fi
   if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|worldgen fingerprint mismatch|NullPointerException|An unexpected error occurred while trying to execute that command|Unknown or incomplete command|Command exception" "${log}"; then
     echo "NeverFolia determinism world ${label} contains startup/worldgen/command errors." >&2
+    cat "${log}" >&2
+    exit 1
+  fi
+
+  local marked_count
+  local unmarked_count
+  marked_count="$(grep -c 'Marked chunk \[' "${log}" || true)"
+  unmarked_count="$(grep -c 'Unmarked chunk \[' "${log}" || true)"
+  if [ "${marked_count}" -ne "${total}" ] || [ "${unmarked_count}" -ne "${total}" ]; then
+    echo "NeverFolia determinism world ${label} did not execute every forceload command: marked=${marked_count}/${total}, unmarked=${unmarked_count}/${total}" >&2
     cat "${log}" >&2
     exit 1
   fi
