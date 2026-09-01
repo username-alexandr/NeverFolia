@@ -163,8 +163,6 @@ jobs:
             exit 1
           fi
 
-          # Minecraft 26.2 changed the datapack command syntax, so runtime validation
-          # is based on actual world creation instead of a command-list assertion.
           echo 'stop' > console.pipe
 
           for _ in $(seq 1 45); do
@@ -207,11 +205,28 @@ jobs:
           if b'file/NeverNether-Core.zip' not in payload:
               raise SystemExit('NeverNether-Core.zip is not recorded in the enabled datapack list')
 
-          region_dir = Path('world/DIM-1/region')
-          regions = list(region_dir.glob('*.mca')) if region_dir.is_dir() else []
-          if not regions:
-              raise SystemExit('No Nether region file was generated in world/DIM-1/region')
-          print(f'NeverNether runtime verification: {len(regions)} Nether region file(s) generated')
+          candidates = (
+              Path('world_nether/region'),
+              Path('world_nether/DIM-1/region'),
+              Path('world/DIM-1/region'),
+          )
+          discovered = []
+          for region_dir in candidates:
+              if region_dir.is_dir():
+                  files = sorted(region_dir.glob('*.mca'))
+                  if files:
+                      discovered.append((region_dir, files))
+
+          if not discovered:
+              all_regions = sorted(Path('.').glob('**/region/*.mca'))
+              listing = '\n'.join(f'  - {path}' for path in all_regions) or '  (none)'
+              raise SystemExit(
+                  'No Nether region file was generated in any supported Paper/Folia layout.\n'
+                  f'Region files found:\n{listing}'
+              )
+
+          for region_dir, files in discovered:
+              print(f'NeverNether runtime verification: {len(files)} region file(s) in {region_dir}')
           PY
 
           echo "NeverNether runtime smoke test passed."
