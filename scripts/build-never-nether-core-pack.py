@@ -20,9 +20,12 @@ BEDROCK_ENVELOPE = 5
 # states across chunk boundaries. Under Folia that makes Basalt Deltas depend on
 # generation order. NeverNether replaces minecraft:delta with a deterministic
 # 3D surface-noise rule. Basalt columns remain enabled but are made chunk-owned
-# by the NeverFolia post-apply source hook.
+# by the NeverFolia post-apply source hook. minecraft:basalt_blobs is temporarily
+# disabled as a controlled determinism diagnostic after #80 isolated one remaining
+# basalt/blackstone corner difference outside the column-owned path.
 REPLACED_VANILLA_PLACED_FEATURES = (
     "delta",
+    "basalt_blobs",
 )
 
 
@@ -179,8 +182,8 @@ def basalt_delta_floor():
 
 def disable_placed_feature(root: Path, name: str) -> None:
     # Keep the vanilla configured-feature registry entry intact but provide zero
-    # origins. This removes only the order-sensitive delta placement path; the
-    # deterministic 3D surface rule supplies its lava/magma visual role.
+    # origins. This is used both for the production delta replacement and for
+    # narrowly scoped feature-family determinism diagnostics.
     write_json(
         root,
         f"data/minecraft/worldgen/placed_feature/{name}.json",
