@@ -27,10 +27,18 @@ BASE = load_base_hasher()
 
 
 def find_region_dir(world: Path) -> Path:
-    region = world / "region"
-    if region.is_dir():
-        return region
-    raise FileNotFoundError(f"Overworld region directory not found: {region}")
+    candidates = (
+        world / "dimensions/minecraft/overworld/region",
+        world / "region",
+        world.parent / "world/region",
+    )
+    for region in candidates:
+        if region.is_dir() and any(region.glob("*.mca")):
+            return region
+    raise FileNotFoundError(
+        "Overworld region directory not found; checked: "
+        + ", ".join(str(path) for path in candidates)
+    )
 
 
 def palette_state(entry) -> str:
@@ -164,8 +172,6 @@ def self_test() -> None:
         raise SystemExit("flowing water normalization self-test failed")
     if section_semantic_digest(air) == section_semantic_digest(source_water):
         raise SystemExit("source water was incorrectly normalized")
-    if find_region_dir(Path("/definitely/not/a/world")) if False else None:
-        raise SystemExit("unreachable")
     print("[NeverFolia][NeverOverworld determinism] HASHER SELF-TEST OK")
 
 
