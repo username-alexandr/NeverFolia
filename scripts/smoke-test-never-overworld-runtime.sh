@@ -111,49 +111,46 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 world = Path(sys.argv[2])
-spec = importlib.util.spec_from_file_location('raw_hasher', root / 'scripts/hash-never-nether-chunks.py')
-module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-region = world / 'region'
-if not region.is_dir():
-    raise SystemExit(f'Overworld region directory missing: {region}')
-chunk = module.read_chunk_nbt(region, 0, 0)
+raw_spec = importlib.util.spec_from_file_location('raw_hasher', root / 'scripts/hash-never-nether-chunks.py')
+raw = importlib.util.module_from_spec(raw_spec); raw_spec.loader.exec_module(raw)
+over_spec = importlib.util.spec_from_file_location('over_hasher', root / 'scripts/hash-never-overworld-generation-chunks.py')
+over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(over)
+region = over.find_region_dir(world)
+print('NeverOverworld region directory:', region)
+chunk = raw.read_chunk_nbt(region, 0, 0)
 for x,y,z,expected in [
     (0,500,0,'minecraft:stone'),
     (0,-500,0,'minecraft:gold_block'),
 ]:
-    actual = module.block_at(chunk,x,y,z)
+    actual = raw.block_at(chunk,x,y,z)
     if actual != expected:
         raise SystemExit(f'extended-height persistence mismatch at {x},{y},{z}: {actual} != {expected}')
 
-bottom = [module.block_at(chunk,x,-512,z) for x in (0,4,8,12) for z in (0,4,8,12)]
+bottom = [raw.block_at(chunk,x,-512,z) for x in (0,4,8,12) for z in (0,4,8,12)]
 if 'minecraft:bedrock' not in bottom:
     raise SystemExit('no bedrock observed at NR-DEV-1 min_y=-512')
 
-deep = [module.block_at(chunk,x,-200,z) for x in (0,4,8,12) for z in (0,4,8,12)]
+deep = [raw.block_at(chunk,x,-200,z) for x in (0,4,8,12) for z in (0,4,8,12)]
 if all(block == 'minecraft:air' for block in deep):
     raise SystemExit('deep geology sample at Y=-200 is entirely air')
 print('NR-DEV-1 deep sample:', sorted(set(deep)))
 
-# VANILLA_FLOODED must create water above the vanilla sea level. Sample five
-# complete horizontal planes so the assertion is not tied to one terrain column.
 flood_water = 0
 for y in (64, 80, 96, 112, 128):
     for z in range(16):
         for x in range(16):
-            if module.block_at(chunk, x, y, z) == 'minecraft:water':
+            if raw.block_at(chunk, x, y, z) == 'minecraft:water':
                 flood_water += 1
 if flood_water == 0:
     raise SystemExit('VANILLA_FLOODED produced no water in sampled Y=64..128 planes')
 print('NR-DEV-1 flood sample water blocks:', flood_water)
 
-# Generated underground lava/water sources are removed before the controlled
-# connectivity flood. The resulting deep world must still contain dry cave air.
 deep_air = 0
 deep_lava = 0
 for y in (-440, -360, -280, -200, -120, -80, -40, 0, 32, 63):
     for z in range(0, 16, 2):
         for x in range(0, 16, 2):
-            block = module.block_at(chunk, x, y, z)
+            block = raw.block_at(chunk, x, y, z)
             if block == 'minecraft:air':
                 deep_air += 1
             elif block == 'minecraft:lava':
