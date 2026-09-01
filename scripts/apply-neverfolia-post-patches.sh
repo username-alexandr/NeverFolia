@@ -10,13 +10,16 @@ if [ ! -d "${FOLIA_DIR}" ]; then
   exit 2
 fi
 
+echo "[NeverFolia] Applying NeverNether native placement hook"
+python3 "${ROOT_DIR}/scripts/apply-never-nether-placement-hook.py" "${FOLIA_DIR}"
+
 if ! compgen -G "${POST_PATCH_DIR}/*.patch" > /dev/null; then
-  echo "[NeverFolia] No post-apply patches"
+  echo "[NeverFolia] No additional post-apply patch files"
   exit 0
 fi
 
 cd "${FOLIA_DIR}"
-echo "[NeverFolia] Applying post-apply patches"
+echo "[NeverFolia] Applying post-apply patch files"
 for patch_file in "${POST_PATCH_DIR}"/*.patch; do
   echo "  -> $(basename "${patch_file}")"
   git apply --whitespace=nowarn "${patch_file}"
