@@ -62,6 +62,15 @@ jobs:
       - name: Self-test semantic NeverOverworld generation hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
+      - name: Self-test NeverOverworld flood hook
+        run: python3 ./scripts/apply-never-overworld-flood-hook.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint tool
+        run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint guard
+        run: python3 ./scripts/apply-never-overworld-fingerprint-guard.py --self-test
+
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
@@ -115,6 +124,8 @@ jobs:
             echo "Folia ref: ${FOLIA_REF}"
             echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
             echo "Overworld test core: NR-DEV-1-core-test1"
+            echo "Overworld mode: VANILLA_FLOODED"
+            echo "Overworld flood level: Y=128"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
             echo "Nether test core: NN-DEV-1-core-test1"
             echo "End worldgen: ${WORLDGEN_END}"
@@ -126,13 +137,15 @@ jobs:
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
 
-      - name: Build NeverOverworld core test datapack
+      - name: Build and fingerprint NeverOverworld core test datapack
         run: |
           set -euo pipefail
           JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           python3 ./scripts/build-never-overworld-core-pack.py \
             --server-jar "${JAR}" \
             --output artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --verify
 
       - name: Smoke test NeverNether runtime and fingerprint guard
         run: |
@@ -142,7 +155,7 @@ jobs:
           chmod +x ./scripts/smoke-test-never-nether-runtime.sh
           ./scripts/smoke-test-never-nether-runtime.sh "${JAR}" "${PACK}"
 
-      - name: Smoke test NeverOverworld runtime
+      - name: Smoke test NeverOverworld flooded runtime
         run: |
           set -euo pipefail
           JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
