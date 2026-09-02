@@ -7,13 +7,16 @@ import re
 from pathlib import Path
 
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
+MOONRISE_REL = Path(
+    "folia-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
+)
 LEGACY_HELPER_SCRIPT = Path(__file__).with_name("apply-never-overworld-flood-hook.py")
 MARKER = "// NEVERFOLIA: Moonrise LIGHT flood hook"
 CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
 PACKAGE = "package ca.spottedleaf.moonrise.patches.chunk_system.scheduling.task;"
 CLASS = "public final class ChunkLightTask extends ChunkProgressionTask"
 ANCHOR_RE = re.compile(
-    r"(?P<indent>\s*)final\s+Boolean\[\]\s+emptySections\s*=\s*"
+    r"(?P<indent>[ \t]*)final\s+Boolean\[\]\s+emptySections\s*=\s*"
     r"StarLightEngine\.getEmptySectionsForChunk\(task\.fromChunk\);"
 )
 
@@ -62,13 +65,35 @@ def patch_chunk_light_task(source: str) -> str:
     return source[: match.start()] + insertion + source[match.start() :]
 
 
+def is_runtime_source(path: Path) -> bool:
+    return ".gradle" not in path.parts and "taskCache" not in path.parts
+
+
+def validate_target(path: Path) -> Path:
+    if not path.is_file():
+        fail(f"Moonrise ChunkLightTask source not found: {path}")
+    source = path.read_text(encoding="utf-8")
+    if PACKAGE not in source or CLASS not in source:
+        fail(f"Moonrise ChunkLightTask source has unexpected package/class: {path}")
+    return path
+
+
 def find_chunk_light_task(folia: Path) -> Path:
+    # Paperweight materializes the compilable Moonrise sources here. Prefer the
+    # exact source-tree path so cached setup inputs under .gradle/taskCache can
+    # never be mistaken for the Java file that Gradle actually compiles.
+    exact = folia / MOONRISE_REL
+    if exact.is_file():
+        return validate_target(exact)
+
     server = folia / "folia-server"
     if not server.is_dir():
         fail(f"Folia server source directory not found: {server}")
 
     candidates: list[Path] = []
     for path in server.rglob("ChunkLightTask.java"):
+        if not is_runtime_source(path):
+            continue
         try:
             source = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -78,7 +103,7 @@ def find_chunk_light_task(folia: Path) -> Path:
 
     if len(candidates) != 1:
         rendered = ", ".join(str(path) for path in candidates) or "none"
-        fail(f"expected exactly one Moonrise ChunkLightTask.java, got {len(candidates)}: {rendered}")
+        fail(f"expected exactly one compilable Moonrise ChunkLightTask.java, got {len(candidates)}: {rendered}")
     return candidates[0]
 
 
@@ -115,6 +140,14 @@ public final class ChunkLightTask extends ChunkProgressionTask {
         fail("SELF-TEST: flood call must execute before Starlight reads empty sections")
     if patched.index(CALL) < patched.index("markExecuting()"):
         fail("SELF-TEST: flood call must execute only after the task owns execution")
+
+    # Regression guard for Heavy #108: recursive source discovery also found a
+    # paperweight task-cache copy of ChunkLightTask.java. Only materialized source
+    # files are eligible for patching.
+    if is_runtime_source(Path("folia-server/.gradle/caches/paperweight/taskCache/runFoliaSetup/ChunkLightTask.java")):
+        fail("SELF-TEST: .gradle task-cache source must never be eligible")
+    if not is_runtime_source(Path("folia-server/src/minecraft/java/ca/spottedleaf/moonrise/ChunkLightTask.java")):
+        fail("SELF-TEST: materialized source must be eligible")
 
     helper = load_helper_source()
     for required in (
