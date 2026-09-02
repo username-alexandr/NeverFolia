@@ -1,0 +1,31 @@
+name: Diagnose NeverOverworld native geology clean
+
+on:
+  push:
+    branches:
+      - diag/never-overworld-native-geology-clean
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NR-DEV-1 native geology v2 validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+
+      - name: Validate base NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Self-test native geology base
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test coal and emerald native geology extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test native-only Core pack promotion
+        run: python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
