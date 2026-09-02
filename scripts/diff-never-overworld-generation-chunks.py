@@ -5,10 +5,12 @@ import argparse
 import hashlib
 import importlib.util
 import json
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 HASHER_PATH = ROOT / "scripts/hash-never-overworld-generation-chunks.py"
+MAX_EXACT_SAMPLES = 128
 
 
 def load_hasher():
@@ -37,12 +39,41 @@ def sections_by_y(root: dict) -> dict[int, dict]:
     return result
 
 
-def component_diff(a: dict, b: dict) -> dict:
+def exact_block_diff(a: dict, b: dict, cx: int, cz: int, section_ys: list[int]) -> dict:
+    pair_counts: Counter[tuple[str, str]] = Counter()
+    samples: list[dict] = []
+    base_x = cx * 16
+    base_z = cz * 16
+    total = 0
+    for sy in sorted(set(section_ys)):
+        min_y = sy * 16
+        for y in range(min_y, min_y + 16):
+            for lz in range(16):
+                for lx in range(16):
+                    x = base_x + lx
+                    z = base_z + lz
+                    block_a = BASE.block_at(a, x, y, z)
+                    block_b = BASE.block_at(b, x, y, z)
+                    if block_a == block_b:
+                        continue
+                    total += 1
+                    pair_counts[(block_a, block_b)] += 1
+                    if len(samples) < MAX_EXACT_SAMPLES:
+                        samples.append({"x": x, "y": y, "z": z, "a": block_a, "b": block_b})
+    pairs = [
+        {"a": pair[0], "b": pair[1], "count": count}
+        for pair, count in sorted(pair_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    return {"total_changed_blocks": total, "pair_counts": pairs, "samples": samples}
+
+
+def component_diff(a: dict, b: dict, cx: int, cz: int) -> dict:
     out: dict = {
         "status": {},
         "sections": [],
         "heightmaps": [],
         "structures": {},
+        "exact_blocks": {},
     }
 
     for key in ("yPos", "Status"):
@@ -53,11 +84,13 @@ def component_diff(a: dict, b: dict) -> dict:
 
     sa = sections_by_y(a)
     sb = sections_by_y(b)
+    changed_block_sections: list[int] = []
     for y in sorted(set(sa) | set(sb)):
         aa = sa.get(y)
         bb = sb.get(y)
         if aa is None or bb is None:
             out["sections"].append({"Y": y, "present_a": aa is not None, "present_b": bb is not None})
+            changed_block_sections.append(y)
             continue
         blocks_a = H.section_semantic_digest(aa)
         blocks_b = H.section_semantic_digest(bb)
@@ -73,6 +106,11 @@ def component_diff(a: dict, b: dict) -> dict:
                 "biomes_b": biomes_b,
                 "biomes_equal": biomes_a == biomes_b,
             })
+            if blocks_a != blocks_b:
+                changed_block_sections.append(y)
+
+    if changed_block_sections:
+        out["exact_blocks"] = exact_block_diff(a, b, cx, cz, changed_block_sections)
 
     ha = a.get("Heightmaps", a.get("heightmaps", {}))
     hb = b.get("Heightmaps", b.get("heightmaps", {}))
@@ -119,7 +157,7 @@ def main() -> None:
 
     region_a = H.find_region_dir(args.world_a)
     region_b = H.find_region_dir(args.world_b)
-    report = {"schema": 1, "chunks": []}
+    report = {"schema": 2, "chunks": []}
 
     for cx, cz in sorted(set(args.chunk)):
         a = BASE.read_chunk_nbt(region_a, cx, cz)
@@ -128,13 +166,13 @@ def main() -> None:
         digest_b = H.chunk_digest(b)
         if digest_a == digest_b:
             continue
-        diff = component_diff(a, b)
+        diff = component_diff(a, b, cx, cz)
         entry = {"x": cx, "z": cz, "chunk_a": digest_a, "chunk_b": digest_b, "diff": diff}
         report["chunks"].append(entry)
         print(f"[NeverFolia][NeverOverworld diagnostic] chunk {cx},{cz}")
         changed_sections = diff["sections"]
         if changed_sections:
-            block_sections = [x["Y"] for x in changed_sections if x.get("blocks_equal") is False]
+            block_sections = [x["Y"] for x in changed_sections if x.get("blocks_equal") is False or "blocks_equal" not in x]
             biome_sections = [x["Y"] for x in changed_sections if x.get("biomes_equal") is False]
             print("  block sections:", block_sections or "none")
             print("  biome sections:", biome_sections or "none")
@@ -142,6 +180,13 @@ def main() -> None:
             print("  sections: equal")
         print("  heightmaps:", [x["name"] for x in diff["heightmaps"]] or "none")
         print("  structures:", "different" if not diff["structures"].get("equal", False) else "equal")
+        exact = diff.get("exact_blocks", {})
+        if exact:
+            print("  exact changed blocks:", exact.get("total_changed_blocks", 0))
+            for pair in exact.get("pair_counts", [])[:16]:
+                print(f"    {pair['a']} -> {pair['b']}: {pair['count']}")
+            for sample in exact.get("samples", [])[:24]:
+                print(f"    at {sample['x']},{sample['y']},{sample['z']}: {sample['a']} -> {sample['b']}")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

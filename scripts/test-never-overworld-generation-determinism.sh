@@ -10,10 +10,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAR="$(realpath "$1")"
 PACK="$(realpath "$2")"
 TEST_ROOT="${ROOT_DIR}/overworld-determinism-test"
-# Samples are intentionally far from spawn and at least 128 chunks apart.
-# This keeps each vanilla generation/FEATURES support halo disjoint, so the
-# forward/reverse test measures target order instead of halo overlap order.
-CHUNKS=("64,64" "160,-96" "-192,144" "288,32" "-320,-256" "416,-160")
+# Diagnostic mode: a single isolated target proves whether the mismatch is
+# intrinsic run-to-run scheduling rather than interaction between sample halos.
+CHUNKS=("64,64")
 ORDER_A=("${CHUNKS[@]}")
 ORDER_B=()
 for ((i=${#CHUNKS[@]}-1; i>=0; i--)); do ORDER_B+=("${CHUNKS[$i]}"); done

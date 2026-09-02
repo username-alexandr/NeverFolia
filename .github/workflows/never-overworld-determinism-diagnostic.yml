@@ -14,7 +14,7 @@ jobs:
   diagnose:
     name: NR-DEV-1 determinism diagnostic
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout diagnostic branch
@@ -53,7 +53,7 @@ jobs:
           python3 ./scripts/fingerprint-never-overworld-pack.py \
             --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --verify
 
-      - name: Generate forward and reverse worlds
+      - name: Generate two isolated copies of chunk 64,64
         id: determinism
         continue-on-error: true
         run: |
@@ -62,25 +62,24 @@ jobs:
             artifacts/NeverFolia-diagnostic.jar \
             artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
 
-      - name: Diff mismatching generation components
+      - name: Diff exact mismatching blocks
         if: always()
         run: |
           if [ ! -d overworld-determinism-test/world-a/world ] || [ ! -d overworld-determinism-test/world-b/world ]; then
-            echo 'Determinism worlds are unavailable; cannot component-diff.' >&2
+            echo 'Determinism worlds are unavailable; cannot exact-diff.' >&2
             exit 1
           fi
           python3 ./scripts/diff-never-overworld-generation-chunks.py \
             --world-a overworld-determinism-test/world-a/world \
             --world-b overworld-determinism-test/world-b/world \
-            --chunk 64,64 --chunk 160,-96 --chunk=-192,144 \
-            --chunk 288,32 --chunk=-320,-256 --chunk 416,-160 \
+            --chunk 64,64 \
             --output overworld-determinism-test/component-diff.json
 
       - name: Upload diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NeverOverworld-component-diagnostic-${{ github.sha }}
+          name: NeverOverworld-exact-diagnostic-${{ github.sha }}
           path: |
             overworld-determinism-test/world-a-hash.json
             overworld-determinism-test/world-b-hash.json
@@ -93,5 +92,5 @@ jobs:
       - name: Preserve determinism gate result
         if: steps.determinism.outcome != 'success'
         run: |
-          echo 'Strict determinism remains red; see component diagnostic above.' >&2
+          echo 'Strict determinism remains red; see exact block diagnostic above.' >&2
           exit 1
