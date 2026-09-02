@@ -41,6 +41,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOL
 echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Extending NeverOverworld native ore geology with coal and emerald"
+python3 "${ROOT_DIR}/scripts/extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"
+
 # Folia 26.2 uses Moonrise's ChunkLightTask as the actual LIGHT runtime path.
 # The vanilla ChunkStatusTasks.light(...) method still compiles but is bypassed by
 # the Moonrise chunk scheduler, so the flood barrier must live in ChunkLightTask.

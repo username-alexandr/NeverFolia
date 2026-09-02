@@ -60,6 +60,15 @@ jobs:
       - name: Self-test NeverOverworld native deterministic ore geology
         run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
 
+      - name: Self-test NeverOverworld coal and emerald geology extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld native-only Core pack promotion
+        run: python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
+
+      - name: Self-test NeverOverworld native geology NBT audit
+        run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
       - name: Self-test NeverOverworld fingerprint tool
         run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
 
