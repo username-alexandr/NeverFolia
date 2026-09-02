@@ -225,7 +225,7 @@ final class NeverOverworldFastLocate {
             generator,
             generator.getBiomeSource(),
             state.randomState(),
-            generator.getStructureManager(),
+            level.getStructureManager(),
             state.getLevelSeed(),
             chunkPos,
             level,
