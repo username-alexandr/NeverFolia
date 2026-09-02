@@ -24,6 +24,8 @@ jobs:
           python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
       - name: Self-test NBT/template/structure-set builder
         run: python3 ./scripts/build-never-overworld-native-structures.py --self-test
+      - name: Self-test structure type normalization
+        run: python3 ./scripts/normalize-never-overworld-structure-type.py --self-test
       - name: Shell-check runtime template smoke
         run: bash -n ./scripts/smoke-test-never-overworld-native-structures.sh
 
@@ -75,6 +77,8 @@ jobs:
           python3 ./scripts/promote-never-overworld-native-geology-pack.py \
             --input artifacts/NeverOverworld-Core-structures-v1.zip
           python3 ./scripts/build-never-overworld-native-structures.py \
+            --input artifacts/NeverOverworld-Core-structures-v1.zip
+          python3 ./scripts/normalize-never-overworld-structure-type.py \
             --input artifacts/NeverOverworld-Core-structures-v1.zip
           python3 ./scripts/fingerprint-never-overworld-pack.py \
             --input artifacts/NeverOverworld-Core-structures-v1.zip --inject
