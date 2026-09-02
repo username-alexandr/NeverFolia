@@ -41,6 +41,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Normalizing NeverOverworld LIGHT flood call placement"
 python3 "${ROOT_DIR}/scripts/normalize-never-overworld-light-flood-call.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
+python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Adding optional NeverNether placement diagnostics"
 python3 "${ROOT_DIR}/scripts/instrument-never-nether-placement-debug.py" "${FOLIA_DIR}"
 
