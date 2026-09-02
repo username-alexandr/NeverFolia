@@ -32,11 +32,8 @@ jobs:
       - name: Self-test NeverOverworld semantic hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
-      - name: Self-test NeverOverworld LIGHT-barrier flood hook
-        run: python3 ./scripts/apply-never-overworld-flood-hook.py --self-test
-
-      - name: Self-test NeverOverworld LIGHT flood call normalizer
-        run: python3 ./scripts/normalize-never-overworld-light-flood-call.py --self-test
+      - name: Self-test NeverOverworld Moonrise LIGHT flood hook
+        run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
 
       - name: Self-test NeverOverworld LIGHT flood activation instrumentation
         run: python3 ./scripts/instrument-never-overworld-flood-debug.py --self-test

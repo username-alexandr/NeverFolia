@@ -65,8 +65,8 @@ jobs:
       - name: Self-test semantic NeverOverworld generation hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
-      - name: Self-test NeverOverworld flood hook
-        run: python3 ./scripts/apply-never-overworld-flood-hook.py --self-test
+      - name: Self-test NeverOverworld Moonrise LIGHT flood hook
+        run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
 
       - name: Self-test NeverOverworld native fluid picker
         run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
@@ -133,12 +133,23 @@ jobs:
             echo "Overworld test core: NR-DEV-1-core-test1"
             echo "Overworld mode: VANILLA_FLOODED"
             echo "Overworld flood level: Y=128"
-            echo "Overworld flood phase: LIGHT barrier / surface-connected / chunk-owned v3"
+            echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
             echo "Overworld aquifer: native lava branch disabled"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
             echo "Nether test core: NN-DEV-1-core-test1"
             echo "End worldgen: ${WORLDGEN_END}"
+            echo "End mode: NeverEnd reserved / vanilla-compatible fallback"
           } > artifacts/BUILD-INFO.txt
+
+      - name: Upload compiled NeverFolia JAR early
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-compiled-${{ github.sha }}
+          path: |
+            artifacts/*.jar
+            artifacts/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Build and fingerprint NeverNether core test datapack
         run: |

@@ -32,14 +32,11 @@ python3 "${ROOT_DIR}/scripts/apply-never-nether-netherrack-blobs-ownership.py" "
 echo "[NeverFolia] Applying NeverOverworld native lava-free aquifer picker"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR}"
 
-echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED LIGHT-barrier hook"
-python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
-
-# Folia 26.2 may format the LIGHT method body brace differently from Mojmap.
-# Normalize the injected block against the first isLighted(chunk) statement so the
-# call always executes inside the method body and before lighting starts.
-echo "[NeverFolia] Normalizing NeverOverworld LIGHT flood call placement"
-python3 "${ROOT_DIR}/scripts/normalize-never-overworld-light-flood-call.py" "${FOLIA_DIR}"
+# Folia 26.2 uses Moonrise's ChunkLightTask as the actual LIGHT runtime path.
+# The vanilla ChunkStatusTasks.light(...) method still compiles but is bypassed by
+# the Moonrise chunk scheduler, so the flood barrier must live in ChunkLightTask.
+echo "[NeverFolia] Applying NeverOverworld Moonrise LIGHT flood barrier"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-moonrise-light-flood-hook.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
