@@ -41,6 +41,9 @@ jobs:
       - name: Self-test NeverOverworld native fluid picker
         run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
 
+      - name: Self-test NeverOverworld native ore geology
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+
       - name: Self-test NeverOverworld fingerprint tool
         run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
 
