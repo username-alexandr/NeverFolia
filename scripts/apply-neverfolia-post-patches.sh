@@ -32,6 +32,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-nether-netherrack-blobs-ownership.py" "
 echo "[NeverFolia] Applying NeverOverworld native lava-free aquifer picker"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld native generated-fluid feature filter"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-feature-filter.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED LIGHT-barrier hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
 
