@@ -117,6 +117,8 @@ generate_world world-b "${ORDER_B[@]}"
 HASH_ARGS=(); for coord in "${CHUNKS[@]}"; do HASH_ARGS+=("--chunk=${coord}"); done
 python3 "${ROOT_DIR}/scripts/hash-never-overworld-generation-chunks.py" --world "${TEST_ROOT}/world-a/world" "${HASH_ARGS[@]}" --output "${TEST_ROOT}/world-a-hash.json" > /dev/null
 python3 "${ROOT_DIR}/scripts/hash-never-overworld-generation-chunks.py" --world "${TEST_ROOT}/world-b/world" "${HASH_ARGS[@]}" --output "${TEST_ROOT}/world-b-hash.json" > /dev/null
+
+set +e
 python3 - "${TEST_ROOT}/world-a-hash.json" "${TEST_ROOT}/world-b-hash.json" <<'PY'
 import json,sys
 from pathlib import Path
@@ -134,3 +136,15 @@ if a['overall_sha256'] != b['overall_sha256']:
 print('[NeverFolia][NeverOverworld strict determinism] ORDER-INDEPENDENCE OK')
 print('  algorithm:',a['algorithm']); print('  chunks:',a['chunk_count']); print('  canonical_sha256:',a['overall_sha256'])
 PY
+COMPARE_RC=$?
+set -e
+
+if [ "${COMPARE_RC}" -ne 0 ]; then
+  python3 "${ROOT_DIR}/scripts/diff-never-overworld-chunks.py" \
+    --world-a "${TEST_ROOT}/world-a/world" \
+    --world-b "${TEST_ROOT}/world-b/world" \
+    "${HASH_ARGS[@]}" \
+    --output "${TEST_ROOT}/component-diff.json" \
+    --allow-differences
+  exit "${COMPARE_RC}"
+fi
