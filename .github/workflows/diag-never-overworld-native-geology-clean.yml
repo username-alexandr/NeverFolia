@@ -29,3 +29,46 @@ jobs:
 
       - name: Self-test native-only Core pack promotion
         run: python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
+
+  compile:
+    name: NR-DEV-1 geology v2 Folia 26.2 compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia baseline including native geology
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Extend native geology with coal and emerald
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py ./.work/Folia
+
+      - name: Compile Folia server with geology v2
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:compileJava --stacktrace
