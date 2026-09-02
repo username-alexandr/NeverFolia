@@ -30,7 +30,8 @@ def forbid(source: str, needle: str, where: str) -> None:
 
 def main() -> None:
     env = text("build.env")
-    builder = text("scripts/build-never-overworld-core-pack.py")
+    builder = text("scripts/build-never-overworld-core-pack-legacy.py")
+    native_wrapper = text("scripts/build-never-overworld-core-pack.py")
     flood = text("scripts/apply-never-overworld-flood-hook.py")
     native_fluid = text("scripts/apply-never-overworld-fluid-picker.py")
     fingerprint = text("scripts/fingerprint-never-overworld-pack.py")
@@ -54,9 +55,18 @@ def main() -> None:
         "minecraft:spring_water",
         "minecraft:spring_lava",
     ):
-        require(builder, marker, "NeverOverworld Core builder")
-    forbid(builder, "FULL_FLOOD_MIN_Y", "NeverOverworld Core builder")
-    forbid(builder, '"full_flood_min_y"', "NeverOverworld Core builder")
+        require(builder, marker, "NeverOverworld immutable Core builder")
+    forbid(builder, "FULL_FLOOD_MIN_Y", "NeverOverworld immutable Core builder")
+    forbid(builder, '"full_flood_min_y"', "NeverOverworld immutable Core builder")
+
+    for marker in (
+        'LEGACY = ROOT / "build-never-overworld-core-pack-legacy.py"',
+        'PROMOTER = ROOT / "promote-never-overworld-native-geology-pack.py"',
+        'run(str(PROMOTER), "--input", str(output))',
+        "NATIVE-ONLY CORE READY",
+        "coal, iron, copper, gold, redstone, lapis, diamond, emerald",
+    ):
+        require(native_wrapper, marker, "NeverOverworld native Core wrapper")
 
     for marker in (
         'TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")',
@@ -84,10 +94,6 @@ def main() -> None:
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
 
-    # NR-DEV-1 must suppress the vanilla deep lava aquifer at its source. Validate
-    # the transformer's generated-helper contract rather than banning a diagnostic
-    # string from the Python source itself: the self-test intentionally mentions
-    # Blocks.LAVA while asserting that helper_source() does not contain it.
     for marker in (
         'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java")',
         "NeverOverworldFluidPicker.matches(settings)",
@@ -142,7 +148,7 @@ def main() -> None:
     dimension_height = re.search(r"^DIM_HEIGHT\s*=\s*(-?\d+)\s*$", builder, re.MULTILINE)
     dimension_min = re.search(r"^DIM_MIN_Y\s*=\s*(-?\d+)\s*$", builder, re.MULTILINE)
     if dimension_height is None or dimension_min is None:
-        fail("cannot parse builder dimension constants")
+        fail("cannot parse immutable builder dimension constants")
     min_y = int(dimension_min.group(1))
     height = int(dimension_height.group(1))
     if min_y + height - 1 != 511:
@@ -152,6 +158,7 @@ def main() -> None:
     print("  dimension: Y=-512..511 (1024)")
     print("  upper: vanilla 26.2 from Y>=-64")
     print("  aquifer: native lava branch disabled")
+    print("  ores: native geology v2 wrapper / no legacy deep placed ores in output")
     print("  flood: surface-connected to Y=128 at LIGHT barrier")
     print("  fingerprint: independent NR-DEV-1 lock")
 
