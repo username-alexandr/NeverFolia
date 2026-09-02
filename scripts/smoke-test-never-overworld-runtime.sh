@@ -13,6 +13,19 @@ TEST_DIR="${ROOT_DIR}/overworld-smoke-test"
 WORLD_DIR="${TEST_DIR}/world"
 DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
 NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
+FLOOD_MARKER='[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128'
+
+# Dispersed deterministic samples reduce the chance that a single mountain/plateau
+# at spawn makes the flood assertion meaningless. Coordinates are block X/Z.
+SAMPLE_BLOCKS=(
+  '0 0'
+  '512 0'
+  '-512 0'
+  '0 512'
+  '0 -512'
+  '512 512'
+  '-512 -512'
+)
 
 rm -rf "${TEST_DIR}"
 mkdir -p "${WORLD_DIR}/datapacks"
@@ -83,14 +96,22 @@ wait_ready
 wait_literal "${NATIVE_FLUID_MARKER}" 15
 send_console 'execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0'
 wait_literal 'Gamerule random_tick_speed is now set to: 0' 15
-send_console 'execute in minecraft:overworld run forceload add 0 0'
-wait_literal 'Marked chunk [0, 0] in minecraft:overworld to be force loaded' 30
-sleep 8
+
+for coords in "${SAMPLE_BLOCKS[@]}"; do
+  read -r x z <<< "${coords}"
+  send_console "execute in minecraft:overworld run forceload add ${x} ${z}"
+done
+# The LIGHT hook may have already run during spawn generation, or may first run
+# while these dispersed chunks are promoted. In either case the marker must exist.
+wait_literal "${FLOOD_MARKER}" 30
+# Give all requested FULL chunks time to finish and flush before the NBT probe.
+sleep 20
+
 send_console 'execute in minecraft:overworld run setblock 0 500 0 minecraft:stone'
 send_console 'execute in minecraft:overworld run setblock 0 -500 0 minecraft:gold_block'
 sleep 3
-send_console 'execute in minecraft:overworld run forceload remove 0 0'
-wait_literal 'Unmarked chunk [0, 0] in minecraft:overworld for force loading' 30
+send_console 'execute in minecraft:overworld run forceload remove all'
+sleep 2
 send_console 'stop'
 for _ in $(seq 1 90); do
   if ! kill -0 "${SERVER_PID}" 2>/dev/null; then break; fi
@@ -101,6 +122,11 @@ cleanup_server
 LOG="${TEST_DIR}/server.log"
 if ! grep -Fq -- "${NATIVE_FLUID_MARKER}" "${LOG}"; then
   echo 'NeverOverworld native fluid picker did not activate.' >&2
+  cat "${LOG}" >&2
+  exit 1
+fi
+if ! grep -Fq -- "${FLOOD_MARKER}" "${LOG}"; then
+  echo 'NeverOverworld LIGHT flood hook did not activate.' >&2
   cat "${LOG}" >&2
   exit 1
 fi
@@ -124,7 +150,24 @@ over_spec = importlib.util.spec_from_file_location('over_hasher', root / 'script
 over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(over)
 region = over.find_region_dir(world)
 print('NeverOverworld region directory:', region)
-chunk = raw.read_chunk_nbt(region, 0, 0)
+
+sample_chunks = [
+    (0, 0),
+    (32, 0),
+    (-32, 0),
+    (0, 32),
+    (0, -32),
+    (32, 32),
+    (-32, -32),
+]
+chunks = {}
+for cx, cz in sample_chunks:
+    try:
+        chunks[(cx, cz)] = raw.read_chunk_nbt(region, cx, cz)
+    except FileNotFoundError as exc:
+        raise SystemExit(f'dispersed flood sample chunk {cx},{cz} was not generated: {exc}')
+
+chunk = chunks[(0, 0)]
 for x,y,z,expected in [
     (0,500,0,'minecraft:stone'),
     (0,-500,0,'minecraft:gold_block'),
@@ -142,31 +185,81 @@ if all(block == 'minecraft:air' for block in deep):
     raise SystemExit('deep geology sample at Y=-200 is entirely air')
 print('NR-DEV-1 deep sample:', sorted(set(deep)))
 
+AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
+FLUID = {'minecraft:water', 'minecraft:lava'}
 flood_water = 0
-for y in (64, 80, 96, 112, 128):
-    for z in range(16):
-        for x in range(16):
-            if raw.block_at(chunk, x, y, z) == 'minecraft:water':
-                flood_water += 1
+low_open_columns = 0
+per_chunk = []
+for (cx, cz), current in chunks.items():
+    water_here = 0
+    low_here = 0
+    min_surface = None
+    max_surface = None
+    base_x = cx * 16
+    base_z = cz * 16
+    for lz in range(16):
+        for lx in range(16):
+            wx = base_x + lx
+            wz = base_z + lz
+            for y in (64, 80, 96, 112, 128):
+                if raw.block_at(current, wx, y, wz) == 'minecraft:water':
+                    water_here += 1
+            # Diagnostic proxy for the actual OCEAN_FLOOR_WG seed condition.
+            # It is evaluated only from final NBT: AIR at Y=128 plus terrain below
+            # means this column had an exterior low-space candidate for flooding.
+            if raw.block_at(current, wx, 128, wz) in AIR:
+                surface = None
+                for y in range(127, -65, -1):
+                    block = raw.block_at(current, wx, y, wz)
+                    if block not in AIR and block not in FLUID:
+                        surface = y
+                        break
+                if surface is not None:
+                    low_here += 1
+                    min_surface = surface if min_surface is None else min(min_surface, surface)
+                    max_surface = surface if max_surface is None else max(max_surface, surface)
+    flood_water += water_here
+    low_open_columns += low_here
+    per_chunk.append((cx, cz, water_here, low_here, min_surface, max_surface))
+
+for cx, cz, water_here, low_here, min_surface, max_surface in per_chunk:
+    print(
+        f'NR-DEV-1 flood diagnostic chunk {cx},{cz}: water={water_here} '
+        f'open_low_columns={low_here} low_surface_range={min_surface}..{max_surface}'
+    )
+
 if flood_water == 0:
-    raise SystemExit('VANILLA_FLOODED produced no water in sampled Y=64..128 planes')
-print('NR-DEV-1 flood sample water blocks:', flood_water)
+    if low_open_columns:
+        raise SystemExit(
+            'VANILLA_FLOODED produced no water despite '
+            f'{low_open_columns} final-NBT open low-column candidates across dispersed samples'
+        )
+    raise SystemExit(
+        'VANILLA_FLOODED produced no water, but dispersed samples also contained '
+        'no open terrain below Y=128; choose/locate a deterministic low-terrain smoke sample'
+    )
+print('NR-DEV-1 dispersed flood sample water blocks:', flood_water)
 
 deep_air = 0
 deep_lava = 0
-for y in (-440, -360, -280, -200, -120, -80, -40, 0, 32, 63):
-    for z in range(0, 16, 2):
-        for x in range(0, 16, 2):
-            block = raw.block_at(chunk, x, y, z)
-            if block == 'minecraft:air':
-                deep_air += 1
-            elif block == 'minecraft:lava':
-                deep_lava += 1
+for current in chunks.values():
+    cx = int(current.get('xPos', 0))
+    cz = int(current.get('zPos', 0))
+    base_x = cx * 16
+    base_z = cz * 16
+    for y in (-440, -360, -280, -200, -120, -80, -40, 0, 32, 63):
+        for lz in range(0, 16, 4):
+            for lx in range(0, 16, 4):
+                block = raw.block_at(current, base_x + lx, y, base_z + lz)
+                if block in AIR:
+                    deep_air += 1
+                elif block == 'minecraft:lava':
+                    deep_lava += 1
 if deep_air == 0:
     raise SystemExit('no dry cave air observed below Y=64; closed caves were over-flooded')
 if deep_lava != 0:
-    raise SystemExit(f'generated underground lava remained in NR smoke sample: {deep_lava}')
-print('NR-DEV-1 dry-cave sample air blocks:', deep_air)
+    raise SystemExit(f'generated underground lava remained in NR dispersed smoke samples: {deep_lava}')
+print('NR-DEV-1 dispersed dry-cave sample air blocks:', deep_air)
 
 level = world / 'level.dat'
 if not level.is_file():
@@ -175,8 +268,8 @@ with gzip.open(level,'rb') as fh:
     payload = fh.read()
 if b'file/NeverOverworld-Core.zip' not in payload:
     raise SystemExit('NeverOverworld-Core.zip is not recorded as enabled')
-print('[NeverFolia][NeverOverworld CI] native aquifer + runtime geometry + flood verification OK')
+print('[NeverFolia][NeverOverworld CI] native aquifer + runtime geometry + flood diagnostics OK')
 PY
 
 echo '[NeverFolia][NeverOverworld CI] smoke test passed.'
-tail -n 80 "${LOG}"
+tail -n 100 "${LOG}"
