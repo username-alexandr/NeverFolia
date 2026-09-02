@@ -120,17 +120,30 @@ if not (world / '.neverfolia-nevernether-worldgen.lock').is_file():
 if not (world / '.neverfolia-neveroverworld-worldgen.lock').is_file():
     raise SystemExit('NeverOverworld fingerprint lock was not created in combined TEST1 world')
 
-region_candidates = [
+# Datapack overrides of minecraft:overworld/the_nether are stored by the
+# dimension key under dimensions/minecraft/... rather than being guaranteed to
+# use the legacy world/region and DIM-1 layouts. Accept both layouts so this
+# harness verifies generated data instead of asserting a storage convention.
+overworld_candidates = [
     world / 'region',
+    world / 'dimensions/minecraft/overworld/region',
+]
+nether_candidates = [
     world / 'DIM-1/region',
     world / 'dimensions/minecraft/the_nether/region',
     world.parent / 'world_nether/region',
     world.parent / 'world_nether/DIM-1/region',
 ]
-if not any(path.is_dir() and any(path.glob('*.mca')) for path in region_candidates[:1]):
-    raise SystemExit('combined TEST1 did not generate Overworld region data')
-if not any(path.is_dir() and any(path.glob('*.mca')) for path in region_candidates[1:]):
-    raise SystemExit('combined TEST1 did not generate Nether region data')
+
+def has_regions(paths):
+    return any(path.is_dir() and any(path.glob('*.mca')) for path in paths)
+
+if not has_regions(overworld_candidates):
+    checked = ', '.join(str(path) for path in overworld_candidates)
+    raise SystemExit(f'combined TEST1 did not generate Overworld region data; checked: {checked}')
+if not has_regions(nether_candidates):
+    checked = ', '.join(str(path) for path in nether_candidates)
+    raise SystemExit(f'combined TEST1 did not generate Nether region data; checked: {checked}')
 
 print('[NeverFolia][TEST1 integration] both Core packs enabled and both dimensions generated')
 PY
