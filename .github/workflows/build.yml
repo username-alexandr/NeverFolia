@@ -19,8 +19,6 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Worldgen determinism runs are diagnostic evidence. Queue newer commits behind
-  # the active run instead of cancelling a nearly completed test.
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +38,9 @@ jobs:
 
       - name: Validate NeverOverworld worldgen specification
         run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Validate reserved NeverEnd worldgen specification
+        run: python3 ./scripts/validate-never-end-spec.py
 
       - name: Self-test NeverNether structure importer
         run: python3 ./scripts/build-never-nether-structure-pack.py --self-test
@@ -190,6 +191,15 @@ jobs:
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
           chmod +x ./scripts/smoke-test-never-overworld-fingerprint.sh
           ./scripts/smoke-test-never-overworld-fingerprint.sh "${JAR}" "${PACK}"
+
+      - name: Smoke test combined NeverOverworld + NeverNether TEST1 runtime
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          OVERWORLD_PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          NETHER_PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-neverfolia-test1-integration.sh
+          ./scripts/smoke-test-neverfolia-test1-integration.sh "${JAR}" "${OVERWORLD_PACK}" "${NETHER_PACK}"
 
       - name: Verify NeverNether strict chunk-order generation determinism
         run: |
