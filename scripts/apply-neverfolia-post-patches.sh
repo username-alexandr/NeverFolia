@@ -35,6 +35,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR
 echo "[NeverFolia] Applying NeverOverworld native generated-fluid feature filter"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-feature-filter.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld SeagrassFeature chunk ownership hook"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOLIA_DIR}"
+
 # Folia 26.2 uses Moonrise's ChunkLightTask as the actual LIGHT runtime path.
 # The vanilla ChunkStatusTasks.light(...) method still compiles but is bypassed by
 # the Moonrise chunk scheduler, so the flood barrier must live in ChunkLightTask.
