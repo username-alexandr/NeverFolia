@@ -38,6 +38,13 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR
 echo "[NeverFolia] Applying NeverOverworld Moonrise LIGHT flood barrier"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-moonrise-light-flood-hook.py" "${FOLIA_DIR}"
 
+# Radius-1 FEATURES may race with the owning chunk's Moonrise LIGHT task. Make
+# dry replaceable decorations part of the floodable volume so final geometry is
+# independent from whether vegetation/leaf litter arrived immediately before or
+# after the flood pass.
+echo "[NeverFolia] Applying NeverOverworld deterministic floodable-volume semantics"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-floodable-volume.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
 
