@@ -43,14 +43,19 @@ def patch_generator(source: str) -> str:
 def helper_source() -> str:
     return r'''package net.minecraft.world.level.chunk;
 
+import com.mojang.logging.LogUtils;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.core.Registry;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
+import org.slf4j.Logger;
 
 /** Native generated-fluid feature policy for NR-DEV-1. */
 final class NeverOverworldFluidFeatures {
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final AtomicBoolean ANNOUNCED = new AtomicBoolean();
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final Set<String> BLOCKED = Set.of(
@@ -72,6 +77,13 @@ final class NeverOverworldFluidFeatures {
             || level.getMinY() != EXPECTED_MIN_Y
             || level.getHeight() != EXPECTED_HEIGHT) {
             return false;
+        }
+
+        if (ANNOUNCED.compareAndSet(false, true)) {
+            LOGGER.info(
+                "[NeverFolia][NeverOverworld] Native generated-fluid feature filter active; blocked={}",
+                BLOCKED
+            );
         }
 
         return registry.getResourceKey(feature)
@@ -106,6 +118,10 @@ def self_test() -> None:
 
     helper = helper_source()
     for marker in (
+        "LogUtils.getLogger()",
+        "AtomicBoolean ANNOUNCED",
+        "ANNOUNCED.compareAndSet(false, true)",
+        "Native generated-fluid feature filter active; blocked={}",
         "EXPECTED_MIN_Y = -512",
         "EXPECTED_HEIGHT = 1024",
         "Level.OVERWORLD",
