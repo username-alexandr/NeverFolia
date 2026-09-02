@@ -60,7 +60,7 @@ def matching_delimiter(source: str, start: int, opening: str, closing: str) -> i
         if ch == "/" and nxt == "*":
             end = source.find("*/", index + 2)
             if end < 0:
-                fail("unterminated Java block comment while validating LIGHT method")
+                fail("unterminated Java block comment")
             index = end + 2
             continue
         if ch == opening:
@@ -73,80 +73,60 @@ def matching_delimiter(source: str, start: int, opening: str, closing: str) -> i
     fail(f"unterminated Java delimiter {opening}{closing}")
 
 
-def method_body_bounds(source: str, method_start: int) -> tuple[int, int]:
-    params_open = source.find("(", method_start)
-    if params_open < 0:
-        fail("LIGHT parameter list opening '(' not found")
-    params_close = matching_delimiter(source, params_open, "(", ")")
-    cursor = params_close + 1
-    while cursor < len(source) and source[cursor].isspace():
-        cursor += 1
-    if cursor >= len(source) or source[cursor] != "{":
-        context = source[max(method_start, params_close - 80) : min(len(source), params_close + 220)].replace("\n", "\\n")
-        fail(f"LIGHT body does not begin with '{{' after parameter list; context={context}")
-    body_open = cursor
-    body_close = matching_delimiter(source, body_open, "{", "}")
-    return body_open, body_close
-
-
 def normalize(source: str) -> str:
-    marker_positions = [match.start() for match in re.finditer(re.escape(COMMENT_1), source)]
-    if len(marker_positions) != 1:
-        fail(f"expected exactly one transformer-owned flood marker, got {len(marker_positions)}")
-    marker_start = marker_positions[0]
-
-    call_match = re.search(
-        r"net\.minecraft\.world\.level\.chunk\.NeverOverworldFlood\.apply\(\s*(\w+)\.level\(\)\s*,\s*(\w+)\s*\)\s*;",
-        source[marker_start:],
-    )
-    if call_match is None:
-        fail("could not locate/recover transformer-owned flood call")
-    context_name, chunk_name = call_match.groups()
-    call_start = marker_start + call_match.start()
-    call_end = marker_start + call_match.end()
-
-    owned_region = source[marker_start:call_start]
-    if COMMENT_2 not in owned_region or COMMENT_3 not in owned_region:
-        fail("transformer-owned flood comments are incomplete before the call")
-
-    # Remove the transformer-owned block. If COMMENT_1 was emitted inline after
-    # the parameter-list ')', preserve that prefix and restore a newline.
-    call_line_end = source.find("\n", call_end)
-    block_end = len(source) if call_line_end < 0 else call_line_end + 1
-    marker_line_start = source.rfind("\n", 0, marker_start) + 1
-    prefix = source[marker_line_start:marker_start]
-    if prefix.strip():
-        removal_start = marker_start
-        replacement = "\n"
-    else:
-        removal_start = marker_line_start
-        replacement = ""
-    stripped = source[:removal_start] + replacement + source[block_end:]
-
     method_pattern = re.compile(
         r"(?:public\s+|private\s+|protected\s+)?static\s+CompletableFuture\s*<\s*ChunkAccess\s*>\s+light\s*\(",
         re.MULTILINE,
     )
-    method_matches = list(method_pattern.finditer(stripped))
-    if len(method_matches) != 1:
-        fail(f"expected exactly one ChunkStatusTasks.light(...) method, got {len(method_matches)}")
-    method_start = method_matches[0].start()
-    body_open, body_close = method_body_bounds(stripped, method_start)
-    method_region = stripped[body_open + 1 : body_close]
+    methods = list(method_pattern.finditer(source))
+    if len(methods) != 1:
+        fail(f"expected exactly one ChunkStatusTasks.light(...) method, got {len(methods)}")
 
-    statement_pattern = re.compile(
-        rf"^(?P<indent>[ \t]*)boolean\s+lighted\s*=\s*isLighted\(\s*{re.escape(chunk_name)}\s*\)\s*;\s*$",
+    method = methods[0]
+    method_start = method.start()
+    params_open = source.find("(", method.start(), method.end())
+    params_close = matching_delimiter(source, params_open, "(", ")")
+    params = source[params_open + 1 : params_close]
+
+    context_match = re.search(r"\bWorldGenContext\s+(\w+)\b", params)
+    chunk_match = re.search(r"\bChunkAccess\s+(\w+)\b", params)
+    if context_match is None or chunk_match is None:
+        fail("could not resolve WorldGenContext/ChunkAccess parameter names")
+    context_name = context_match.group(1)
+    chunk_name = chunk_match.group(1)
+
+    lighted_pattern = re.compile(
+        rf"(?P<indent>^[ \t]*)boolean\s+lighted\s*=\s*isLighted\(\s*{re.escape(chunk_name)}\s*\)\s*;",
         re.MULTILINE,
     )
-    statements = list(statement_pattern.finditer(method_region))
-    if len(statements) != 1:
-        fail(
-            "expected exactly one isLighted(chunk) statement inside LIGHT body "
-            f"for chunk parameter {chunk_name!r}, got {len(statements)}"
-        )
+    lighted_matches = list(lighted_pattern.finditer(source, params_close + 1))
+    if not lighted_matches:
+        fail(f"isLighted({chunk_name}) statement not found after LIGHT parameters")
+    lighted = lighted_matches[0]
 
-    statement = statements[0]
-    insert_at = body_open + 1 + statement.start()
+    # The authoritative method brace is the final opening brace before the known
+    # first LIGHT statement. This survives both normal Mojmap formatting and the
+    # malformed historical transformer output that left comments/calls/extra ')'
+    # between the parameter list and the real body brace.
+    body_open = source.rfind("{", params_close + 1, lighted.start())
+    if body_open < 0:
+        fail("LIGHT body opening brace not found before isLighted")
+    body_close = matching_delimiter(source, body_open, "{", "}")
+    if not (body_open < lighted.start() < body_close):
+        fail("isLighted statement is not inside resolved LIGHT body")
+
+    body = source[body_open + 1 : body_close]
+    cleaned_lines: list[str] = []
+    for line in body.splitlines(keepends=True):
+        if COMMENT_1 in line or COMMENT_2 in line or COMMENT_3 in line or CALL_FRAGMENT in line:
+            continue
+        cleaned_lines.append(line)
+    cleaned_body = "".join(cleaned_lines)
+
+    body_lighted = list(lighted_pattern.finditer(cleaned_body))
+    if len(body_lighted) != 1:
+        fail(f"expected exactly one isLighted({chunk_name}) statement in cleaned LIGHT body, got {len(body_lighted)}")
+    statement = body_lighted[0]
     indent = statement.group("indent")
     call = f"net.minecraft.world.level.chunk.NeverOverworldFlood.apply({context_name}.level(), {chunk_name});"
     block = (
@@ -155,117 +135,103 @@ def normalize(source: str) -> str:
         f"{indent}{COMMENT_3}\n"
         f"{indent}{call}\n"
     )
-    normalized = stripped[:insert_at] + block + stripped[insert_at:]
+    rebuilt_body = cleaned_body[: statement.start()] + block + cleaned_body[statement.start() :]
+
+    # Canonicalize everything between the parameter-list close and body open.
+    # In particular this removes the dangling second ')' that caused heavy #95 to
+    # fail compilation at ChunkStatusTasks.java:167.
+    method_header = source[method_start : params_close + 1]
+    rebuilt_method = method_header + " {" + rebuilt_body + "}"
+    normalized = source[:method_start] + rebuilt_method + source[body_close + 1 :]
 
     if normalized.count(CALL_FRAGMENT) != 1:
         fail("normalized source does not contain exactly one flood call")
 
-    # Validate semantically against the actual LIGHT method body. This replaces
-    # the former `)\\s*//` heuristic, which could span newlines and reject valid
-    # Folia formatting even after the call had been moved inside the body.
-    normalized_method = list(method_pattern.finditer(normalized))
-    if len(normalized_method) != 1:
+    # Structural validation of the rebuilt method.
+    methods_after = list(method_pattern.finditer(normalized))
+    if len(methods_after) != 1:
         fail("normalized source lost the unique LIGHT method")
-    normalized_body_open, normalized_body_close = method_body_bounds(normalized, normalized_method[0].start())
-    call_pos = normalized.find(CALL_FRAGMENT)
-    lighted_match = re.search(
-        rf"boolean\s+lighted\s*=\s*isLighted\(\s*{re.escape(chunk_name)}\s*\)",
-        normalized[normalized_body_open + 1 : normalized_body_close],
-    )
-    if lighted_match is None:
-        fail("normalized LIGHT body no longer contains isLighted(chunk)")
-    lighted_pos = normalized_body_open + 1 + lighted_match.start()
-    if not (normalized_body_open < call_pos < lighted_pos < normalized_body_close):
-        context = normalized[max(normalized_body_open - 80, 0) : min(normalized_body_close + 80, len(normalized))].replace("\n", "\\n")
-        fail(f"flood call is not inside LIGHT body before isLighted; context={context}")
+    m = methods_after[0]
+    p_open = normalized.find("(", m.start(), m.end())
+    p_close = matching_delimiter(normalized, p_open, "(", ")")
+    cursor = p_close + 1
+    while cursor < len(normalized) and normalized[cursor].isspace():
+        cursor += 1
+    if cursor >= len(normalized) or normalized[cursor] != "{":
+        fail("canonical LIGHT header is not followed by a body brace")
+    b_close = matching_delimiter(normalized, cursor, "{", "}")
+    call_pos = normalized.find(CALL_FRAGMENT, cursor, b_close)
+    lighted_pos = normalized.find(f"boolean lighted = isLighted({chunk_name})", cursor, b_close)
+    if call_pos < 0 or lighted_pos < 0 or call_pos > lighted_pos:
+        fail("flood call is not inside LIGHT body before isLighted")
     return normalized
 
 
 def self_test() -> None:
-    malformed = '''class ChunkStatusTasks {
+    fixtures = (
+        '''class ChunkStatusTasks {
+   static CompletableFuture<ChunkAccess> light(
+      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk
+   ) {
+      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
+      // neighboring chunk that can write FEATURES into this chunk has therefore
+      // finished decoration before the chunk-owned flood mutates final blocks.
+      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);
+      boolean lighted = isLighted(chunk);
+      return context.lightEngine().lightChunk(chunk, lighted);
+   }
+}
+''',
+        '''class ChunkStatusTasks {
    static CompletableFuture<ChunkAccess> light(
       final WorldGenContext context,
       final ChunkStep step,
       final StaticCache2D<GenerationChunkHolder> chunks,
       final ChunkAccess chunk
-   )    // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
-      // neighboring chunk that can write FEATURES into this chunk has therefore
-      // finished decoration before the chunk-owned flood mutates final blocks.
-      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);
-   {
+   ) // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
+     // neighboring chunk that can write FEATURES into this chunk has therefore
+     // finished decoration before the chunk-owned flood mutates final blocks.
+     net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);
+   ) {
       boolean lighted = isLighted(chunk);
       return context.lightEngine().lightChunk(chunk, lighted);
    }
-
-   static CompletableFuture<ChunkAccess> generateSpawn(
-      final WorldGenContext context, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess chunk
-   ) {
-      return null;
-   }
 }
-'''
-    patched = normalize(malformed)
-    expected = '''   )    
-   {
-      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
-      // neighboring chunk that can write FEATURES into this chunk has therefore
-      // finished decoration before the chunk-owned flood mutates final blocks.
-      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);
-      boolean lighted = isLighted(chunk);'''
-    if expected not in patched:
-        fail("SELF-TEST: malformed Folia placement was not normalized before isLighted")
-
-    already_inside = '''class ChunkStatusTasks {
+''',
+        '''class ChunkStatusTasks {
    public static CompletableFuture < ChunkAccess > light(
       final WorldGenContext worldContext,
       final ChunkStep step,
       final StaticCache2D<GenerationChunkHolder> chunks,
       final ChunkAccess centerChunk
-   ) {
-      // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
-      // neighboring chunk that can write FEATURES into this chunk has therefore
-      // finished decoration before the chunk-owned flood mutates final blocks.
-      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(worldContext.level(), centerChunk);
+   )
+   {
       boolean lighted = isLighted(centerChunk);
       return worldContext.lightEngine().lightChunk(centerChunk, lighted);
    }
 }
-'''
-    repatched = normalize(already_inside)
-    if repatched.count("NeverOverworldFlood.apply(worldContext.level(), centerChunk);") != 1:
-        fail("SELF-TEST: already-correct Folia placement was not preserved canonically")
-    if repatched.index("NeverOverworldFlood.apply") > repatched.index("boolean lighted"):
-        fail("SELF-TEST: flood call must execute before isLighted")
+''',
+    )
+    expected_calls = (
+        "NeverOverworldFlood.apply(context.level(), chunk);",
+        "NeverOverworldFlood.apply(context.level(), chunk);",
+        "NeverOverworldFlood.apply(worldContext.level(), centerChunk);",
+    )
+    for fixture, expected in zip(fixtures, expected_calls):
+        patched = normalize(fixture)
+        if patched.count(expected) != 1:
+            fail(f"SELF-TEST: expected canonical call missing: {expected}")
+        if "\n   ) {" in patched:
+            fail("SELF-TEST: dangling duplicate ')' survived canonicalization")
 
-    # Reproduce the real Folia style where the opening brace is on the next line;
-    # semantic body validation, not a cross-line regex, is authoritative.
-    next_line_brace = '''class ChunkStatusTasks {
-   static CompletableFuture<ChunkAccess> light(
-      final WorldGenContext ctx, final ChunkStep step, final StaticCache2D<GenerationChunkHolder> chunks, final ChunkAccess target
-   )
-   // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
-   // neighboring chunk that can write FEATURES into this chunk has therefore
-   // finished decoration before the chunk-owned flood mutates final blocks.
-   net.minecraft.world.level.chunk.NeverOverworldFlood.apply(ctx.level(), target);
-   {
-      boolean lighted = isLighted(target);
-      return ctx.lightEngine().lightChunk(target, lighted);
-   }
-}
-'''
-    next_line_patched = normalize(next_line_brace)
-    if "{\n      // NeverFolia: LIGHT" not in next_line_patched:
-        fail("SELF-TEST: next-line Folia body brace was not normalized")
-
-    print("[NeverFolia][NeverOverworld flood normalize] SEMANTIC BODY SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld flood normalize] CANONICAL LIGHT HEADER SELF-TEST OK")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Normalize NeverOverworld LIGHT flood call placement")
+    parser = argparse.ArgumentParser(description="Canonicalize NeverOverworld LIGHT flood hook")
     parser.add_argument("folia", nargs="?", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-
     if args.self_test:
         self_test()
         return
@@ -275,9 +241,8 @@ def main() -> None:
     tasks = args.folia.resolve() / TASKS_REL
     if not tasks.is_file():
         fail(f"ChunkStatusTasks source not found: {tasks}")
-    normalized = normalize(tasks.read_text(encoding="utf-8"))
-    tasks.write_text(normalized, encoding="utf-8")
-    print("[NeverFolia][NeverOverworld flood normalize] LIGHT call normalized inside method body before isLighted")
+    tasks.write_text(normalize(tasks.read_text(encoding="utf-8")), encoding="utf-8")
+    print("[NeverFolia][NeverOverworld flood normalize] LIGHT method header/body canonicalized")
     print(f"  tasks: {tasks}")
 
 
