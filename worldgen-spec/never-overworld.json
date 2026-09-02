@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "worldgen_version": "NR-DEV-1",
+  "dimension": {
+    "min_y": -512,
+    "height": 1024,
+    "max_y": 511
+  },
+  "generator": {
+    "owner": "NeverFolia",
+    "deterministic": true,
+    "folia_safe": true
+  },
+  "layers": {
+    "surface": {
+      "min_y": 256,
+      "max_y": 511,
+      "purpose": ["continents", "mountains", "oceans", "surface_biomes"]
+    },
+    "middle": {
+      "min_y": 0,
+      "max_y": 255,
+      "purpose": ["terrain", "rivers", "caves", "structures"]
+    },
+    "deep": {
+      "min_y": -512,
+      "max_y": -1,
+      "purpose": ["geology", "ore_veins", "deep_caverns", "faults"]
+    }
+  },
+  "policies": {
+    "lava_aquifer": "disabled",
+    "water_policy": "controlled",
+    "chunk_order_independent": true
+  }
+}
