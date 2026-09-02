@@ -23,3 +23,49 @@ jobs:
 
       - name: Validate NeverOverworld native structures contract
         run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
+      - name: Self-test NeverOverworld native Jigsaw placement resolver
+        run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+
+  compile:
+    name: NR-DEV-1 structure placement Folia 26.2 compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply current NeverFolia baseline post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Apply NeverOverworld native structure placement resolver
+        run: python3 ./scripts/apply-never-overworld-placement-hook.py ./.work/Folia
+
+      - name: Compile Folia server with NeverOverworld placement resolver
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:compileJava --stacktrace
