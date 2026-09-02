@@ -1,0 +1,97 @@
+name: Diagnose NeverOverworld determinism
+
+on:
+  push:
+    branches:
+      - 'diag/never-overworld-determinism'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: NR-DEV-1 determinism diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download compiled JAR from Heavy 109
+        uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-compiled-f477e5120cd655370863b680c8ca41d79250e64f
+          path: downloaded
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          run-id: 33620501698
+
+      - name: Locate JAR and build NR Core pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find downloaded -type f -name '*.jar' | sort | head -n 1)"
+          if [ -z "${JAR}" ]; then
+            echo 'Downloaded NeverFolia JAR not found.' >&2
+            exit 1
+          fi
+          cp "${JAR}" artifacts/NeverFolia-diagnostic.jar
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-diagnostic.jar \
+            --output artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --verify
+
+      - name: Generate forward and reverse worlds
+        id: determinism
+        continue-on-error: true
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-diagnostic.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+
+      - name: Diff mismatching generation components
+        if: always()
+        run: |
+          if [ ! -d overworld-determinism-test/world-a/world ] || [ ! -d overworld-determinism-test/world-b/world ]; then
+            echo 'Determinism worlds are unavailable; cannot component-diff.' >&2
+            exit 1
+          fi
+          python3 ./scripts/diff-never-overworld-generation-chunks.py \
+            --world-a overworld-determinism-test/world-a/world \
+            --world-b overworld-determinism-test/world-b/world \
+            --chunk 8,8 --chunk 17,-11 --chunk=-23,19 \
+            --chunk 31,7 --chunk=-37,-29 --chunk 44,-16 \
+            --output overworld-determinism-test/component-diff.json
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-component-diagnostic-${{ github.sha }}
+          path: |
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/component-diff.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Preserve determinism gate result
+        if: steps.determinism.outcome != 'success'
+        run: |
+          echo 'Strict determinism remains red; see component diagnostic above.' >&2
+          exit 1
