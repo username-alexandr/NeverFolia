@@ -7,39 +7,81 @@ from pathlib import Path
 
 GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFluidFeatures.java")
-HOOK_CALL = "NeverOverworldFluidFeatures.shouldSkip(level, featureRegistry, feature)"
+HOOK_PREFIX = "NeverOverworldFluidFeatures.shouldSkip("
+IDENT = r"[A-Za-z_$][A-Za-z0-9_$]*"
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][NeverOverworld fluid features] {message}")
 
 
-def patch_generator(source: str) -> str:
-    if HOOK_CALL in source:
-        fail("ChunkGenerator is already patched")
-
-    # Insert after the concrete PlacedFeature is selected and before the supplier,
-    # RNG seed and placeWithBiomeCheck call. Skipped entries keep their global
-    # feature index, so every remaining vanilla feature retains its original seed.
-    # The indent capture is intentionally [ \t]* rather than \s*: it must never
-    # absorb a preceding newline/blank line into generated Java indentation.
-    needle = re.compile(
-        r"^(?P<indent>[ \t]*)PlacedFeature\s+feature\s*=\s*\(PlacedFeature\)stepFeatureData\.features\(\)\.get\(globalIndexOfFeature\);[ \t]*\n",
+def find_injection_site(source: str):
+    # Mojang-mapped local names are not an API. Match the semantic shape instead:
+    # a PlacedFeature loaded from StepFeatureData.features().get(...), followed by
+    # registry key lookup and placeWithBiomeCheck for that same local variable.
+    selection = re.compile(
+        rf"^(?P<indent>[ \t]*)PlacedFeature\s+(?P<feature>{IDENT})\s*=\s*"
+        rf"(?:\(PlacedFeature\)\s*)?(?P<step>{IDENT})\.features\(\)\.get\((?P<index>[^;\n]+)\);[ \t]*\n",
         re.MULTILINE,
     )
-    matches = list(needle.finditer(source))
-    if len(matches) != 1:
-        fail(f"expected exactly one PlacedFeature selection point, got {len(matches)}")
 
-    match = matches[0]
+    resolved = []
+    raw = list(selection.finditer(source))
+    for match in raw:
+        feature = match.group("feature")
+        window = source[match.end() : match.end() + 3000]
+
+        registry_match = re.search(
+            rf"\b(?P<registry>{IDENT})\.getResourceKey\(\s*{re.escape(feature)}\s*\)",
+            window,
+        )
+        place_match = re.search(
+            rf"\b{re.escape(feature)}\.placeWithBiomeCheck\(\s*(?P<level>{IDENT})\s*,",
+            window,
+        )
+        if registry_match is None or place_match is None:
+            continue
+        resolved.append(
+            (
+                match,
+                feature,
+                registry_match.group("registry"),
+                place_match.group("level"),
+            )
+        )
+
+    if len(resolved) != 1:
+        samples = []
+        for match in raw[:5]:
+            line_no = source.count("\n", 0, match.start()) + 1
+            samples.append(
+                f"line {line_no}: feature={match.group('feature')} step={match.group('step')} index={match.group('index').strip()}"
+            )
+        detail = "; ".join(samples) if samples else "no PlacedFeature-from-features().get(...) candidates"
+        fail(
+            "expected exactly one decoration PlacedFeature selection point, "
+            f"resolved={len(resolved)} raw={len(raw)}; {detail}"
+        )
+    return resolved[0]
+
+
+def patch_generator(source: str) -> str:
+    if HOOK_PREFIX in source:
+        fail("ChunkGenerator is already patched")
+
+    match, feature, registry, level = find_injection_site(source)
     indent = match.group("indent")
+    hook = f"NeverOverworldFluidFeatures.shouldSkip({level}, {registry}, {feature})"
     insertion = (
         match.group(0)
-        + f"{indent}if (NeverOverworldFluidFeatures.shouldSkip(level, featureRegistry, feature)) {{\n"
+        + f"{indent}if ({hook}) {{\n"
         + f"{indent}   continue;\n"
         + f"{indent}}}\n"
     )
-    return source[: match.start()] + insertion + source[match.end() :]
+    patched = source[: match.start()] + insertion + source[match.end() :]
+    if patched.count(HOOK_PREFIX) != 1:
+        fail("native fluid feature hook was not injected exactly once")
+    return patched
 
 
 def helper_source() -> str:
@@ -108,30 +150,54 @@ final class NeverOverworldFluidFeatures {
 
 
 def self_test() -> None:
-    fixture = '''class ChunkGenerator {
+    fixtures = [
+        (
+            '''class ChunkGenerator {
    void decorate() {
+      Registry<PlacedFeature> featureRegistry = null;
       for (int featureIndex = 0; featureIndex < numberOfFeaturesInStep; featureIndex++) {
          int globalIndexOfFeature = indexArray[featureIndex];
 
          PlacedFeature feature = (PlacedFeature)stepFeatureData.features().get(globalIndexOfFeature);
-         Supplier<String> currentlyGenerating = () -> feature.toString();
+         Supplier<String> currentlyGenerating = () -> featureRegistry.getResourceKey(feature).toString();
          random.setFeatureSeed(decorationSeed, globalIndexOfFeature, stepIndex);
          feature.placeWithBiomeCheck(level, this, random, origin);
       }
    }
 }
-'''
-    patched = patch_generator(fixture)
-    if patched.count(HOOK_CALL) != 1:
-        fail("SELF-TEST: native fluid feature filter not injected exactly once")
-    feature_line = patched.index("PlacedFeature feature")
-    guard_line = patched.index(HOOK_CALL)
-    seed_line = patched.index("random.setFeatureSeed")
-    if not feature_line < guard_line < seed_line:
-        fail("SELF-TEST: guard must run after feature selection and before RNG seed")
-    guard_source_line = next(line for line in patched.splitlines() if HOOK_CALL in line)
-    if not guard_source_line.startswith("         if ("):
-        fail(f"SELF-TEST: guard indentation drifted across line boundaries: {guard_source_line!r}")
+''',
+            "NeverOverworldFluidFeatures.shouldSkip(level, featureRegistry, feature)",
+        ),
+        (
+            '''class ChunkGenerator {
+   void decorate() {
+      Registry<PlacedFeature> registry3 = null;
+      for (int k = 0; k < count; ++k) {
+         int l = mapping[k];
+         PlacedFeature placedFeature = stepData.features().get(l);
+         Supplier<String> supplier = () -> registry3.getResourceKey(placedFeature).toString();
+         random.setFeatureSeed(seed, l, i);
+         placedFeature.placeWithBiomeCheck(worldGenLevel, this, random, origin);
+      }
+   }
+}
+''',
+            "NeverOverworldFluidFeatures.shouldSkip(worldGenLevel, registry3, placedFeature)",
+        ),
+    ]
+
+    for fixture, expected_hook in fixtures:
+        patched = patch_generator(fixture)
+        if patched.count(HOOK_PREFIX) != 1 or expected_hook not in patched:
+            fail(f"SELF-TEST: expected semantic hook missing: {expected_hook}")
+        feature_line = patched.index("PlacedFeature ")
+        guard_line = patched.index(HOOK_PREFIX)
+        seed_line = patched.index("setFeatureSeed")
+        if not feature_line < guard_line < seed_line:
+            fail("SELF-TEST: guard must run after feature selection and before RNG seed")
+        guard_source_line = next(line for line in patched.splitlines() if HOOK_PREFIX in line)
+        if not guard_source_line.startswith("         if ("):
+            fail(f"SELF-TEST: guard indentation drifted: {guard_source_line!r}")
 
     helper = helper_source()
     for marker in (
