@@ -30,10 +30,13 @@ jobs:
       - name: Self-test native-only Core pack promotion
         run: python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
 
-  compile:
-    name: NR-DEV-1 geology v2 Folia 26.2 compile
+      - name: Self-test native geology NBT audit
+        run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+  runtime:
+    name: NR-DEV-1 native-only geology v2 runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Checkout diagnostic branch
         uses: actions/checkout@v6
@@ -45,6 +48,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Configure Git identity
         run: |
@@ -69,6 +75,54 @@ jobs:
       - name: Extend native geology with coal and emerald
         run: python3 ./scripts/extend-never-overworld-ore-geology.py ./.work/Folia
 
-      - name: Compile Folia server with geology v2
+      - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
-        run: ./gradlew :folia-server:compileJava --stacktrace
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect diagnostic JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-geology-v2.jar
+
+      - name: Build native-only NeverOverworld Core pack
+        run: |
+          set -euo pipefail
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-geology-v2.jar \
+            --output artifacts/NeverOverworld-Core-native-geology-v2.zip
+          python3 ./scripts/promote-never-overworld-native-geology-pack.py \
+            --input artifacts/NeverOverworld-Core-native-geology-v2.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-native-geology-v2.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-native-geology-v2.zip --verify
+
+      - name: Smoke test native-only NeverOverworld runtime
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-geology-v2.jar \
+            artifacts/NeverOverworld-Core-native-geology-v2.zip
+
+      - name: Audit generated deep ore geology
+        run: |
+          python3 ./scripts/audit-never-overworld-native-geology.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 256 \
+            --output artifacts/native-geology-audit.json
+
+      - name: Upload native geology diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-native-geology-v2-${{ github.sha }}
+          path: |
+            artifacts/NeverFolia-geology-v2.jar
+            artifacts/NeverOverworld-Core-native-geology-v2.zip
+            artifacts/native-geology-audit.json
+            overworld-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
