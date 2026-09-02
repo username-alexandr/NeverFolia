@@ -72,8 +72,8 @@ jobs:
           python3 ./scripts/diff-never-overworld-generation-chunks.py \
             --world-a overworld-determinism-test/world-a/world \
             --world-b overworld-determinism-test/world-b/world \
-            --chunk 8,8 --chunk 17,-11 --chunk=-23,19 \
-            --chunk 31,7 --chunk=-37,-29 --chunk 44,-16 \
+            --chunk 64,64 --chunk 160,-96 --chunk=-192,144 \
+            --chunk 288,32 --chunk=-320,-256 --chunk 416,-160 \
             --output overworld-determinism-test/component-diff.json
 
       - name: Upload diagnostic evidence
