@@ -1,0 +1,115 @@
+name: Diagnose NeverOverworld geology surface stage
+
+on:
+  push:
+    branches:
+      - diag/never-overworld-geology-surface-stage
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NR geology SURFACE relocation self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Self-test SURFACE relocation
+        run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
+      - name: Self-test base native geology
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+      - name: Self-test geology v2 extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+  determinism:
+    name: NR geology SURFACE strict determinism
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia baseline post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Relocate native geology to SURFACE
+        run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py ./.work/Folia
+
+      - name: Compile Folia server with SURFACE geology
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:compileJava --stacktrace
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect diagnostic JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-surface-geology.jar
+
+      - name: Build and fingerprint NeverOverworld Core pack
+        run: |
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-surface-geology.jar \
+            --output artifacts/NeverOverworld-Core-surface-geology.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-surface-geology.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-surface-geology.zip --verify
+
+      - name: Verify NeverOverworld strict chunk-order determinism
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-surface-geology.jar \
+            artifacts/NeverOverworld-Core-surface-geology.zip
+
+      - name: Upload determinism diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-surface-geology-${{ github.sha }}
+          path: |
+            artifacts/NeverFolia-surface-geology.jar
+            artifacts/NeverOverworld-Core-surface-geology.zip
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/component-diff.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
