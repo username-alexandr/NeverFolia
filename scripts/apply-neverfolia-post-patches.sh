@@ -35,6 +35,12 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR
 echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED LIGHT-barrier hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
 
+# Folia 26.2 may format the LIGHT method body brace differently from Mojmap.
+# Normalize the injected block against the first isLighted(chunk) statement so the
+# call always executes inside the method body and before lighting starts.
+echo "[NeverFolia] Normalizing NeverOverworld LIGHT flood call placement"
+python3 "${ROOT_DIR}/scripts/normalize-never-overworld-light-flood-call.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Adding optional NeverNether placement diagnostics"
 python3 "${ROOT_DIR}/scripts/instrument-never-nether-placement-debug.py" "${FOLIA_DIR}"
 
