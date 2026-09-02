@@ -15,8 +15,6 @@ DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
 NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
 FLOOD_MARKER='[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128'
 
-# Dispersed deterministic samples reduce the chance that a single mountain/plateau
-# at spawn makes the flood assertion meaningless. Coordinates are block X/Z.
 SAMPLE_BLOCKS=(
   '0 0'
   '512 0'
@@ -91,21 +89,37 @@ wait_literal() {
   return 1
 }
 
+wait_chunk_loaded() {
+  local x="$1" z="$2" token="$3"
+  for _ in $(seq 1 150); do
+    send_console "execute in minecraft:overworld if loaded ${x} 0 ${z} run say ${token}"
+    sleep 1
+    if grep -Fq -- "${token}" "${TEST_DIR}/server.log" 2>/dev/null; then return 0; fi
+    if ! kill -0 "${SERVER_PID}" 2>/dev/null; then break; fi
+  done
+  echo "NeverOverworld dispersed smoke chunk did not reach loaded/FULL barrier: ${x},${z}" >&2
+  cat "${TEST_DIR}/server.log" >&2 || true
+  return 1
+}
+
 start_server
 wait_ready
 wait_literal "${NATIVE_FLUID_MARKER}" 15
 send_console 'execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0'
 wait_literal 'Gamerule random_tick_speed is now set to: 0' 15
 
+sample_index=0
 for coords in "${SAMPLE_BLOCKS[@]}"; do
   read -r x z <<< "${coords}"
+  sample_index=$((sample_index + 1))
+  token="NEVEROVERWORLD_SMOKE_FULL_${sample_index}_${x}_${z}"
   send_console "execute in minecraft:overworld run forceload add ${x} ${z}"
+  wait_chunk_loaded "${x}" "${z}" "${token}"
 done
-# The LIGHT hook may have already run during spawn generation, or may first run
-# while these dispersed chunks are promoted. In either case the marker must exist.
 wait_literal "${FLOOD_MARKER}" 30
-# Give all requested FULL chunks time to finish and flush before the NBT probe.
-sleep 20
+# The explicit loaded/FULL barrier above replaces the old fixed 20-second sleep.
+# Give pending chunk I/O a short deterministic flush window before stopping.
+sleep 3
 
 send_console 'execute in minecraft:overworld run setblock 0 500 0 minecraft:stone'
 send_console 'execute in minecraft:overworld run setblock 0 -500 0 minecraft:gold_block'
@@ -151,15 +165,7 @@ over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(
 region = over.find_region_dir(world)
 print('NeverOverworld region directory:', region)
 
-sample_chunks = [
-    (0, 0),
-    (32, 0),
-    (-32, 0),
-    (0, 32),
-    (0, -32),
-    (32, 32),
-    (-32, -32),
-]
+sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32)]
 chunks = {}
 for cx, cz in sample_chunks:
     try:
@@ -168,10 +174,7 @@ for cx, cz in sample_chunks:
         raise SystemExit(f'dispersed flood sample chunk {cx},{cz} was not generated: {exc}')
 
 chunk = chunks[(0, 0)]
-for x,y,z,expected in [
-    (0,500,0,'minecraft:stone'),
-    (0,-500,0,'minecraft:gold_block'),
-]:
+for x,y,z,expected in [(0,500,0,'minecraft:stone'),(0,-500,0,'minecraft:gold_block')]:
     actual = raw.block_at(chunk,x,y,z)
     if actual != expected:
         raise SystemExit(f'extended-height persistence mismatch at {x},{y},{z}: {actual} != {expected}')
@@ -204,9 +207,6 @@ for (cx, cz), current in chunks.items():
             for y in (64, 80, 96, 112, 128):
                 if raw.block_at(current, wx, y, wz) == 'minecraft:water':
                     water_here += 1
-            # Diagnostic proxy for the actual OCEAN_FLOOR_WG seed condition.
-            # It is evaluated only from final NBT: AIR at Y=128 plus terrain below
-            # means this column had an exterior low-space candidate for flooding.
             if raw.block_at(current, wx, 128, wz) in AIR:
                 surface = None
                 for y in range(127, -65, -1):
@@ -223,21 +223,12 @@ for (cx, cz), current in chunks.items():
     per_chunk.append((cx, cz, water_here, low_here, min_surface, max_surface))
 
 for cx, cz, water_here, low_here, min_surface, max_surface in per_chunk:
-    print(
-        f'NR-DEV-1 flood diagnostic chunk {cx},{cz}: water={water_here} '
-        f'open_low_columns={low_here} low_surface_range={min_surface}..{max_surface}'
-    )
+    print(f'NR-DEV-1 flood diagnostic chunk {cx},{cz}: water={water_here} open_low_columns={low_here} low_surface_range={min_surface}..{max_surface}')
 
 if flood_water == 0:
     if low_open_columns:
-        raise SystemExit(
-            'VANILLA_FLOODED produced no water despite '
-            f'{low_open_columns} final-NBT open low-column candidates across dispersed samples'
-        )
-    raise SystemExit(
-        'VANILLA_FLOODED produced no water, but dispersed samples also contained '
-        'no open terrain below Y=128; choose/locate a deterministic low-terrain smoke sample'
-    )
+        raise SystemExit('VANILLA_FLOODED produced no water despite ' f'{low_open_columns} final-NBT open low-column candidates across dispersed samples')
+    raise SystemExit('VANILLA_FLOODED produced no water, but dispersed samples also contained no open terrain below Y=128; choose/locate a deterministic low-terrain smoke sample')
 print('NR-DEV-1 dispersed flood sample water blocks:', flood_water)
 
 deep_air = 0
