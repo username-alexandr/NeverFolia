@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - feature/never-overworld-worldgen
+      - 'wip/**'
   pull_request:
     branches:
       - develop
@@ -38,11 +39,17 @@ jobs:
       - name: Self-test NeverOverworld Moonrise LIGHT flood hook
         run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
 
+      - name: Self-test NeverOverworld deterministic floodable-volume semantics
+        run: python3 ./scripts/apply-never-overworld-floodable-volume.py --self-test
+
       - name: Self-test NeverOverworld LIGHT flood activation instrumentation
         run: python3 ./scripts/instrument-never-overworld-flood-debug.py --self-test
 
       - name: Self-test NeverOverworld native fluid picker
         run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
+
+      - name: Self-test NeverOverworld native generated-fluid feature filter
+        run: python3 ./scripts/apply-never-overworld-fluid-feature-filter.py --self-test
 
       - name: Self-test NeverOverworld fingerprint tool
         run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
