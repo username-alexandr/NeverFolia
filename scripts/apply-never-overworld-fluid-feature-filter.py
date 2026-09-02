@@ -56,6 +56,7 @@ import org.slf4j.Logger;
 final class NeverOverworldFluidFeatures {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final AtomicBoolean ANNOUNCED = new AtomicBoolean();
+    private static final AtomicBoolean SKIP_ANNOUNCED = new AtomicBoolean();
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final Set<String> BLOCKED = Set.of(
@@ -87,7 +88,17 @@ final class NeverOverworldFluidFeatures {
         }
 
         return registry.getResourceKey(feature)
-            .map(key -> BLOCKED.contains(key.identifier().toString()))
+            .map(key -> {
+                final String id = key.identifier().toString();
+                final boolean blocked = BLOCKED.contains(id);
+                if (blocked && SKIP_ANNOUNCED.compareAndSet(false, true)) {
+                    LOGGER.info(
+                        "[NeverFolia][NeverOverworld] Native generated-fluid feature filter skipped blocked feature={}",
+                        id
+                    );
+                }
+                return blocked;
+            })
             .orElse(false);
     }
 }
@@ -120,8 +131,11 @@ def self_test() -> None:
     for marker in (
         "LogUtils.getLogger()",
         "AtomicBoolean ANNOUNCED",
+        "AtomicBoolean SKIP_ANNOUNCED",
         "ANNOUNCED.compareAndSet(false, true)",
+        "SKIP_ANNOUNCED.compareAndSet(false, true)",
         "Native generated-fluid feature filter active; blocked={}",
+        "Native generated-fluid feature filter skipped blocked feature={}",
         "EXPECTED_MIN_Y = -512",
         "EXPECTED_HEIGHT = 1024",
         "Level.OVERWORLD",
