@@ -15,8 +15,6 @@ echo "[NeverFolia] Applying NeverNether native placement hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-placement-hook.py" "${FOLIA_DIR}"
 
 # Minecraft 26.2 renamed ResourceKey#location() to ResourceKey#identifier().
-# Keep this explicit compatibility normalization until the transformer is promoted
-# to a conventional post-apply source patch after TEST1 stabilizes.
 sed -i 's/key\.location()/key.identifier()/g' "${HELPER_FILE}"
 if grep -q 'key\.location()' "${HELPER_FILE}"; then
   echo "[NeverFolia] Failed to normalize ResourceKey API in placement helper" >&2
@@ -32,12 +30,12 @@ python3 "${ROOT_DIR}/scripts/apply-never-nether-netherrack-blobs-ownership.py" "
 echo "[NeverFolia] Applying NeverOverworld native lava-free aquifer picker"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-picker.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverOverworld VANILLA_FLOODED LIGHT-barrier hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flood-hook.py" "${FOLIA_DIR}"
 
-# Folia 26.2 may format the LIGHT method body brace differently from Mojmap.
-# Normalize the injected block against the first isLighted(chunk) statement so the
-# call always executes inside the method body and before lighting starts.
 echo "[NeverFolia] Normalizing NeverOverworld LIGHT flood call placement"
 python3 "${ROOT_DIR}/scripts/normalize-never-overworld-light-flood-call.py" "${FOLIA_DIR}"
 
