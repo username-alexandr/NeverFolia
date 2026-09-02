@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "worldgen_version": "NR-DEV-1",
+  "structures": {
+    "tier_a": {
+      "distance": [1000, 2000],
+      "types": ["ancient_complex", "large_ruins", "deep_dungeons"]
+    },
+    "tier_b": {
+      "distance": [500, 1000],
+      "types": ["mineshaft", "tower", "camp", "village"]
+    },
+    "tier_c": {
+      "distance": [250, 500],
+      "types": ["cache", "small_ruin", "camp_site"]
+    }
+  },
+  "placement_rules": {
+    "deterministic": true,
+    "terrain_check_required": true,
+    "folia_owned_chunk_write": true
+  }
+}
