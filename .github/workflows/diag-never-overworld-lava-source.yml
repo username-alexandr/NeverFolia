@@ -1,0 +1,124 @@
+name: Diagnose NeverOverworld residual lava
+
+on:
+  push:
+    branches:
+      - diag/never-overworld-lava-source
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: NR-DEV-1 residual lava locations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download compiled JAR from build 117
+        uses: actions/download-artifact@v5
+        with:
+          name: NeverFolia-compiled-d0581a8ed6d8b066e745880a1cc6b175875a5db0
+          path: compiled
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          run-id: '33657122974'
+
+      - name: Build NeverOverworld TEST1 pack
+        run: |
+          set -euo pipefail
+          JAR="$(find compiled -type f -name '*.jar' | head -n 1)"
+          mkdir -p artifacts
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar "${JAR}" \
+            --output artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --inject
+
+      - name: Reproduce NeverOverworld smoke world
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          JAR="$(find compiled -type f -name '*.jar' | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            "${JAR}" artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+
+      - name: Locate every sampled source-lava block
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+
+          root = Path.cwd()
+          world = root / 'overworld-smoke-test/world'
+          raw_spec = importlib.util.spec_from_file_location('raw', root / 'scripts/hash-never-nether-chunks.py')
+          raw = importlib.util.module_from_spec(raw_spec); raw_spec.loader.exec_module(raw)
+          over_spec = importlib.util.spec_from_file_location('over', root / 'scripts/hash-never-overworld-generation-chunks.py')
+          over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(over)
+          region = over.find_region_dir(world)
+
+          sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32)]
+          chunks = {coord: raw.read_chunk_nbt(region, *coord) for coord in sample_chunks}
+          ys = (-440,-360,-280,-200,-120,-80,-40,0,32,63)
+          hits = []
+          directions = {
+              'down': (0,-1,0), 'up': (0,1,0),
+              'west': (-1,0,0), 'east': (1,0,0),
+              'north': (0,0,-1), 'south': (0,0,1),
+          }
+          for (cx,cz), chunk in chunks.items():
+              base_x = cx * 16
+              base_z = cz * 16
+              for y in ys:
+                  for lz in range(0,16,4):
+                      for lx in range(0,16,4):
+                          x = base_x + lx
+                          z = base_z + lz
+                          if raw.block_at(chunk,x,y,z) != 'minecraft:lava':
+                              continue
+                          neighbors = {}
+                          for name,(dx,dy,dz) in directions.items():
+                              nx,ny,nz = x+dx,y+dy,z+dz
+                              ncx,ncz = nx//16,nz//16
+                              neighbor_chunk = chunks.get((ncx,ncz), chunk if (ncx,ncz)==(cx,cz) else None)
+                              if neighbor_chunk is None:
+                                  neighbors[name] = '<outside-sampled-chunk>'
+                              else:
+                                  neighbors[name] = raw.block_at(neighbor_chunk,nx,ny,nz)
+                          hits.append({
+                              'chunk': [cx,cz], 'x': x, 'y': y, 'z': z,
+                              'neighbors': neighbors,
+                          })
+
+          out = root / 'overworld-smoke-test/lava-samples.json'
+          out.write_text(json.dumps({'count': len(hits), 'hits': hits}, indent=2) + '\n', encoding='utf-8')
+          print('[NeverFolia][NeverOverworld lava diagnostic] sampled source lava:', len(hits))
+          for hit in hits:
+              print(f"  {hit['x']},{hit['y']},{hit['z']} chunk={hit['chunk']} neighbors={hit['neighbors']}")
+          if not hits:
+              raise SystemExit('expected residual sampled source lava but found none')
+          PY
+
+      - name: Upload residual-lava evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-lava-source-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            overworld-smoke-test/lava-samples.json
+            overworld-smoke-test/server.log
+            overworld-smoke-test/world/**/region/*.mca
