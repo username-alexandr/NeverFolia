@@ -1,0 +1,116 @@
+name: Gate NeverOverworld native structures v1
+
+on:
+  push:
+    branches:
+      - wip/never-overworld-structures-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Native structures v1 self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate NeverOverworld structures contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+      - name: Self-test placement resolver
+        run: |
+          python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+          python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+      - name: Self-test NBT/template/structure-set builder
+        run: python3 ./scripts/build-never-overworld-native-structures.py --self-test
+      - name: Shell-check runtime template smoke
+        run: bash -n ./scripts/smoke-test-never-overworld-native-structures.sh
+
+  runtime:
+    name: Folia 26.2 native structures runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply full NeverFolia native post-patch chain
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+      - name: Collect test JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-structures-v1.jar
+      - name: Build native-only NR Core with structures v1
+        run: |
+          set -euo pipefail
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-structures-v1.jar \
+            --output artifacts/NeverOverworld-Core-structures-v1.zip
+          python3 ./scripts/promote-never-overworld-native-geology-pack.py \
+            --input artifacts/NeverOverworld-Core-structures-v1.zip
+          python3 ./scripts/build-never-overworld-native-structures.py \
+            --input artifacts/NeverOverworld-Core-structures-v1.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-structures-v1.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-structures-v1.zip --verify
+      - name: Smoke test base NeverOverworld runtime with structure registries
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-structures-v1.jar \
+            artifacts/NeverOverworld-Core-structures-v1.zip
+      - name: Force-decode and place all 8 NBT templates
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
+          ./scripts/smoke-test-never-overworld-native-structures.sh \
+            artifacts/NeverFolia-structures-v1.jar \
+            artifacts/NeverOverworld-Core-structures-v1.zip
+      - name: Verify strict chunk-order determinism with structure registries enabled
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-structures-v1.jar \
+            artifacts/NeverOverworld-Core-structures-v1.zip
+      - name: Upload structure v1 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-native-structures-v1-${{ github.sha }}
+          path: |
+            artifacts/NeverFolia-structures-v1.jar
+            artifacts/NeverOverworld-Core-structures-v1.zip
+            overworld-smoke-test/server.log
+            overworld-structures-smoke-test/server.log
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
