@@ -26,6 +26,9 @@ jobs:
       - name: Validate NeverOverworld contract
         run: python3 ./scripts/validate-never-overworld-spec.py
 
+      - name: Validate reserved NeverEnd contract
+        run: python3 ./scripts/validate-never-end-spec.py
+
       - name: Self-test NeverOverworld Core builder
         run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
 
