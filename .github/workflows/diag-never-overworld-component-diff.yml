@@ -1,0 +1,73 @@
+name: Diagnose NeverOverworld component race
+
+on:
+  push:
+    branches:
+      - diag/never-overworld-component-diff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: NR-DEV-1 component diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download compiled JAR from build 113
+        uses: actions/download-artifact@v5
+        with:
+          name: NeverFolia-compiled-2892c24ff3911444d46ead12388266e9a5958f86
+          path: compiled
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          run-id: '33654624910'
+
+      - name: Build NeverOverworld TEST1 pack
+        run: |
+          set -euo pipefail
+          JAR="$(find compiled -type f -name '*.jar' | head -n 1)"
+          test -n "${JAR}"
+          mkdir -p artifacts
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar "${JAR}" \
+            --output artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --verify
+
+      - name: Reproduce strict NeverOverworld chunk-order race
+        run: |
+          set -euo pipefail
+          JAR="$(find compiled -type f -name '*.jar' | head -n 1)"
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            "${JAR}" artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
+
+      - name: Upload component diff and region evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-component-race-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            overworld-determinism-test/component-diff.json
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+            overworld-determinism-test/world-a/world/**/region/*.mca
+            overworld-determinism-test/world-b/world/**/region/*.mca
