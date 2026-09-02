@@ -26,13 +26,15 @@ jobs:
         run: python3 ./scripts/build-never-overworld-native-structures.py --self-test
       - name: Self-test structure type normalization
         run: python3 ./scripts/normalize-never-overworld-structure-type.py --self-test
-      - name: Shell-check runtime template smoke
-        run: bash -n ./scripts/smoke-test-never-overworld-native-structures.sh
+      - name: Shell-check structure runtime probes
+        run: |
+          bash -n ./scripts/smoke-test-never-overworld-native-structures.sh
+          bash -n ./scripts/probe-never-overworld-natural-structures.sh
 
   runtime:
     name: Folia 26.2 native structures runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
         with:
@@ -96,6 +98,12 @@ jobs:
           ./scripts/smoke-test-never-overworld-native-structures.sh \
             artifacts/NeverFolia-structures-v1.jar \
             artifacts/NeverOverworld-Core-structures-v1.zip
+      - name: Verify natural structure_set placement writes real starts
+        run: |
+          chmod +x ./scripts/probe-never-overworld-natural-structures.sh
+          ./scripts/probe-never-overworld-natural-structures.sh \
+            artifacts/NeverFolia-structures-v1.jar \
+            artifacts/NeverOverworld-Core-structures-v1.zip
       - name: Verify strict chunk-order determinism with structure registries enabled
         run: |
           chmod +x ./scripts/test-never-overworld-generation-determinism.sh
@@ -110,8 +118,11 @@ jobs:
           path: |
             artifacts/NeverFolia-structures-v1.jar
             artifacts/NeverOverworld-Core-structures-v1.zip
+            artifacts/natural-structure-starts.json
             overworld-smoke-test/server.log
             overworld-structures-smoke-test/server.log
+            overworld-natural-structures-test/server.log
+            overworld-natural-structures-test/ambient-candidates.txt
             overworld-determinism-test/world-a-hash.json
             overworld-determinism-test/world-b-hash.json
             overworld-determinism-test/world-a/server.log
