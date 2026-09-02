@@ -28,6 +28,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-placement-hook.py" "${FOLIA_D
 echo "[NeverFolia] Normalizing NeverOverworld ChunkPos API for Minecraft 26.2"
 python3 "${ROOT_DIR}/scripts/normalize-never-overworld-placement-chunkpos-api.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld predictive no-generation fast locate"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-fast-locate.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverNether Basalt Columns chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-basalt-columns-ownership.py" "${FOLIA_DIR}"
 
