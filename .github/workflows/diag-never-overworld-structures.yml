@@ -27,6 +27,9 @@ jobs:
       - name: Self-test NeverOverworld native Jigsaw placement resolver
         run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
 
+      - name: Self-test Minecraft 26.2 ChunkPos API normalization
+        run: python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+
   compile:
     name: NR-DEV-1 structure placement Folia 26.2 compile
     runs-on: ubuntu-latest
@@ -65,6 +68,9 @@ jobs:
 
       - name: Apply NeverOverworld native structure placement resolver
         run: python3 ./scripts/apply-never-overworld-placement-hook.py ./.work/Folia
+
+      - name: Normalize NeverOverworld ChunkPos API for 26.2
+        run: python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py ./.work/Folia
 
       - name: Compile Folia server with NeverOverworld placement resolver
         working-directory: .work/Folia
