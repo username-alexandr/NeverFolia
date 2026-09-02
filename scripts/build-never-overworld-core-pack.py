@@ -21,15 +21,7 @@ FLOOD_LEVEL = 128
 PACK_FORMAT_MIN = [107, 1]
 PACK_FORMAT_MAX = 107
 ORE_STAGE_INDEX = 6
-BLOCKED_WORLDGEN_FLUID_FEATURES = frozenset(
-    {
-        "minecraft:lake_lava_underground",
-        "minecraft:lake_lava_surface",
-        "minecraft:spring_water",
-        "minecraft:spring_lava",
-        "minecraft:spring_lava_frozen",
-    }
-)
+NATIVE_GENERATED_FLUID_POLICY = "neverfolia-native-generated-fluid-filter-v1"
 
 
 def write_json(root: Path, rel: str, value) -> None:
@@ -97,24 +89,6 @@ def placed_ore(feature: str, count: int, min_y: int, max_y: int, distribution: s
             {"type": "minecraft:biome"},
         ],
     }
-
-
-def strip_generated_fluid_features(biome: dict) -> int:
-    features = biome.get("features")
-    if not isinstance(features, list):
-        return 0
-    removed = 0
-    for stage in features:
-        if not isinstance(stage, list):
-            continue
-        kept = []
-        for entry in stage:
-            if isinstance(entry, str) and entry in BLOCKED_WORLDGEN_FLUID_FEATURES:
-                removed += 1
-            else:
-                kept.append(entry)
-        stage[:] = kept
-    return removed
 
 
 def inner_server_jar(server_jar: Path) -> zipfile.ZipFile:
@@ -235,18 +209,17 @@ def build_pack(root: Path, server_jar: Path) -> None:
     }
     deep_feature_ids = [f"neverfolia:{name}" for name in deep_features]
 
-    removed_fluid_features = 0
+    # Vanilla generated-fluid feature references are deliberately preserved.
+    # NR-DEV-1's Java-side NeverOverworldFluidFeatures policy owns whether these
+    # placed features execute. Keeping the exact registry lists here prevents the
+    # datapack from silently becoming a second source of fluid-generation policy.
     for name, biome in biomes.items():
-        removed_fluid_features += strip_generated_fluid_features(biome)
         stages = biome.get("features")
         if not isinstance(stages, list) or len(stages) <= ORE_STAGE_INDEX:
             raise SystemExit(f"Overworld biome {name!r} has no ore feature stage {ORE_STAGE_INDEX}")
         if not isinstance(stages[ORE_STAGE_INDEX], list):
             raise SystemExit(f"Overworld biome {name!r} ore feature stage is not a list")
         stages[ORE_STAGE_INDEX].extend(deep_feature_ids)
-
-    if removed_fluid_features == 0:
-        raise SystemExit("NR-DEV-1 expected vanilla generated-fluid features but removed none")
 
     write_json(
         root,
@@ -293,9 +266,9 @@ def build_pack(root: Path, server_jar: Path) -> None:
             "flood_phase": "neverfolia-light-barrier-surface-connected-chunk-owned-v3",
             "flood_seed": "minecraft:OCEAN_FLOOR_WG-open-columns-at-y128",
             "sealed_cavity_policy": "remain-dry-without-surface-connected-air-path",
-            "underground_fluid_policy": "remove-generated-water-and-lava-then-refill-surface-connected-air",
-            "blocked_vanilla_fluid_features": sorted(BLOCKED_WORLDGEN_FLUID_FEATURES),
-            "removed_fluid_feature_references": removed_fluid_features,
+            "underground_fluid_policy": "native-lava-free-aquifer-plus-light-barrier-surface-connected-flood",
+            "generated_fluid_feature_policy": NATIVE_GENERATED_FLUID_POLICY,
+            "vanilla_fluid_feature_lists": "preserved-from-built-server-jar",
             "upper_generation": "vanilla-26.2-from-built-server-jar",
             "deep_generation": "neverfolia-density-v1",
             "deep_biomes": [
@@ -326,6 +299,7 @@ def build_zip(server_jar: Path, output: Path) -> None:
     print(f"  worldgen: {WORLDGEN_ID}")
     print(f"  range: Y={DIM_MIN_Y}..{DIM_MAX_Y}")
     print(f"  vanilla upper: Y>={VANILLA_MIN_Y}")
+    print(f"  fluid features: preserved in pack; filtered natively by NeverFolia")
     print(f"  flood: surface-connected air up to Y={FLOOD_LEVEL}; sealed cavities stay dry")
     print(f"  output: {output}")
 
@@ -337,26 +311,15 @@ def self_test() -> None:
         raise SystemExit("NR-DEV-1 vanilla/deep transition self-test failed")
     if FLOOD_LEVEL != 128:
         raise SystemExit("NR-DEV-1 flood contract self-test failed")
+    if NATIVE_GENERATED_FLUID_POLICY != "neverfolia-native-generated-fluid-filter-v1":
+        raise SystemExit("NR-DEV-1 native generated-fluid policy marker drifted")
     sample = placed_ore("ore_iron", 1, -480, -96, "uniform")
     if sample["placement"][2]["height"]["min_inclusive"]["absolute"] != -480:
         raise SystemExit("NR-DEV-1 placed ore self-test failed")
     density = choice("minecraft:y", -512, -64, 1.0, 0.0)
     if density["type"] != "minecraft:range_choice" or density["input"] != "minecraft:y":
         raise SystemExit("NR-DEV-1 density self-test failed")
-    synthetic = {
-        "features": [
-            ["minecraft:lake_lava_surface", "minecraft:other"],
-            [], [], [], [], [], [], [],
-            ["minecraft:spring_water", "minecraft:spring_lava", "minecraft:other2"],
-        ]
-    }
-    removed = strip_generated_fluid_features(synthetic)
-    if removed != 3:
-        raise SystemExit(f"NR-DEV-1 generated-fluid stripping self-test failed: {removed}")
-    flattened = [item for stage in synthetic["features"] for item in stage]
-    if any(item in BLOCKED_WORLDGEN_FLUID_FEATURES for item in flattened):
-        raise SystemExit("NR-DEV-1 generated-fluid stripping left blocked feature")
-    print("[NeverFolia][NeverOverworld] CORE BUILDER SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld] CORE BUILDER NATIVE-FLUID SELF-TEST OK")
 
 
 def main() -> None:
