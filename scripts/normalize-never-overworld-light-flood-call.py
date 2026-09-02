@@ -17,29 +17,41 @@ def fail(message: str) -> None:
 
 
 def normalize(source: str) -> str:
-    # Remove the transformer-owned block first. This makes normalization independent
-    # of whether the current Folia formatting caused it to land between ')' and '{'
-    # or at the beginning of the method body.
-    block_pattern = re.compile(
-        r"^[ \t]*// NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency\. Every\s*\n"
-        r"^[ \t]*// neighboring chunk that can write FEATURES into this chunk has therefore\s*\n"
-        r"^[ \t]*// finished decoration before the chunk-owned flood mutates final blocks\.\s*\n"
-        r"^[ \t]*net\.minecraft\.world\.level\.chunk\.NeverOverworldFlood\.apply\([^\n;]+\);\s*\n?",
-        re.MULTILINE,
-    )
-    blocks = list(block_pattern.finditer(source))
-    if len(blocks) != 1:
-        fail(f"expected exactly one transformer-owned flood block, got {len(blocks)}")
+    # Locate the transformer-owned block by its exact marker instead of assuming
+    # that COMMENT_1 starts a line. On the real Folia 26.2 source the old parser
+    # can place COMMENT_1 immediately after the parameter-list ')'.
+    marker_positions = [match.start() for match in re.finditer(re.escape(COMMENT_1), source)]
+    if len(marker_positions) != 1:
+        fail(f"expected exactly one transformer-owned flood marker, got {len(marker_positions)}")
+    marker_start = marker_positions[0]
 
     call_match = re.search(
-        r"NeverOverworldFlood\.apply\(\s*(\w+)\.level\(\)\s*,\s*(\w+)\s*\)",
-        blocks[0].group(0),
+        r"net\.minecraft\.world\.level\.chunk\.NeverOverworldFlood\.apply\(\s*(\w+)\.level\(\)\s*,\s*(\w+)\s*\)\s*;",
+        source[marker_start:],
     )
     if call_match is None:
-        fail("could not recover WorldGenContext/ChunkAccess names from flood call")
+        fail("could not locate/recover transformer-owned flood call")
     context_name, chunk_name = call_match.groups()
+    call_start = marker_start + call_match.start()
+    call_end = marker_start + call_match.end()
 
-    stripped = source[: blocks[0].start()] + source[blocks[0].end() :]
+    owned_region = source[marker_start:call_start]
+    if COMMENT_2 not in owned_region or COMMENT_3 not in owned_region:
+        fail("transformer-owned flood comments are incomplete before the call")
+
+    # Remove through the call's newline. If COMMENT_1 starts mid-line, preserve the
+    # prefix (notably the closing ')') and restore a newline before the method body.
+    call_line_end = source.find("\n", call_end)
+    block_end = len(source) if call_line_end < 0 else call_line_end + 1
+    marker_line_start = source.rfind("\n", 0, marker_start) + 1
+    prefix = source[marker_line_start:marker_start]
+    if prefix.strip():
+        removal_start = marker_start
+        replacement = "\n"
+    else:
+        removal_start = marker_line_start
+        replacement = ""
+    stripped = source[:removal_start] + replacement + source[block_end:]
 
     method_pattern = re.compile(
         r"(?:public\s+|private\s+|protected\s+)?static\s+CompletableFuture\s*<\s*ChunkAccess\s*>\s+light\s*\(",
@@ -83,8 +95,6 @@ def normalize(source: str) -> str:
     )
     normalized = stripped[:insert_at] + block + stripped[insert_at:]
 
-    # Hard fail if the known malformed shape remains: injected comments must never
-    # appear between the parameter-list ')' and the opening method-body brace.
     malformed = re.search(
         r"\)\s*// NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency",
         normalized,
@@ -93,6 +103,8 @@ def normalize(source: str) -> str:
         fail("flood block still appears between ')' and '{' after normalization")
     if normalized.count(CALL_FRAGMENT) != 1:
         fail("normalized source does not contain exactly one flood call")
+    if normalized.index(CALL_FRAGMENT) > normalized.index(f"boolean lighted = isLighted({chunk_name})"):
+        fail("normalized flood call does not execute before isLighted")
     return normalized
 
 
@@ -120,7 +132,8 @@ def self_test() -> None:
 }
 '''
     patched = normalize(malformed)
-    expected = '''   {
+    expected = '''   )    
+   {
       // NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every
       // neighboring chunk that can write FEATURES into this chunk has therefore
       // finished decoration before the chunk-owned flood mutates final blocks.
