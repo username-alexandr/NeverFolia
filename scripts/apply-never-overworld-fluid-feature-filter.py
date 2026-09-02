@@ -21,8 +21,10 @@ def patch_generator(source: str) -> str:
     # Insert after the concrete PlacedFeature is selected and before the supplier,
     # RNG seed and placeWithBiomeCheck call. Skipped entries keep their global
     # feature index, so every remaining vanilla feature retains its original seed.
+    # The indent capture is intentionally [ \t]* rather than \s*: it must never
+    # absorb a preceding newline/blank line into generated Java indentation.
     needle = re.compile(
-        r"(?P<indent>\s*)PlacedFeature\s+feature\s*=\s*\(PlacedFeature\)stepFeatureData\.features\(\)\.get\(globalIndexOfFeature\);\s*\n",
+        r"^(?P<indent>[ \t]*)PlacedFeature\s+feature\s*=\s*\(PlacedFeature\)stepFeatureData\.features\(\)\.get\(globalIndexOfFeature\);[ \t]*\n",
         re.MULTILINE,
     )
     matches = list(needle.finditer(source))
@@ -110,6 +112,7 @@ def self_test() -> None:
    void decorate() {
       for (int featureIndex = 0; featureIndex < numberOfFeaturesInStep; featureIndex++) {
          int globalIndexOfFeature = indexArray[featureIndex];
+
          PlacedFeature feature = (PlacedFeature)stepFeatureData.features().get(globalIndexOfFeature);
          Supplier<String> currentlyGenerating = () -> feature.toString();
          random.setFeatureSeed(decorationSeed, globalIndexOfFeature, stepIndex);
@@ -126,6 +129,9 @@ def self_test() -> None:
     seed_line = patched.index("random.setFeatureSeed")
     if not feature_line < guard_line < seed_line:
         fail("SELF-TEST: guard must run after feature selection and before RNG seed")
+    guard_source_line = next(line for line in patched.splitlines() if HOOK_CALL in line)
+    if not guard_source_line.startswith("         if ("):
+        fail(f"SELF-TEST: guard indentation drifted across line boundaries: {guard_source_line!r}")
 
     helper = helper_source()
     for marker in (
