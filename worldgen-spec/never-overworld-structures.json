@@ -1,0 +1,217 @@
+{
+  "schema": 1,
+  "worldgen_id": "NR-DEV-1",
+  "profile": "native-structures-v1",
+  "units": {
+    "placement_spacing": "chunks",
+    "vertical_ranges": "block_y",
+    "rock_thickness": "blocks"
+  },
+  "global_rules": {
+    "dimension_min_y": -512,
+    "dimension_max_y": 511,
+    "vanilla_upper_from_y": -64,
+    "flood_level_y": 128,
+    "deterministic_candidate_rejection": true,
+    "never_search_nearby_on_failure": true,
+    "never_generate_neighbor_chunks": true,
+    "generation_time_neighbor_chunk_reads": false,
+    "generation_time_cross_chunk_writes": false,
+    "fast_locate_generates_chunks": false,
+    "fast_locate_uses_candidate_grid": true,
+    "reject_bounding_box_intersection": true
+  },
+  "vanilla_baseline": {
+    "preserve_upper_world_structures": true,
+    "structures": [
+      "minecraft:village_plains",
+      "minecraft:village_desert",
+      "minecraft:village_savanna",
+      "minecraft:village_snowy",
+      "minecraft:village_taiga",
+      "minecraft:stronghold",
+      "minecraft:mineshaft",
+      "minecraft:mineshaft_mesa",
+      "minecraft:trial_chambers",
+      "minecraft:ancient_city",
+      "minecraft:ruined_portal",
+      "minecraft:shipwreck",
+      "minecraft:ocean_ruin_cold",
+      "minecraft:ocean_ruin_warm",
+      "minecraft:monument",
+      "minecraft:woodland_mansion",
+      "minecraft:desert_pyramid",
+      "minecraft:jungle_pyramid",
+      "minecraft:swamp_hut",
+      "minecraft:igloo"
+    ],
+    "special_rules": {
+      "mineshaft": {
+        "upper_vanilla_placement_preserved": true,
+        "deep_extension_enabled": true,
+        "deep_hard_y": [-448, -112],
+        "deep_requires_min_rock_thickness": 18,
+        "deep_reject_surface_connected_flood": true
+      },
+      "trial_chambers": {
+        "upper_vanilla_placement_preserved": true,
+        "deep_extension_enabled": true,
+        "deep_hard_y": [-320, -96],
+        "deep_requires_min_rock_thickness": 28,
+        "deep_requires_stable_floor": true,
+        "deep_reject_surface_connected_flood": true,
+        "deep_reject_open_chasm_intersection": true
+      },
+      "ancient_city": {
+        "preserve_vanilla_rules": true,
+        "never_place_below_y": -192
+      }
+    }
+  },
+  "placement_groups": {
+    "deep_major": {
+      "placement": {
+        "type": "minecraft:random_spread",
+        "spacing": 96,
+        "separation": 36,
+        "spread_type": "linear",
+        "salt": 147302113
+      },
+      "target_successful_distance_blocks": [1200, 2200],
+      "major_exclusion_radius_chunks": 28,
+      "structures": [
+        {
+          "id": "neverfolia:buried_sanctum",
+          "weight": 4,
+          "vertical_profile": "deep_rock_mass",
+          "geology_affinity": ["iron", "gold"]
+        },
+        {
+          "id": "neverfolia:abyssal_archive",
+          "weight": 2,
+          "vertical_profile": "deep_cavern_edge",
+          "geology_affinity": ["lapis", "diamond"]
+        },
+        {
+          "id": "neverfolia:ancient_cistern",
+          "weight": 3,
+          "vertical_profile": "deep_flood_boundary",
+          "allows_controlled_water": true
+        }
+      ]
+    },
+    "deep_medium": {
+      "placement": {
+        "type": "minecraft:random_spread",
+        "spacing": 48,
+        "separation": 18,
+        "spread_type": "linear",
+        "salt": 913440721
+      },
+      "target_successful_distance_blocks": [550, 1000],
+      "structures": [
+        {
+          "id": "neverfolia:collapsed_mine",
+          "weight": 5,
+          "vertical_profile": "deep_cavern_floor"
+        },
+        {
+          "id": "neverfolia:geode_vault",
+          "weight": 3,
+          "vertical_profile": "deep_rock_mass",
+          "geology_affinity": ["copper", "lapis"]
+        },
+        {
+          "id": "neverfolia:flooded_ruins",
+          "weight": 3,
+          "vertical_profile": "flooded_surface_or_cavern",
+          "allows_controlled_water": true
+        }
+      ]
+    },
+    "deep_ambient": {
+      "placement": {
+        "type": "minecraft:random_spread",
+        "spacing": 22,
+        "separation": 8,
+        "spread_type": "linear",
+        "salt": 1880479151
+      },
+      "target_successful_distance_blocks": [250, 500],
+      "structures": [
+        {
+          "id": "neverfolia:prospector_camp",
+          "weight": 5,
+          "vertical_profile": "deep_cavern_floor"
+        },
+        {
+          "id": "neverfolia:sealed_cache",
+          "weight": 3,
+          "vertical_profile": "deep_rock_mass"
+        }
+      ]
+    }
+  },
+  "vertical_profiles": {
+    "deep_rock_mass": {
+      "preferred_y": [-384, -144],
+      "hard_y": [-464, -104],
+      "placement": "deterministic_solid_volume_anchor",
+      "minimum_rock_above": 24,
+      "minimum_rock_below": 12,
+      "reject_surface_connected_flood": true,
+      "reject_open_cavern_overlap_ratio_above": 0.30
+    },
+    "deep_cavern_edge": {
+      "preferred_y": [-320, -128],
+      "hard_y": [-448, -96],
+      "placement": "deterministic_cavern_wall_or_ledge",
+      "minimum_rock_shell": 18,
+      "required_open_volume_ratio": [0.12, 0.46],
+      "reject_surface_connected_flood": true
+    },
+    "deep_cavern_floor": {
+      "preferred_y": [-300, -112],
+      "hard_y": [-432, -96],
+      "placement": "deterministic_cavity_floor",
+      "minimum_floor_thickness": 8,
+      "minimum_headroom": 7,
+      "reject_surface_connected_flood": true
+    },
+    "deep_flood_boundary": {
+      "preferred_y": [-220, 96],
+      "hard_y": [-360, 124],
+      "placement": "deterministic_water_boundary_anchor",
+      "minimum_rock_shell": 16,
+      "requires_water_contact": true,
+      "max_submerged_fraction": 0.55
+    },
+    "flooded_surface_or_cavern": {
+      "preferred_y": [24, 124],
+      "hard_y": [-96, 128],
+      "placement": "surface_or_flooded_cavity_floor",
+      "allows_surface_connected_flood": true,
+      "minimum_floor_thickness": 6
+    }
+  },
+  "candidate_rejection": {
+    "sample_only_candidate_chunk": true,
+    "sample_absolute_noise_without_chunk_loads": true,
+    "reject_if_bounding_box_min_y_below": -496,
+    "reject_if_bounding_box_max_y_above": 496,
+    "default_minimum_rock_shell": 12,
+    "reject_surface_connected_water_unless_allowed": true,
+    "reject_if_floor_support_ratio_below": 0.72,
+    "reject_if_open_volume_ratio_above": 0.62,
+    "candidate_failure_consumes_no_neighbor_state": true
+  },
+  "fast_locate": {
+    "native": true,
+    "generates_chunks": false,
+    "candidate_grid_only_until_near_target": true,
+    "candidate_order": "distance_then_stable_chunk_key",
+    "terrain_precheck": "seed_and_absolute_noise_only",
+    "exact_chunk_verification": "only_if_already_generated_or_explicitly_requested",
+    "default_max_candidate_rings": 256
+  }
+}
