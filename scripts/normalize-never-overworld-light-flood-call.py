@@ -221,8 +221,10 @@ def self_test() -> None:
         patched = normalize(fixture)
         if patched.count(expected) != 1:
             fail(f"SELF-TEST: expected canonical call missing: {expected}")
-        if "\n   ) {" in patched:
-            fail("SELF-TEST: dangling duplicate ')' survived canonicalization")
+        # normalize() already performs structural Java validation: the parameter
+        # list must be followed by the authoritative body brace and the flood call
+        # must be inside that body before isLighted. Do not use a text heuristic
+        # such as '\n   ) {' here; that is a valid multiline method header.
 
     print("[NeverFolia][NeverOverworld flood normalize] CANONICAL LIGHT HEADER SELF-TEST OK")
 
