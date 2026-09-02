@@ -36,6 +36,9 @@ jobs:
       - name: Self-test NeverOverworld semantic hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
+      - name: Self-test NeverOverworld semantic component diff
+        run: python3 ./scripts/diff-never-overworld-chunks.py --self-test
+
       - name: Self-test NeverOverworld Moonrise LIGHT flood hook
         run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
 
