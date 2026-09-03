@@ -77,7 +77,7 @@ def evaluate(
         if not preferred:
             outside_preferred.append(kind)
     return {
-        "schema": 4,
+        "schema": 5,
         "reference": "runtime true-vanilla-26.2 world / identical seed + common FULL chunks",
         "calibration_reference": "NeverOverworld-CI-Test-1 / historical 230 FULL chunks",
         "tolerance_ratio": [min_ratio, max_ratio],
@@ -97,6 +97,15 @@ def calibration_drift(runtime_targets: dict[str, float]) -> dict[str, float | No
         runtime = float(runtime_targets.get(kind, 0.0))
         result[kind] = None if historical <= 0.0 else round(runtime / historical, 6)
     return result
+
+
+def transition_leak_ores(audit: dict) -> list[str]:
+    raw = audit.get("transition_resource_ore_leak_blocks_y_minus_95_to_minus_65", {})
+    if not isinstance(raw, dict):
+        return ["<invalid-audit>"]
+    return [kind for kind in CALIBRATION_TARGETS if int(raw.get(kind, 0)) > 0] + (
+        ["emerald"] if int(raw.get("emerald", 0)) > 0 else []
+    )
 
 
 def self_test() -> None:
@@ -128,6 +137,16 @@ def self_test() -> None:
     if result["passed"] or "gold" not in result["failed_ores"]:
         fail("SELF-TEST: zero runtime vanilla target was not rejected")
 
+    if transition_leak_ores(
+        {"transition_resource_ore_leak_blocks_y_minus_95_to_minus_65": {"iron": 0, "diamond": 0}}
+    ):
+        fail("SELF-TEST: clean transition was marked as leaked")
+    leaks = transition_leak_ores(
+        {"transition_resource_ore_leak_blocks_y_minus_95_to_minus_65": {"iron": 2, "emerald": 1}}
+    )
+    if leaks != ["iron", "emerald"]:
+        fail(f"SELF-TEST: transition leak classification failed: {leaks}")
+
     if "emerald" in CALIBRATION_TARGETS:
         fail("SELF-TEST: emerald must not use a global vanilla density target")
     if DEFAULT_MIN_FULL_CHUNKS < 128:
@@ -140,6 +159,7 @@ def self_test() -> None:
     print(f"  hard accepted ratio: {DEFAULT_MIN_RATIO:.2f}..{DEFAULT_MAX_RATIO:.2f} of runtime vanilla 26.2")
     print(f"  preferred balance ratio: {DEFAULT_PREFERRED_MIN_RATIO:.2f}..{DEFAULT_PREFERRED_MAX_RATIO:.2f}")
     print(f"  minimum representative sample: {DEFAULT_MIN_FULL_CHUNKS} common FULL chunks")
+    print("  source isolation: zero standard ore blocks allowed at Y=-95..-65")
 
 
 def main() -> None:
@@ -183,19 +203,37 @@ def main() -> None:
         for kind in CALIBRATION_TARGETS
     }
     verdict = evaluate(actual, runtime_targets, args.min_ratio, args.max_ratio)
+    leak_ores = transition_leak_ores(audit)
+    isolation_passed = bool(audit.get("resource_ore_source_isolation_satisfied", False)) and not leak_ores
+
     verdict["full_chunks_scanned"] = scanned
     verdict["minimum_required_full_chunks"] = args.min_full_chunks
     verdict["sample_size_passed"] = scanned >= args.min_full_chunks
     verdict["deep_y"] = audit["deep_y"]
+    verdict["transition_y"] = audit["transition_y"]
+    verdict["transition_native_boundary_y"] = audit["transition_native_boundary_y"]
     verdict["vanilla_reference_y"] = audit["vanilla_reference_y"]
     verdict["runtime_vanilla_world"] = str(vanilla_world)
     verdict["deep_ore_blocks"] = audit["deep_ore_blocks"]
     verdict["runtime_vanilla_ore_blocks"] = audit["vanilla_reference_ore_blocks"]
     verdict["deep_ore_block_variants"] = audit["deep_ore_block_variants"]
     verdict["runtime_vanilla_ore_block_variants"] = audit["vanilla_reference_ore_block_variants"]
+    verdict["transition_resource_ore_blocks"] = audit["transition_resource_ore_blocks"]
+    verdict["transition_boundary_y_minus_96_ore_blocks"] = audit["transition_boundary_y_minus_96_ore_blocks"]
+    verdict["transition_resource_ore_leak_blocks_y_minus_95_to_minus_65"] = audit[
+        "transition_resource_ore_leak_blocks_y_minus_95_to_minus_65"
+    ]
+    verdict["resource_ore_source_isolation_satisfied"] = isolation_passed
+    verdict["transition_leak_ores"] = leak_ores
+    verdict["deep_vertical_profile_32_blocks"] = audit["deep_vertical_profile_32_blocks"]
+    verdict["vanilla_vertical_profile_32_blocks"] = audit["vanilla_vertical_profile_32_blocks"]
     verdict["historical_calibration_targets"] = CALIBRATION_TARGETS
     verdict["runtime_vanilla_to_historical_calibration_ratio"] = calibration_drift(runtime_targets)
-    verdict["passed"] = bool(verdict["passed"] and verdict["sample_size_passed"])
+    verdict["passed"] = bool(
+        verdict["passed"]
+        and verdict["sample_size_passed"]
+        and verdict["resource_ore_source_isolation_satisfied"]
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -203,6 +241,15 @@ def main() -> None:
 
     if not verdict["sample_size_passed"]:
         fail(f"only {scanned} common FULL chunks were available; require at least {args.min_full_chunks}")
+    if not verdict["resource_ore_source_isolation_satisfied"]:
+        details = ", ".join(
+            f"{kind}={audit['transition_resource_ore_leak_blocks_y_minus_95_to_minus_65'].get(kind, 0)}"
+            for kind in leak_ores
+        )
+        fail(
+            "standard resource ore leaked into transition Y=-95..-65; "
+            f"vanilla/native source isolation is broken: {details or 'invalid audit state'}"
+        )
     if verdict["failed_ores"]:
         failures = ", ".join(
             f"{kind}={verdict['ores'][kind]['ratio_to_vanilla']}x"
@@ -223,6 +270,7 @@ def main() -> None:
         )
     else:
         print("[NeverFolia][NeverOverworld vanilla-like ore gate] PREFERRED VANILLA BAND PASS")
+    print("[NeverFolia][NeverOverworld vanilla-like ore gate] SOURCE ISOLATION PASS")
     print("[NeverFolia][NeverOverworld vanilla-like ore gate] PASS")
 
 
