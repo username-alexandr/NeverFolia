@@ -19,7 +19,7 @@ jobs:
       - name: Self-test sculk ownership transformer
         run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
       - name: Validate NeverOverworld contract
-        run: python3 ./scripts/validate-never-overworld-worldgen-spec.py
+        run: python3 ./scripts/validate-never-overworld-spec.py
       - name: Validate structure contract
         run: python3 ./scripts/validate-never-overworld-structures-spec.py
 
