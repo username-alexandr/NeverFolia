@@ -53,6 +53,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}
 echo "[NeverFolia] Extending NeverOverworld native ore geology with coal and emerald"
 python3 "${ROOT_DIR}/scripts/extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Tuning NeverOverworld deep diamond and emerald balance"
+python3 "${ROOT_DIR}/scripts/tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Relocating NeverOverworld native geology to SURFACE before CARVERS"
 python3 "${ROOT_DIR}/scripts/relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"
 
