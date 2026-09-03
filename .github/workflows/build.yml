@@ -191,7 +191,7 @@ jobs:
             echo "Overworld aquifer: native lava branch disabled"
             echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; vanilla-like all-ore balance v3"
             echo "Overworld vanilla resource ores: original 26.2 vertical anchors + original write bounds Y=-64..319"
-            echo "Overworld ore density validation: separate true-vanilla 26.2 benchmark gate, 0.65..1.35x target, min 128 FULL chunks"
+            echo "Overworld ore density validation: candidate-only true-vanilla 26.2 benchmark gate, 0.65..1.35x target, min 128 FULL chunks"
             echo "Overworld structures: 8 native NeverFolia structures / natural structure_set placement"
             echo "Overworld locate: predictive no-generation fast locate v1"
             echo "Overworld sculk: chunk-owned worldgen spread"
@@ -351,6 +351,47 @@ jobs:
             overworld-determinism-test/component-diff.json
             overworld-determinism-test/world-a/server.log
             overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Generate true vanilla 26.2 ore reference for candidate
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh "${JAR}"
+
+      - name: Compare candidate deep density with true vanilla 26.2 FULL chunks
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          python3 ./scripts/audit-never-overworld-ore-balance.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --output artifacts/NeverOverworld-ore-balance-audit.json
+
+      - name: Enforce candidate vanilla-like deep ore density
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --min-ratio 0.65 \
+            --max-ratio 1.35 \
+            --output artifacts/NeverOverworld-vanilla-like-ore-density.json
+
+      - name: Upload candidate ore density diagnostics
+        if: ${{ always() && endsWith(github.ref_name, '-candidate') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-ore-balance-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-ore-balance-audit.json
+            artifacts/NeverOverworld-vanilla-like-ore-density.json
+            vanilla-ore-reference-test/server.log
           if-no-files-found: warn
           retention-days: 14
 
