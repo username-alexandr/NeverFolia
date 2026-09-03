@@ -15,6 +15,9 @@ DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
 NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
 FLOOD_MARKER='[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128'
 
+# Seven dispersed geometry/flood samples plus two deterministic balance-v2
+# rare-ore probes. For seed NeverOverworld-CI-Test-1 the latter directly load
+# the candidate chunks intersecting a diamond vein and an emerald vein.
 SAMPLE_BLOCKS=(
   '0 0'
   '512 0'
@@ -23,6 +26,8 @@ SAMPLE_BLOCKS=(
   '0 -512'
   '512 512'
   '-512 -512'
+  '503 7'
+  '544 552'
 )
 
 rm -rf "${TEST_DIR}"
@@ -165,13 +170,13 @@ over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(
 region = over.find_region_dir(world)
 print('NeverOverworld region directory:', region)
 
-sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32)]
+sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32),(31,0),(34,34)]
 chunks = {}
 for cx, cz in sample_chunks:
     try:
         chunks[(cx, cz)] = raw.read_chunk_nbt(region, cx, cz)
     except FileNotFoundError as exc:
-        raise SystemExit(f'dispersed flood sample chunk {cx},{cz} was not generated: {exc}')
+        raise SystemExit(f'dispersed flood/ore sample chunk {cx},{cz} was not generated: {exc}')
 
 chunk = chunks[(0, 0)]
 for x,y,z,expected in [(0,500,0,'minecraft:stone'),(0,-500,0,'minecraft:gold_block')]:
