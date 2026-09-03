@@ -29,24 +29,24 @@ OLD = {
 # by vanilla resource ores whose relative height anchors shifted into NR's
 # extended -512..511 dimension, so they are not a valid native-density baseline.
 #
-# Clean true-vanilla 26.2 reference (230 FULL chunks, seed
+# Clean true-vanilla 26.2 reference (230 common FULL chunks, seed
 # NeverOverworld-CI-Test-1): coal 88.07, iron 69.92, copper 74.21, gold 32.10,
 # redstone 34.99, lapis 21.80, diamond 23.91 blocks/FULL chunk.
 #
-# An exact offline reproduction of the deterministic helper over 1000 fixed
-# chunks targets about 1.1..1.2x those clean values before host filtering and
-# carvers/noise caves: coal 1.126x, iron 1.200x, copper 1.173x, gold 1.126x,
-# redstone 1.118x, lapis 1.186x, diamond 1.170x. The persisted runtime gate is
-# authoritative and compares against a separately generated vanilla world from
-# the same build/seed/common FULL chunks.
+# Runtime calibration on candidate b6b0195 measured native/vanilla ratios:
+# coal 0.529, iron 1.061, copper 0.899, gold 0.593, redstone 0.923,
+# lapis 1.342, diamond 1.340. This pass therefore increases coal spatial
+# dispersion and gold frequency while reducing lapis/diamond frequency. The
+# synthetic geometry and CPU preflights remain unchanged and must still pass;
+# the persisted runtime gate is authoritative.
 NEW = {
-    "COAL": "        COAL(0x07A8B9C0D1E2F314L, 56, 0.54D, 0.12D, -256, DEEP_MAX_Y, 30.0D, 70.0D, 2.0D, 3.8D, 0.68D, 0.82D, Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),",
+    "COAL": "        COAL(0x07A8B9C0D1E2F314L, 48, 0.90D, 0.12D, -256, DEEP_MAX_Y, 26.0D, 60.0D, 1.7D, 3.2D, 0.68D, 0.65D, Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),",
     "IRON": "        IRON(0x11A2B3C4D5E6F701L, 64, 0.46D, 0.20D, -480, DEEP_MAX_Y, 28.0D, 72.0D, 1.5D, 3.0D, 0.70D, 0.84D, Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),",
     "COPPER": "        COPPER(0x22B3C4D5E6F70112L, 56, 0.63D, 0.20D, -300, DEEP_MAX_Y, 22.0D, 56.0D, 1.8D, 3.4D, 0.62D, 0.80D, Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE),",
-    "GOLD": "        GOLD(0x33C4D5E6F7011223L, 48, 0.46D, 0.32D, -420, -128, 16.0D, 44.0D, 1.2D, 2.2D, 0.58D, 0.72D, Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE),",
+    "GOLD": "        GOLD(0x33C4D5E6F7011223L, 48, 0.66D, 0.32D, -420, -128, 16.0D, 44.0D, 1.2D, 2.2D, 0.58D, 0.72D, Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE),",
     "REDSTONE": "        REDSTONE(0x44D5E6F701122334L, 48, 0.47D, 0.26D, -480, -160, 20.0D, 54.0D, 1.0D, 1.9D, 0.52D, 0.70D, Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),",
-    "LAPIS": "        LAPIS(0x55E6F70112233445L, 48, 0.68D, 0.28D, -360, -128, 12.0D, 30.0D, 1.0D, 2.0D, 0.46D, 0.74D, Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),",
-    "DIAMOND": "        DIAMOND(0x66F7011223344556L, 48, 0.63D, 0.25D, -496, -160, 18.0D, 44.0D, 0.90D, 1.50D, 0.42D, 0.64D, Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),",
+    "LAPIS": "        LAPIS(0x55E6F70112233445L, 48, 0.52D, 0.28D, -360, -128, 12.0D, 30.0D, 1.0D, 2.0D, 0.46D, 0.74D, Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),",
+    "DIAMOND": "        DIAMOND(0x66F7011223344556L, 48, 0.48D, 0.25D, -496, -160, 18.0D, 44.0D, 0.90D, 1.50D, 0.42D, 0.64D, Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),",
     # Vanilla emerald is biome-specific and the deterministic clean reference
     # sample contains no mountain emerald. Keep the proven sparse native deep
     # value instead of inventing an all-biome density target.
@@ -98,7 +98,7 @@ def self_test() -> None:
     for kind, target in TARGET_BLOCKS_PER_FULL_CHUNK.items():
         if target <= 0.0:
             fail(f"SELF-TEST: invalid vanilla target for {kind}")
-    if not all(", 48," in NEW[kind] for kind in ("GOLD", "REDSTONE", "LAPIS", "DIAMOND")):
+    if not all(", 48," in NEW[kind] for kind in ("COAL", "GOLD", "REDSTONE", "LAPIS", "DIAMOND")):
         fail("SELF-TEST: frequent deep ores drifted away from the 48-block cell calibration")
     for preflight in (PREFLIGHT, COST_PREFLIGHT):
         if not preflight.is_file():
