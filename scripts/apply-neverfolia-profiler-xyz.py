@@ -45,27 +45,11 @@ def patch_source(source: str) -> str:
     )
     source = source.replace(OLD_USAGE, NEW_USAGE, 1)
 
-    # The six-argument form is unambiguous: world x y z time radius.
-    old_x = "final int blockX;"
-    if old_x not in source:
-        fail("blockX declaration marker not found")
-    source = source.replace(old_x, "final boolean neverFoliaXYZ = args.length == 6;\n        final int blockX;", 1)
-
-    source = source.replace("Integer.parseInt(args[2])", "Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])", 1)
-    source = source.replace("Double.parseDouble(args[3])", "Double.parseDouble(args[neverFoliaXYZ ? 4 : 3])", 1)
-
-    # Radius in the upstream command is optional arg[4]. In XYZ mode it is arg[5].
-    old_radius_guard = "if (args.length > 4) {"
-    if old_radius_guard not in source:
-        fail("radius guard marker not found")
-    source = source.replace(old_radius_guard, "if (neverFoliaXYZ || args.length > 4) {", 1)
-    source = source.replace("Double.parseDouble(args[4])", "Double.parseDouble(args[neverFoliaXYZ ? 5 : 4])", 1)
-
-    # Validate the user supplied Y so malformed XYZ input does not silently pass.
     world_marker = "final World world = Bukkit.getWorld(args[0]);"
     if world_marker not in source:
         fail("world lookup marker not found")
-    validation = '''if (neverFoliaXYZ) {
+    prefix = '''final boolean neverFoliaXYZ = args.length == 6;
+        if (neverFoliaXYZ) {
             try {
                 Integer.parseInt(args[2]);
             } catch (final NumberFormatException ex) {
@@ -75,7 +59,16 @@ def patch_source(source: str) -> str:
         }
 
         '''
-    source = source.replace(world_marker, validation + world_marker, 1)
+    source = source.replace(world_marker, prefix + world_marker, 1)
+
+    source = source.replace("Integer.parseInt(args[2])", "Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])", 1)
+    source = source.replace("Double.parseDouble(args[3])", "Double.parseDouble(args[neverFoliaXYZ ? 4 : 3])", 1)
+
+    old_radius_guard = "if (args.length > 4) {"
+    if old_radius_guard not in source:
+        fail("radius guard marker not found")
+    source = source.replace(old_radius_guard, "if (neverFoliaXYZ || args.length > 4) {", 1)
+    source = source.replace("Double.parseDouble(args[4])", "Double.parseDouble(args[neverFoliaXYZ ? 5 : 4])", 1)
 
     required = (
         "neverFoliaXYZ = args.length == 6",
@@ -87,6 +80,8 @@ def patch_source(source: str) -> str:
     for marker in required:
         if marker not in source:
             fail(f"patched source missing {marker!r}")
+    if source.index("neverFoliaXYZ = args.length == 6") > source.index("if (neverFoliaXYZ) {"):
+        fail("XYZ mode declaration must precede validation")
     return source
 
 
