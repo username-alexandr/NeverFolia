@@ -3,7 +3,7 @@ name: Benchmark NeverOverworld Ore Balance
 on:
   push:
     branches:
-      - 'wip/never-overworld-vanilla-ore-density*'
+      - 'wip/never-overworld-vanilla-ore-density**-candidate'
   workflow_dispatch:
 
 permissions:
