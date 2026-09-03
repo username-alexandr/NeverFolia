@@ -63,6 +63,9 @@ jobs:
       - name: Self-test NeverOverworld vanilla resource-ore anchor normalization
         run: python3 ./scripts/normalize-never-overworld-vanilla-ore-anchors.py --self-test
 
+      - name: Self-test NeverOverworld vanilla resource-ore write bounds
+        run: python3 ./scripts/apply-never-overworld-vanilla-ore-write-bounds.py --self-test
+
       - name: Self-test NeverOverworld native deterministic ore geology
         run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
 
