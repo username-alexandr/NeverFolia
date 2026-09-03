@@ -66,6 +66,9 @@ jobs:
       - name: Self-test NeverOverworld coal and emerald geology extension
         run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
 
+      - name: Self-test NeverOverworld deep diamond and emerald balance v2
+        run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
+
       - name: Self-test NeverOverworld geology SURFACE stage relocation
         run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
 
