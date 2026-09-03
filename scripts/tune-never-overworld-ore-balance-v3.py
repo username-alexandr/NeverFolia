@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldOreGeology.java")
+PREFLIGHT = Path(__file__).with_name("preflight-never-overworld-native-ore-geometry.py")
 
 # Input state is the established native geology after coal/emerald extension and
 # diamond/emerald balance v2. v3 keeps deterministic salts and chunk ownership
@@ -96,6 +99,9 @@ def self_test() -> None:
             fail(f"SELF-TEST: invalid vanilla target for {kind}")
     if not all(", 48," in NEW[kind] for kind in ("GOLD", "REDSTONE", "LAPIS", "DIAMOND")):
         fail("SELF-TEST: frequent deep ores drifted away from the 48-block cell calibration")
+    if not PREFLIGHT.is_file():
+        fail(f"SELF-TEST: geometry preflight missing: {PREFLIGHT}")
+    subprocess.run([sys.executable, str(PREFLIGHT), "--self-test"], check=True)
     print("[NeverFolia][NeverOverworld ore balance v3] NATIVE-ONLY VANILLA-LIKE SELF-TEST OK")
     print("  clean vanilla targets blocks/FULL-chunk:", TARGET_BLOCKS_PER_FULL_CHUNK)
 
