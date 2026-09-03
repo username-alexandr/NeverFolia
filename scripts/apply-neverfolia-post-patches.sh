@@ -47,6 +47,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOL
 echo "[NeverFolia] Applying NeverOverworld sculk worldgen chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-sculk-ownership.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Restoring original vanilla 26.2 resource-ore build bounds"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-vanilla-ore-bounds.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
 
