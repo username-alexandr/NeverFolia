@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,7 @@ def load_module(name: str, path: Path):
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot import {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -26,6 +28,8 @@ TUNER = load_module("nr_ore_balance_v3", TUNER_PATH)
 CALIBRATION_TARGETS: dict[str, float] = dict(TUNER.TARGET_BLOCKS_PER_FULL_CHUNK)
 DEFAULT_MIN_RATIO = 0.65
 DEFAULT_MAX_RATIO = 1.35
+DEFAULT_PREFERRED_MIN_RATIO = 0.85
+DEFAULT_PREFERRED_MAX_RATIO = 1.15
 DEFAULT_MIN_FULL_CHUNKS = 128
 
 
@@ -38,39 +42,51 @@ def evaluate(
     targets: dict[str, float],
     min_ratio: float,
     max_ratio: float,
+    preferred_min_ratio: float = DEFAULT_PREFERRED_MIN_RATIO,
+    preferred_max_ratio: float = DEFAULT_PREFERRED_MAX_RATIO,
 ) -> dict:
     ores: dict[str, dict] = {}
     failures: list[str] = []
+    outside_preferred: list[str] = []
     for kind in CALIBRATION_TARGETS:
         target = float(targets.get(kind, 0.0))
         value = float(actual.get(kind, 0.0))
         if target <= 0.0:
             failures.append(kind)
+            outside_preferred.append(kind)
             ores[kind] = {
                 "actual_blocks_per_full_chunk": round(value, 6),
                 "runtime_vanilla_26_2_blocks_per_full_chunk": round(target, 6),
                 "ratio_to_vanilla": None,
                 "passed": False,
+                "preferred": False,
             }
             continue
         ratio = value / target
         passed = min_ratio <= ratio <= max_ratio
+        preferred = preferred_min_ratio <= ratio <= preferred_max_ratio
         ores[kind] = {
             "actual_blocks_per_full_chunk": round(value, 6),
             "runtime_vanilla_26_2_blocks_per_full_chunk": round(target, 6),
             "ratio_to_vanilla": round(ratio, 6),
             "passed": passed,
+            "preferred": preferred,
         }
         if not passed:
             failures.append(kind)
+        if not preferred:
+            outside_preferred.append(kind)
     return {
-        "schema": 3,
+        "schema": 4,
         "reference": "runtime true-vanilla-26.2 world / identical seed + common FULL chunks",
         "calibration_reference": "NeverOverworld-CI-Test-1 / historical 230 FULL chunks",
         "tolerance_ratio": [min_ratio, max_ratio],
+        "preferred_ratio": [preferred_min_ratio, preferred_max_ratio],
         "emerald_policy": "excluded-from-global-density-target; biome-specific vanilla ore; presence covered by native geology audit",
         "ores": ores,
         "failed_ores": failures,
+        "outside_preferred_ores": outside_preferred,
+        "preferred_passed": not outside_preferred,
         "passed": not failures,
     }
 
@@ -85,8 +101,8 @@ def calibration_drift(runtime_targets: dict[str, float]) -> dict[str, float | No
 
 def self_test() -> None:
     exact = evaluate(CALIBRATION_TARGETS, CALIBRATION_TARGETS, DEFAULT_MIN_RATIO, DEFAULT_MAX_RATIO)
-    if not exact["passed"]:
-        fail("SELF-TEST: exact vanilla targets did not pass")
+    if not exact["passed"] or not exact["preferred_passed"]:
+        fail("SELF-TEST: exact vanilla targets did not pass hard+preferred bands")
 
     low = dict(CALIBRATION_TARGETS)
     low["coal"] = CALIBRATION_TARGETS["coal"] * 0.64
@@ -99,6 +115,12 @@ def self_test() -> None:
     result = evaluate(high, CALIBRATION_TARGETS, DEFAULT_MIN_RATIO, DEFAULT_MAX_RATIO)
     if result["passed"] or result["failed_ores"] != ["diamond"]:
         fail("SELF-TEST: over-density diamond was not rejected")
+
+    soft = dict(CALIBRATION_TARGETS)
+    soft["iron"] = CALIBRATION_TARGETS["iron"] * 0.80
+    result = evaluate(soft, CALIBRATION_TARGETS, DEFAULT_MIN_RATIO, DEFAULT_MAX_RATIO)
+    if not result["passed"] or result["preferred_passed"] or result["outside_preferred_ores"] != ["iron"]:
+        fail("SELF-TEST: hard-pass/preferred-miss classification failed")
 
     missing = dict(CALIBRATION_TARGETS)
     missing["gold"] = 0.0
@@ -115,7 +137,8 @@ def self_test() -> None:
         fail("SELF-TEST: calibration drift identity failed")
 
     print("[NeverFolia][NeverOverworld vanilla-like ore gate] RUNTIME TRUE-VANILLA SELF-TEST OK")
-    print(f"  accepted ratio: {DEFAULT_MIN_RATIO:.2f}..{DEFAULT_MAX_RATIO:.2f} of runtime vanilla 26.2")
+    print(f"  hard accepted ratio: {DEFAULT_MIN_RATIO:.2f}..{DEFAULT_MAX_RATIO:.2f} of runtime vanilla 26.2")
+    print(f"  preferred balance ratio: {DEFAULT_PREFERRED_MIN_RATIO:.2f}..{DEFAULT_PREFERRED_MAX_RATIO:.2f}")
     print(f"  minimum representative sample: {DEFAULT_MIN_FULL_CHUNKS} common FULL chunks")
 
 
@@ -189,6 +212,17 @@ def main() -> None:
             f"deep ore density outside {args.min_ratio:.2f}..{args.max_ratio:.2f}x runtime vanilla 26.2: {failures}"
         )
 
+    if verdict["outside_preferred_ores"]:
+        misses = ", ".join(
+            f"{kind}={verdict['ores'][kind]['ratio_to_vanilla']}x"
+            for kind in verdict["outside_preferred_ores"]
+        )
+        print(
+            "[NeverFolia][NeverOverworld vanilla-like ore gate] HARD PASS; "
+            f"second calibration recommended outside preferred {DEFAULT_PREFERRED_MIN_RATIO:.2f}..{DEFAULT_PREFERRED_MAX_RATIO:.2f}x: {misses}"
+        )
+    else:
+        print("[NeverFolia][NeverOverworld vanilla-like ore gate] PREFERRED VANILLA BAND PASS")
     print("[NeverFolia][NeverOverworld vanilla-like ore gate] PASS")
 
 
