@@ -73,7 +73,9 @@ def main() -> None:
     run(str(PROMOTER), "--input", str(output))
     run(str(FIELD_R1), "--input", str(output), "--server-jar", str(server_jar))
 
-    print("[NeverFolia][NeverOverworld native core] NATIVE-ONLY FIELD-R1 CORE READY")
+    # Keep the established readiness marker consumed by validate-never-overworld-spec.py.
+    print("[NeverFolia][NeverOverworld native core] NATIVE-ONLY CORE READY")
+    print("  field profile: field-r1")
     print(f"  output: {output}")
     print("  vanilla resource ore anchors: original 26.2 absolute Y semantics outside flooded sterile band")
     print("  flooded ore sterile band: Y=65..135")
