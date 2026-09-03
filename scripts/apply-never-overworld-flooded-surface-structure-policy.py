@@ -26,6 +26,9 @@ import net.minecraft.world.level.levelgen.structure.Structure;
  * <p>All decisions use only immutable registry identity plus ChunkGenerator
  * base-height sampling. No generated chunk is loaded and no neighboring mutable
  * state is observed, preserving Folia ownership and chunk-order determinism.</p>
+ *
+ * <p>Swamp huts are intentionally not in DRY_LAND_ONLY. They are re-anchored
+ * separately to the Y=129 flooded waterline.</p>
  */
 final class NeverOverworldVanillaStructurePolicy {
     private static final int EXPECTED_MIN_Y = -512;
@@ -43,7 +46,6 @@ final class NeverOverworldVanillaStructurePolicy {
         "minecraft:pillager_outpost",
         "minecraft:desert_pyramid",
         "minecraft:jungle_pyramid",
-        "minecraft:swamp_hut",
         "minecraft:igloo"
     );
 
@@ -201,6 +203,8 @@ def self_test() -> None:
     for marker in ("minecraft:stronghold", "minecraft:woodland_mansion", "MIN_DRY_BASE_HEIGHT"):
         if marker not in HELPER:
             fail(f"SELF-TEST helper missing {marker}")
+    if '"minecraft:swamp_hut"' in HELPER:
+        fail("SELF-TEST: swamp hut must not be dry-land-only")
     print("[NeverFolia][flooded surface structures] SELF-TEST OK")
 
 
@@ -225,6 +229,7 @@ def main() -> None:
     helper.write_text(HELPER, encoding="utf-8")
     print("[NeverFolia][flooded surface structures] dry-land start rejection applied")
     print("  flood plane: Y=128")
+    print("  swamp hut: delegated to flood-adapted waterline placement")
     print("  stronghold/end portal: rejected")
     print(f"  generator: {chunk}")
     print(f"  helper: {helper}")
