@@ -85,6 +85,12 @@ jobs:
       - name: Self-test NeverOverworld sculk worldgen ownership
         run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
 
+      - name: Self-test NeverOverworld vanilla resource-ore anchor normalization
+        run: python3 ./scripts/normalize-never-overworld-vanilla-ore-anchors.py --self-test
+
+      - name: Self-test NeverOverworld vanilla resource-ore write bounds
+        run: python3 ./scripts/apply-never-overworld-vanilla-ore-write-bounds.py --self-test
+
       - name: Self-test NeverOverworld native deterministic ore geology
         run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
 
@@ -94,8 +100,17 @@ jobs:
       - name: Self-test NeverOverworld deep diamond and emerald balance v2
         run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
 
+      - name: Self-test NeverOverworld vanilla-like all-ore balance v3
+        run: python3 ./scripts/tune-never-overworld-ore-balance-v3.py --self-test
+
       - name: Self-test NeverOverworld native geology NBT audit
         run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+      - name: Self-test NeverOverworld true-vanilla ore balance audit
+        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like ore density gate
+        run: python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
 
       - name: Self-test NeverOverworld geology SURFACE stage relocation
         run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
@@ -173,7 +188,9 @@ jobs:
             echo "Overworld flood level: Y=128"
             echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
             echo "Overworld aquifer: native lava branch disabled"
-            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; diamond/emerald balance v2"
+            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; vanilla-like all-ore balance v3"
+            echo "Overworld vanilla resource ores: original 26.2 vertical anchors + original write bounds Y=-64..319"
+            echo "Overworld ore density validation: separate true-vanilla 26.2 benchmark gate, 0.65..1.35x target, min 128 FULL chunks"
             echo "Overworld structures: 8 native NeverFolia structures / natural structure_set placement"
             echo "Overworld locate: predictive no-generation fast locate v1"
             echo "Overworld sculk: chunk-owned worldgen spread"
