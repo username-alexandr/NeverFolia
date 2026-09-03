@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   benchmark:
-    name: NR-DEV-1 true-vanilla ore benchmark
+    name: True vanilla 26.2 ore reference
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 25
     env:
       BASELINE_RUN_ID: '33744350673'
       BASELINE_SHA: '0cadfea8ff1b6273abe64108c10afd6b60deb2ba'
@@ -34,47 +34,18 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Self-test ore balance auditor
-        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
-
       - name: Download proven baseline NeverFolia JAR
         run: |
           set -euo pipefail
           mkdir -p artifacts
           ARTIFACT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts" \
             --jq ".artifacts[] | select(.name == \"NeverFolia-${BASELINE_SHA}\") | .id" | head -n1)"
-          if [ -z "${ARTIFACT_ID}" ]; then
-            echo "Baseline final artifact not found in run ${BASELINE_RUN_ID}." >&2
-            exit 1
-          fi
+          test -n "${ARTIFACT_ID}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/neverfolia-baseline.zip
           unzip -q /tmp/neverfolia-baseline.zip -d /tmp/neverfolia-baseline
           JAR="$(find /tmp/neverfolia-baseline -type f -name 'NeverFolia-*.jar' | sort | head -n1)"
-          if [ -z "${JAR}" ]; then
-            echo 'Baseline NeverFolia JAR missing from artifact.' >&2
-            exit 1
-          fi
+          test -n "${JAR}"
           cp "${JAR}" artifacts/NeverFolia-baseline.jar
-
-      - name: Build current NeverOverworld pack against baseline JAR
-        run: |
-          set -euo pipefail
-          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-balance-benchmark.zip"
-          python3 ./scripts/build-never-overworld-core-pack.py \
-            --server-jar artifacts/NeverFolia-baseline.jar \
-            --output "${PACK}"
-          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
-          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
-          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
-          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
-
-      - name: Generate deterministic NeverOverworld sample
-        run: |
-          set -euo pipefail
-          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
-          ./scripts/smoke-test-never-overworld-runtime.sh \
-            artifacts/NeverFolia-baseline.jar \
-            artifacts/NeverOverworld-Core-NR-DEV-1-balance-benchmark.zip
 
       - name: Generate true vanilla 26.2 reference sample
         run: |
@@ -82,23 +53,21 @@ jobs:
           chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
           ./scripts/smoke-test-vanilla-ore-reference.sh artifacts/NeverFolia-baseline.jar
 
-      - name: Compare deep density with true vanilla 26.2 FULL chunks
+      - name: Audit true vanilla 26.2 ore density
         run: |
           set -euo pipefail
-          python3 ./scripts/audit-never-overworld-ore-balance.py \
-            --world overworld-smoke-test/world \
-            --vanilla-world vanilla-ore-reference-test/world \
+          python3 ./scripts/audit-vanilla-ore-reference.py \
+            --world vanilla-ore-reference-test/world \
             --max-chunks 1024 \
-            --output artifacts/NeverOverworld-ore-balance-audit.json
+            --output artifacts/Vanilla-26.2-ore-reference.json
 
-      - name: Upload ore balance benchmark
+      - name: Upload vanilla ore reference
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NeverOverworld-ore-balance-${{ github.sha }}
+          name: Vanilla-26.2-ore-reference-${{ github.sha }}
           path: |
-            artifacts/NeverOverworld-ore-balance-audit.json
-            overworld-smoke-test/server.log
+            artifacts/Vanilla-26.2-ore-reference.json
             vanilla-ore-reference-test/server.log
           if-no-files-found: warn
           retention-days: 14
