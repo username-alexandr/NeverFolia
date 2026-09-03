@@ -1,0 +1,96 @@
+name: Benchmark NeverOverworld Ore Balance
+
+on:
+  push:
+    branches:
+      - 'wip/never-overworld-vanilla-ore-density*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-latest
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: NR-DEV-1 vanilla-reference ore benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BASELINE_RUN_ID: '33744350673'
+      BASELINE_SHA: '0cadfea8ff1b6273abe64108c10afd6b60deb2ba'
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout NeverFolia repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Self-test ore balance auditor
+        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+
+      - name: Download proven baseline NeverFolia JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ARTIFACT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts" \
+            --jq ".artifacts[] | select(.name == \"NeverFolia-${BASELINE_SHA}\") | .id" | head -n1)"
+          if [ -z "${ARTIFACT_ID}" ]; then
+            echo "Baseline final artifact not found in run ${BASELINE_RUN_ID}." >&2
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/neverfolia-baseline.zip
+          unzip -q /tmp/neverfolia-baseline.zip -d /tmp/neverfolia-baseline
+          JAR="$(find /tmp/neverfolia-baseline -type f -name 'NeverFolia-*.jar' | sort | head -n1)"
+          if [ -z "${JAR}" ]; then
+            echo 'Baseline NeverFolia JAR missing from artifact.' >&2
+            exit 1
+          fi
+          cp "${JAR}" artifacts/NeverFolia-baseline.jar
+
+      - name: Build current NeverOverworld pack against baseline JAR
+        run: |
+          set -euo pipefail
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-balance-benchmark.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-baseline.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Generate deterministic NeverOverworld sample
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-baseline.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-balance-benchmark.zip
+
+      - name: Compare native deep density with preserved vanilla 26.2 range
+        run: |
+          set -euo pipefail
+          python3 ./scripts/audit-never-overworld-ore-balance.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --output artifacts/NeverOverworld-ore-balance-audit.json
+
+      - name: Upload ore balance benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-ore-balance-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-ore-balance-audit.json
+            overworld-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
