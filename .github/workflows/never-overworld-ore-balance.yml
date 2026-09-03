@@ -1,30 +1,39 @@
 name: Benchmark NeverOverworld Ore Balance
 
 on:
-  push:
-    branches:
-      - 'wip/never-overworld-vanilla-ore-density**-candidate'
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Build NeverFolia
+    types:
+      - completed
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-latest
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
   cancel-in-progress: true
 
 jobs:
   benchmark:
     name: NR-DEV-1 vanilla-like ore density gate
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          startsWith(github.event.workflow_run.head_branch, 'wip/never-overworld-vanilla-ore-density') &&
+          endsWith(github.event.workflow_run.head_branch, '-candidate') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
 
     steps:
-      - name: Checkout NeverFolia repository
+      - name: Checkout exact successful candidate
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -37,28 +46,15 @@ jobs:
           python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
           python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
 
-      - name: Wait for current compiled NeverFolia JAR
+      - name: Download exact successful build artifact
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          TARGET_NAME="NeverFolia-compiled-${GITHUB_SHA}"
-          ARTIFACT_ID=""
-          BUILD_RUN_ID=""
-          for _ in $(seq 1 120); do
-            BUILD_RUN_ID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=30" \
-              --jq '.workflow_runs[] | select(.name == "Build NeverFolia") | .id' | head -n1)"
-            if [ -n "${BUILD_RUN_ID}" ]; then
-              ARTIFACT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BUILD_RUN_ID}/artifacts" \
-                --jq ".artifacts[] | select(.name == \"${TARGET_NAME}\") | .id" | head -n1)"
-            fi
-            if [ -n "${ARTIFACT_ID}" ]; then
-              break
-            fi
-            sleep 15
-          done
+          TARGET_NAME="NeverFolia-compiled-${TARGET_SHA}"
+          ARTIFACT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BUILD_RUN_ID}/artifacts" \
+            --jq ".artifacts[] | select(.name == \"${TARGET_NAME}\") | .id" | head -n1)"
           if [ -z "${ARTIFACT_ID}" ]; then
-            echo "Current compiled artifact ${TARGET_NAME} was not published by Build NeverFolia." >&2
-            echo "Build run seen: ${BUILD_RUN_ID:-none}" >&2
+            echo "Exact compiled artifact ${TARGET_NAME} missing from successful Build NeverFolia run ${BUILD_RUN_ID}." >&2
             exit 1
           fi
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/neverfolia-current.zip
@@ -69,7 +65,8 @@ jobs:
             exit 1
           fi
           cp "${JAR}" artifacts/NeverFolia-current.jar
-          echo "Current build run: ${BUILD_RUN_ID}"
+          echo "Successful build run: ${BUILD_RUN_ID}"
+          echo "Exact candidate SHA: ${TARGET_SHA}"
           echo "Compiled artifact: ${ARTIFACT_ID}"
 
       - name: Build current NeverOverworld pack against current JAR
@@ -121,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NeverOverworld-ore-balance-${{ github.sha }}
+          name: NeverOverworld-ore-balance-${{ github.event.workflow_run.head_sha }}
           path: |
             artifacts/NeverOverworld-ore-balance-audit.json
             artifacts/NeverOverworld-vanilla-like-ore-density.json
