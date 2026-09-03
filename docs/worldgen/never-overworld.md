@@ -45,17 +45,48 @@ coordinate-stable density fields. NR-DEV-1 contains independent fields for:
 Generation must not use shared mutable random state and must not depend on the
 order in which neighboring chunks reach worldgen stages.
 
-## Deep resources
+## Native deep ore geology
 
-Additional ore placements exist only below the old vanilla range. Vanilla ore
-placement at and above `Y=-64` is not intentionally replaced by NR-DEV-1.
-Current TEST1 deep placements include iron, gold, redstone, lapis, diamond,
-copper and tuff distributions.
+Deep ore generation is native NeverFolia code. It is not a transitional datapack
+`placed_feature` layer. `NeverOverworldOreGeology` derives geological provinces
+and multi-block veins only from the world seed, absolute coarse-cell coordinates
+and per-ore salts.
 
-These count/height placed features are transitional. The production architecture
-is a NeverFolia-owned geological province/vein model based on world seed and
-absolute coordinates, so multi-chunk deposits can be reproduced independently in
-each owning chunk without reading neighboring mutable chunk state.
+Each chunk independently evaluates every deterministic vein segment that can
+geometrically intersect its own 16x16 column and clips writes to the owning chunk.
+It never loads or observes a mutable neighboring chunk. The geology pass runs at
+SURFACE after vanilla-compatible surface construction and before CARVERS.
+
+Host-rock replacement is explicit:
+
+- `minecraft:stone` -> normal ore variant;
+- `minecraft:deepslate` or `minecraft:tuff` -> deepslate ore variant;
+- all other blocks are left unchanged.
+
+Current TEST1 native ore kinds are coal, iron, copper, gold, redstone, lapis,
+diamond and emerald. Diamond and emerald use balance profile v2 after the
+NeverRaft regression where the extended deep layer could contain effectively no
+visible diamonds in large samples.
+
+| Ore | Native deep Y range | Cell size | Base chance | Minimum province |
+| --- | ---: | ---: | ---: | ---: |
+| Coal | `-256..-96` | 120 | 0.48 | 0.24 |
+| Iron | `-480..-96` | 96 | 0.58 | 0.28 |
+| Copper | `-300..-96` | 112 | 0.42 | 0.35 |
+| Gold | `-420..-128` | 128 | 0.24 | 0.50 |
+| Redstone | `-480..-160` | 104 | 0.40 | 0.35 |
+| Lapis | `-360..-128` | 144 | 0.18 | 0.52 |
+| Diamond | `-496..-160` | 112 | 0.20 | 0.50 |
+| Emerald | `-384..-96` | 144 | 0.12 | 0.62 |
+
+Vanilla ore placement at and above the preserved upper-world domain is not
+intentionally replaced by this deep native geology model.
+
+CI audits persisted Anvil/NBT output below `Y=-96`, not merely Java configuration.
+The release gate requires non-zero diamond and emerald output and specifically
+requires persisted `minecraft:deepslate_diamond_ore` and
+`minecraft:deepslate_emerald_ore` in the deterministic dispersed smoke sample.
+The audit report is retained as `NeverOverworld-geology-audit.json`.
 
 The normal Overworld biome registry remains available, including cave biomes such
 as lush caves, dripstone caves, deep dark and sulfur caves where present in the
@@ -75,10 +106,10 @@ extended Overworld contract:
   AIR `FluidStatus` instead;
 - the native NR helper must not construct or reference `Blocks.LAVA`.
 
-This is intentionally the first native fluid milestone. It removes lava at the
-source rather than generating it and deleting it later. The later flood pass still
-normalizes generated water connectivity while the remaining water policy is moved
-into native NeverFolia code incrementally.
+This removes deep aquifer lava at the source rather than generating it and deleting
+it later. The controlled flood pass still normalizes generated water connectivity,
+while generated-fluid features that would reintroduce uncontrolled fluids are
+filtered from the NR Core biome feature lists.
 
 ## VANILLA_FLOODED contract
 
@@ -108,17 +139,52 @@ NR-DEV-1 seeds the chunk-local flood using `OCEAN_FLOOR_WG` columns whose terrai
 surface is below the flood plane, then performs a six-direction BFS through air
 cells in the owning chunk.
 
-## Vanilla structures and future NeverRaft structures
+## Vanilla and NeverFolia native structures
 
-Vanilla structure registries and structure-start stages are not replaced by the
-current NR Core. Vanilla villages, mineshafts, strongholds, Trial Chambers,
-Ancient Cities and other normal Overworld structures therefore keep their vanilla
-26.2 generator/placement behavior unless a later NR patch explicitly overrides a
-specific structure.
+Vanilla structure registries and upper-world structure behavior remain available.
+NR-DEV-1 additionally owns eight native deterministic structures through real
+Minecraft `structure` / `structure_set` starts:
 
-Production NR architecture will add NeverRaft-owned structure sets and placement
-policies for deep mineshafts, Trial Chambers and NeverLand dungeons while keeping
-placement deterministic from seed + absolute coordinates.
+### Deep major
+
+- `neverfolia:buried_sanctum`;
+- `neverfolia:abyssal_archive`;
+- `neverfolia:ancient_cistern`.
+
+### Deep medium
+
+- `neverfolia:collapsed_mine`;
+- `neverfolia:geode_vault`;
+- `neverfolia:flooded_ruins`.
+
+### Deep ambient
+
+- `neverfolia:prospector_camp`;
+- `neverfolia:sealed_cache`.
+
+Candidate placement is deterministic from seed + candidate chunk. Failed
+candidates do not search neighboring chunks for a substitute location, generation
+never performs cross-chunk writes, and structure bounding boxes are rejected when
+they violate the configured vertical/geology/flood constraints.
+
+Deep extensions for vanilla mineshafts and Trial Chambers are reserved by the
+structure contract, while Ancient City placement is protected from extending
+below its NR hard limit.
+
+## Predictive fast locate
+
+NeverFolia provides a no-generation locate path for its native structures.
+`/locate structure neverfolia:<id>` searches the same deterministic candidate grid
+used by structure placement instead of synchronously generating candidate chunks.
+
+The CI contract proves both properties together:
+
+- locate creates zero additional Anvil chunk records;
+- when the predicted candidate chunk is explicitly generated afterward, it
+  contains a real structure start for the located structure.
+
+This replaces the old NeverRaft behavior where locating a custom structure could
+force expensive synchronous chunk generation and trigger a server watchdog dump.
 
 ## Folia ownership and determinism
 
@@ -133,10 +199,9 @@ A NeverOverworld generation pass may write only the chunk it currently owns.
 Mutable neighboring chunk contents must not be used as an authority for deciding
 the final contents of the current chunk.
 
-Cross-chunk visual continuity should be derived from immutable inputs such as
-world seed, absolute coordinates, noise/base-density fields or deterministic cell
-coordinates rather than from observing a neighboring chunk while it is being
-generated.
+Cross-chunk visual continuity is derived from immutable inputs such as world seed,
+absolute coordinates, noise/base-density fields or deterministic cell coordinates
+rather than from observing a neighboring chunk while it is being generated.
 
 ## Fingerprint contract
 
@@ -159,11 +224,18 @@ A combined NeverFolia TEST build is acceptable only when the exact same JAR pass
 3. NeverOverworld registry/runtime smoke.
 4. Extended-height persistence checks at both high and deep Y.
 5. Native NR fluid picker activation and absence of the vanilla lava-aquifer branch.
-6. Flood presence below the new Y=128 surface.
+6. Flood presence below the new `Y=128` surface.
 7. Presence of dry underground cave air after the flood pass.
 8. Absence of uncontrolled generated underground lava in the smoke sample.
-9. Strict NeverOverworld forward-vs-reverse chunk-order semantic hashing.
-10. NeverOverworld fingerprint create/verify/mismatch rejection.
+9. Persisted deep native geology audit with diamond, emerald and their deepslate variants.
+10. All eight native NeverFolia structure templates decode and place successfully.
+11. Natural `structure_set` placement writes real structure starts.
+12. Predictive fast locate creates zero chunks and predicts a real start.
+13. NeverOverworld fingerprint create/verify/mismatch rejection.
+14. Combined NeverOverworld + NeverNether runtime smoke.
+15. Strict NeverNether forward-vs-reverse chunk-order semantic hashing.
+16. Strict NeverOverworld forward-vs-reverse chunk-order semantic hashing.
 
 The final test artifact must contain one NeverFolia JAR together with independently
-versioned NeverOverworld and NeverNether Core packs and SHA-256 checksums.
+versioned NeverOverworld and NeverNether Core packs, the geology audit report and
+SHA-256 checksums.
