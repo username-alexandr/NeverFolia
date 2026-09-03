@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   benchmark:
-    name: NR-DEV-1 true-vanilla ore benchmark
+    name: NR-DEV-1 vanilla-like ore density gate
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
@@ -32,8 +32,10 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Self-test ore balance auditor
-        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+      - name: Self-test ore balance auditor and density gate
+        run: |
+          python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
 
       - name: Wait for current compiled NeverFolia JAR
         run: |
@@ -105,6 +107,16 @@ jobs:
             --max-chunks 1024 \
             --output artifacts/NeverOverworld-ore-balance-audit.json
 
+      - name: Enforce vanilla-like deep ore density
+        run: |
+          set -euo pipefail
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --min-ratio 0.65 \
+            --max-ratio 1.35 \
+            --output artifacts/NeverOverworld-vanilla-like-ore-density.json
+
       - name: Upload ore balance benchmark
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,6 +124,7 @@ jobs:
           name: NeverOverworld-ore-balance-${{ github.sha }}
           path: |
             artifacts/NeverOverworld-ore-balance-audit.json
+            artifacts/NeverOverworld-vanilla-like-ore-density.json
             overworld-smoke-test/server.log
             vanilla-ore-reference-test/server.log
           if-no-files-found: warn
