@@ -35,6 +35,11 @@ SAMPLE_BLOCKS=(
 rm -rf "${TEST_DIR}"
 mkdir -p "${WORLD_DIR}/datapacks"
 cp "${PACK}" "${DATAPACK}"
+cat > "${TEST_DIR}/geology-priority-chunks.txt" <<'EOF'
+31,0
+-17,-25
+-4,-17
+EOF
 printf 'eula=true\n' > "${TEST_DIR}/eula.txt"
 cat > "${TEST_DIR}/server.properties" <<'EOF'
 level-name=world
