@@ -87,6 +87,9 @@ jobs:
       - name: Self-test NeverOverworld true-vanilla ore balance audit
         run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
 
+      - name: Self-test NeverOverworld vanilla-like ore density gate
+        run: python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
+
       - name: Self-test NeverOverworld native Jigsaw placement resolver
         run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
 
