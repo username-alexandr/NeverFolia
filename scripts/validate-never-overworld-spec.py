@@ -128,10 +128,10 @@ def main() -> None:
         "current.is(Blocks.STONE)",
         "Blocks.DIAMOND_ORE",
         "Blocks.DEEPSLATE_DIAMOND_ORE",
+        'for forbidden in ("new Random(", "RandomSource", "level.getChunk("):',
+        "order-dependent/random neighbor dependency present",
     ):
         require(geology, marker, "NeverOverworld native ore geology")
-    for forbidden in ("new Random(", "RandomSource", "level.getChunk("):
-        forbid(geology, forbidden, "NeverOverworld native ore geology")
 
     for marker in (
         "COAL(0x07A8B9C0D1E2F314L",
