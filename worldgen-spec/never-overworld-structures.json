@@ -61,8 +61,10 @@
         "minecraft:pillager_outpost",
         "minecraft:desert_pyramid",
         "minecraft:jungle_pyramid",
-        "minecraft:swamp_hut",
         "minecraft:igloo"
+      ],
+      "flood_adapted": [
+        "minecraft:swamp_hut"
       ],
       "water_native_allowed": [
         "minecraft:shipwreck",
@@ -91,6 +93,11 @@
         "deep_requires_stable_floor": true,
         "deep_reject_surface_connected_flood": true,
         "deep_reject_open_chasm_intersection": true
+      },
+      "swamp_hut": {
+        "flood_adapted": true,
+        "minimum_ground_anchor_y": 129,
+        "preserve_witch_and_cat_spawns": true
       },
       "ancient_city": {
         "preserve_vanilla_rules": true,
