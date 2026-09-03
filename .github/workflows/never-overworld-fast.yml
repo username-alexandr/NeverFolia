@@ -36,6 +36,18 @@ jobs:
       - name: Self-test NeverOverworld Core builder
         run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
 
+      - name: Self-test NeverOverworld field-r1 pack refinement
+        run: python3 ./scripts/refine-never-overworld-field-r1-pack.py --self-test
+
+      - name: Self-test NeverOverworld flooded surface structure policy
+        run: python3 ./scripts/apply-never-overworld-flooded-surface-structure-policy.py --self-test
+
+      - name: Self-test NeverOverworld mineshaft depth policy
+        run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
+
+      - name: Self-test NeverFolia profiler XYZ compatibility
+        run: python3 ./scripts/apply-neverfolia-profiler-xyz.py --self-test
+
       - name: Self-test NeverOverworld semantic hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
@@ -47,6 +59,9 @@ jobs:
 
       - name: Self-test NeverOverworld deterministic floodable-volume semantics
         run: python3 ./scripts/apply-never-overworld-floodable-volume.py --self-test
+
+      - name: Self-test NeverOverworld flooded ecology cleanup
+        run: python3 ./scripts/harden-never-overworld-flood-ecology.py --self-test
 
       - name: Self-test NeverOverworld LIGHT flood activation instrumentation
         run: python3 ./scripts/instrument-never-overworld-flood-debug.py --self-test
