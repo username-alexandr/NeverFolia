@@ -48,7 +48,7 @@ def main() -> None:
 
     baseline = data.get("vanilla_baseline", {})
     vanilla = set(baseline.get("structures", []))
-    for required in ("minecraft:mineshaft", "minecraft:trial_chambers", "minecraft:ancient_city"):
+    for required in ("minecraft:mineshaft", "minecraft:trial_chambers", "minecraft:ancient_city", "minecraft:swamp_hut"):
         if required not in vanilla:
             fail(f"vanilla baseline missing {required}")
     if "minecraft:stronghold" in vanilla:
@@ -63,6 +63,9 @@ def main() -> None:
         fail("stronghold special rule must be enabled=false")
     validate_deep_rule("mineshaft", special.get("mineshaft", {}), [-448, -112])
     validate_deep_rule("trial_chambers", special.get("trial_chambers", {}), [-320, -96])
+    swamp_hut = special.get("swamp_hut", {})
+    if swamp_hut.get("flood_adapted") is not True or swamp_hut.get("minimum_ground_anchor_y") != 129:
+        fail("swamp hut must be flood-adapted at minimum Y=129")
 
     flood = baseline.get("flood_surface_policy", {})
     if flood.get("minimum_dry_surface_y") != 129 or flood.get("reject_submerged_surface_starts") is not True:
@@ -76,12 +79,20 @@ def main() -> None:
         "minecraft:village_taiga",
         "minecraft:woodland_mansion",
         "minecraft:pillager_outpost",
-        "minecraft:swamp_hut",
+        "minecraft:desert_pyramid",
+        "minecraft:jungle_pyramid",
+        "minecraft:igloo",
     ):
         if required not in dry_only:
             fail(f"dry-land-only flooded structure policy missing {required}")
-    if dry_only & set(flood.get("water_native_allowed", [])):
-        fail("structure cannot be both dry-only and water-native")
+    flood_adapted = set(flood.get("flood_adapted", []))
+    if flood_adapted != {"minecraft:swamp_hut"}:
+        fail(f"unexpected flood-adapted structure set: {sorted(flood_adapted)}")
+    if "minecraft:swamp_hut" in dry_only:
+        fail("swamp hut must be flood-adapted, not dry-land-only")
+    water_native = set(flood.get("water_native_allowed", []))
+    if dry_only & water_native or dry_only & flood_adapted or flood_adapted & water_native:
+        fail("surface structure policy classes must be disjoint")
 
     profiles = data.get("vertical_profiles", {})
     groups = data.get("placement_groups", {})
@@ -147,6 +158,7 @@ def main() -> None:
     print("  stronghold/end portal: disabled")
     print("  mineshaft: deep-only Y=-448..-112")
     print("  trial chambers: deep-only Y=-320..-96")
+    print("  swamp hut: flood-adapted to waterline Y>=129")
     print(f"  custom native structure/dungeon ids: {total}")
     print("  placement: deterministic candidate grid, no neighbor generation")
     print("  locate: native candidate-grid search, generates_chunks=false")
