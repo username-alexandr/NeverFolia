@@ -5,6 +5,7 @@ import argparse
 import importlib.util
 import json
 import math
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ def load_geometry():
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot import {GEOMETRY_PATH}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
