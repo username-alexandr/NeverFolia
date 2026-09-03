@@ -45,6 +45,24 @@ def patch_source(source: str) -> str:
     )
     source = source.replace(OLD_USAGE, NEW_USAGE, 1)
 
+    # Rewrite the existing XZ/time/radius parser before adding the new Y
+    # validation. Otherwise a generic args[2] replacement could accidentally
+    # rewrite the validation itself rather than the original block-Z parser.
+    if source.count("Integer.parseInt(args[2])") < 1:
+        fail("block-z parser marker not found")
+    source = source.replace("Integer.parseInt(args[2])", "Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])", 1)
+    if source.count("Double.parseDouble(args[3])") < 1:
+        fail("time parser marker not found")
+    source = source.replace("Double.parseDouble(args[3])", "Double.parseDouble(args[neverFoliaXYZ ? 4 : 3])", 1)
+
+    old_radius_guard = "if (args.length > 4) {"
+    if old_radius_guard not in source:
+        fail("radius guard marker not found")
+    source = source.replace(old_radius_guard, "if (neverFoliaXYZ || args.length > 4) {", 1)
+    if source.count("Double.parseDouble(args[4])") < 1:
+        fail("radius parser marker not found")
+    source = source.replace("Double.parseDouble(args[4])", "Double.parseDouble(args[neverFoliaXYZ ? 5 : 4])", 1)
+
     world_marker = "final World world = Bukkit.getWorld(args[0]);"
     if world_marker not in source:
         fail("world lookup marker not found")
@@ -61,17 +79,9 @@ def patch_source(source: str) -> str:
         '''
     source = source.replace(world_marker, prefix + world_marker, 1)
 
-    source = source.replace("Integer.parseInt(args[2])", "Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])", 1)
-    source = source.replace("Double.parseDouble(args[3])", "Double.parseDouble(args[neverFoliaXYZ ? 4 : 3])", 1)
-
-    old_radius_guard = "if (args.length > 4) {"
-    if old_radius_guard not in source:
-        fail("radius guard marker not found")
-    source = source.replace(old_radius_guard, "if (neverFoliaXYZ || args.length > 4) {", 1)
-    source = source.replace("Double.parseDouble(args[4])", "Double.parseDouble(args[neverFoliaXYZ ? 5 : 4])", 1)
-
     required = (
         "neverFoliaXYZ = args.length == 6",
+        "Integer.parseInt(args[2]);",
         "args[neverFoliaXYZ ? 3 : 2]",
         "args[neverFoliaXYZ ? 4 : 3]",
         "args[neverFoliaXYZ ? 5 : 4]",
@@ -82,6 +92,8 @@ def patch_source(source: str) -> str:
             fail(f"patched source missing {marker!r}")
     if source.index("neverFoliaXYZ = args.length == 6") > source.index("if (neverFoliaXYZ) {"):
         fail("XYZ mode declaration must precede validation")
+    if source.count("Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])") != 1:
+        fail("block-z parser must be rewritten exactly once")
     return source
 
 
@@ -110,6 +122,10 @@ def self_test() -> None:
     for marker in ("args.length > 6", "neverFoliaXYZ", "Invalid input for block y", "OR /profiler"):
         if marker not in patched:
             fail(f"SELF-TEST missing {marker}")
+    if "blockZ = Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])" not in patched:
+        fail("SELF-TEST: XYZ Z-coordinate mapping failed")
+    if "Integer.parseInt(args[2]);" not in patched:
+        fail("SELF-TEST: Y validation disappeared")
     print("[NeverFolia][profiler xyz] SELF-TEST OK")
 
 
