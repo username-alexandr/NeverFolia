@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "worldgen_id": "NR-DEV-1",
-  "profile": "native-structures-v1",
+  "profile": "native-structures-v1-field-r1",
   "units": {
     "placement_spacing": "chunks",
     "vertical_ranges": "block_y",
@@ -23,13 +23,15 @@
   },
   "vanilla_baseline": {
     "preserve_upper_world_structures": true,
+    "disabled_structures": [
+      "minecraft:stronghold"
+    ],
     "structures": [
       "minecraft:village_plains",
       "minecraft:village_desert",
       "minecraft:village_savanna",
       "minecraft:village_snowy",
       "minecraft:village_taiga",
-      "minecraft:stronghold",
       "minecraft:mineshaft",
       "minecraft:mineshaft_mesa",
       "minecraft:trial_chambers",
@@ -40,21 +42,49 @@
       "minecraft:ocean_ruin_warm",
       "minecraft:monument",
       "minecraft:woodland_mansion",
+      "minecraft:pillager_outpost",
       "minecraft:desert_pyramid",
       "minecraft:jungle_pyramid",
       "minecraft:swamp_hut",
       "minecraft:igloo"
     ],
+    "flood_surface_policy": {
+      "minimum_dry_surface_y": 129,
+      "reject_submerged_surface_starts": true,
+      "dry_land_only": [
+        "minecraft:village_plains",
+        "minecraft:village_desert",
+        "minecraft:village_savanna",
+        "minecraft:village_snowy",
+        "minecraft:village_taiga",
+        "minecraft:woodland_mansion",
+        "minecraft:pillager_outpost",
+        "minecraft:desert_pyramid",
+        "minecraft:jungle_pyramid",
+        "minecraft:swamp_hut",
+        "minecraft:igloo"
+      ],
+      "water_native_allowed": [
+        "minecraft:shipwreck",
+        "minecraft:ocean_ruin_cold",
+        "minecraft:ocean_ruin_warm",
+        "minecraft:monument"
+      ]
+    },
     "special_rules": {
+      "stronghold": {
+        "enabled": false,
+        "reason": "NeverLand progression owns End access; vanilla End Portal dungeon is disabled"
+      },
       "mineshaft": {
-        "upper_vanilla_placement_preserved": true,
+        "upper_vanilla_placement_preserved": false,
         "deep_extension_enabled": true,
         "deep_hard_y": [-448, -112],
         "deep_requires_min_rock_thickness": 18,
         "deep_reject_surface_connected_flood": true
       },
       "trial_chambers": {
-        "upper_vanilla_placement_preserved": true,
+        "upper_vanilla_placement_preserved": false,
         "deep_extension_enabled": true,
         "deep_hard_y": [-320, -96],
         "deep_requires_min_rock_thickness": 28,
