@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   benchmark:
-    name: NR-DEV-1 vanilla-reference ore benchmark
+    name: NR-DEV-1 true-vanilla ore benchmark
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       BASELINE_RUN_ID: '33744350673'
       BASELINE_SHA: '0cadfea8ff1b6273abe64108c10afd6b60deb2ba'
@@ -76,11 +76,18 @@ jobs:
             artifacts/NeverFolia-baseline.jar \
             artifacts/NeverOverworld-Core-NR-DEV-1-balance-benchmark.zip
 
-      - name: Compare native deep density with preserved vanilla 26.2 range
+      - name: Generate true vanilla 26.2 reference sample
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh artifacts/NeverFolia-baseline.jar
+
+      - name: Compare deep density with true vanilla 26.2 FULL chunks
         run: |
           set -euo pipefail
           python3 ./scripts/audit-never-overworld-ore-balance.py \
             --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
             --max-chunks 1024 \
             --output artifacts/NeverOverworld-ore-balance-audit.json
 
@@ -92,5 +99,6 @@ jobs:
           path: |
             artifacts/NeverOverworld-ore-balance-audit.json
             overworld-smoke-test/server.log
+            vanilla-ore-reference-test/server.log
           if-no-files-found: warn
           retention-days: 14
