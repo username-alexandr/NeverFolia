@@ -47,9 +47,12 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOL
 echo "[NeverFolia] Applying NeverOverworld sculk worldgen chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-sculk-ownership.py" "${FOLIA_DIR}"
 
-# Vanilla resource-ore vertical preservation is handled in the NeverOverworld
-# datapack by resolving the original 26.2 above_bottom/below_top anchors to
-# absolute coordinates. Do not couple this to OreFeature internals.
+# The datapack resolves original vanilla 26.2 above_bottom/below_top anchors to
+# absolute coordinates. OreFeature also needs its old build-bound rejection,
+# otherwise anchors that intentionally sample outside -64..319 (notably diamond,
+# redstone, emerald and upper iron) become writable in the extended NR dimension.
+echo "[NeverFolia] Preserving original vanilla 26.2 resource-ore write bounds"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-vanilla-ore-write-bounds.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
