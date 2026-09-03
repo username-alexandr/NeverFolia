@@ -40,10 +40,18 @@ ORE_NAMES = {
     "minecraft:deepslate_emerald_ore": "emerald",
 }
 REGION_RE = re.compile(r"^r\.(-?\d+)\.(-?\d+)\.mca$")
+CHUNK_RE = re.compile(r"^(-?\d+),(-?\d+)$")
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][NeverOverworld geology audit] {message}")
+
+
+def parse_chunk(value: str) -> tuple[int, int]:
+    match = CHUNK_RE.match(value.strip())
+    if match is None:
+        raise argparse.ArgumentTypeError("chunk must use CX,CZ, for example 31,0 or -17,-25")
+    return int(match.group(1)), int(match.group(2))
 
 
 def generated_chunks(region_dir: Path):
@@ -122,7 +130,7 @@ def missing_required(result: dict, required_ores: tuple[str, ...], required_bloc
     return missing_ores, missing_blocks
 
 
-def audit(world: Path, max_chunks: int) -> dict:
+def audit(world: Path, max_chunks: int, priority_chunks: tuple[tuple[int, int], ...] = ()) -> dict:
     region = NR.find_region_dir(world)
     counts: Counter[str] = Counter()
     block_counts: Counter[str] = Counter()
@@ -131,17 +139,17 @@ def audit(world: Path, max_chunks: int) -> dict:
     chunks_with_ore = 0
     chunks_with_diamond = 0
     chunks_with_emerald = 0
-    for cx, cz in generated_chunks(region):
-        if chunks_scanned >= max_chunks:
-            break
-        try:
-            root = BASE.read_chunk_nbt(region, cx, cz)
-        except Exception:
-            continue
+    chunks_with_gold = 0
+    seen: set[tuple[int, int]] = set()
+    priority_scanned: list[tuple[int, int]] = []
+
+    def scan_chunk(cx: int, cz: int, root: dict) -> None:
+        nonlocal chunks_scanned, deep_sections, chunks_with_ore, chunks_with_diamond, chunks_with_emerald, chunks_with_gold
         chunks_scanned += 1
         before = sum(counts.values())
         diamond_before = counts.get("diamond", 0)
         emerald_before = counts.get("emerald", 0)
+        gold_before = counts.get("gold", 0)
         for section in BASE.section_list(root):
             sy = section.get("Y")
             if not isinstance(sy, int) or sy < DEEP_SECTION_MIN or sy > DEEP_SECTION_MAX:
@@ -154,14 +162,48 @@ def audit(world: Path, max_chunks: int) -> dict:
             chunks_with_diamond += 1
         if counts.get("emerald", 0) > emerald_before:
             chunks_with_emerald += 1
+        if counts.get("gold", 0) > gold_before:
+            chunks_with_gold += 1
+
+    # Deterministic rare-ore probes are authoritative CI fixtures. Scan them first
+    # so region-file lexical ordering or the general max-chunk cap cannot exclude
+    # the exact chunks that the runtime smoke explicitly force-loaded.
+    for cx, cz in priority_chunks:
+        key = (cx, cz)
+        if key in seen:
+            continue
+        try:
+            root = BASE.read_chunk_nbt(region, cx, cz)
+        except Exception as exc:
+            fail(f"priority chunk {cx},{cz} was not generated/readable: {exc}")
+        seen.add(key)
+        priority_scanned.append(key)
+        scan_chunk(cx, cz, root)
+
+    effective_limit = max(max_chunks, len(seen))
+    for cx, cz in generated_chunks(region):
+        if chunks_scanned >= effective_limit:
+            break
+        key = (cx, cz)
+        if key in seen:
+            continue
+        try:
+            root = BASE.read_chunk_nbt(region, cx, cz)
+        except Exception:
+            continue
+        seen.add(key)
+        scan_chunk(cx, cz, root)
 
     total = sum(counts.values())
     result = {
-        "schema": 2,
+        "schema": 3,
         "deep_y": [-512, -97],
         "chunks_scanned": chunks_scanned,
         "deep_sections_scanned": deep_sections,
+        "priority_chunks_requested": [[cx, cz] for cx, cz in priority_chunks],
+        "priority_chunks_scanned": [[cx, cz] for cx, cz in priority_scanned],
         "chunks_with_native_ore": chunks_with_ore,
+        "chunks_with_gold": chunks_with_gold,
         "chunks_with_diamond": chunks_with_diamond,
         "chunks_with_emerald": chunks_with_emerald,
         "total_deep_ore_blocks": total,
@@ -192,17 +234,31 @@ def self_test() -> None:
     if count_section(section2, empty, empty_blocks) != 0:
         fail("SELF-TEST: host rock was counted as ore")
 
+    if parse_chunk("31,0") != (31, 0) or parse_chunk("-17,-25") != (-17, -25):
+        fail("SELF-TEST: priority chunk parser failed")
+    try:
+        parse_chunk("bad-chunk")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        fail("SELF-TEST: invalid priority chunk was accepted")
+
     fixture = {
-        "ore_blocks": {"diamond": 7, "emerald": 0},
+        "ore_blocks": {"gold": 9, "diamond": 7, "emerald": 0},
         "ore_block_variants": {
+            "minecraft:deepslate_gold_ore": 9,
             "minecraft:deepslate_diamond_ore": 7,
             "minecraft:deepslate_emerald_ore": 0,
         },
     }
     missing_ores, missing_blocks = missing_required(
         fixture,
-        ("diamond", "emerald"),
-        ("minecraft:deepslate_diamond_ore", "minecraft:deepslate_emerald_ore"),
+        ("gold", "diamond", "emerald"),
+        (
+            "minecraft:deepslate_gold_ore",
+            "minecraft:deepslate_diamond_ore",
+            "minecraft:deepslate_emerald_ore",
+        ),
     )
     if missing_ores != ["emerald"] or missing_blocks != ["minecraft:deepslate_emerald_ore"]:
         fail("SELF-TEST: required rare-ore diagnostics failed")
@@ -216,6 +272,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--require", action="append", choices=ORE_KINDS, default=[], dest="required_ores")
     parser.add_argument("--require-block", action="append", choices=tuple(sorted(ORE_NAMES)), default=[], dest="required_blocks")
+    parser.add_argument("--priority-chunk", action="append", type=parse_chunk, default=[], dest="priority_chunks")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -226,7 +283,8 @@ def main() -> None:
 
     required_ores = tuple(dict.fromkeys(args.required_ores))
     required_blocks = tuple(dict.fromkeys(args.required_blocks))
-    result = audit(args.world.resolve(), max(1, args.max_chunks))
+    priority_chunks = tuple(dict.fromkeys(args.priority_chunks))
+    result = audit(args.world.resolve(), max(1, args.max_chunks), priority_chunks)
     missing_ores, missing_blocks = missing_required(result, required_ores, required_blocks)
     result["required_ores"] = list(required_ores)
     result["required_blocks"] = list(required_blocks)
