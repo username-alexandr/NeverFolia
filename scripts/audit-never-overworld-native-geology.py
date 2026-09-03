@@ -41,6 +41,7 @@ ORE_NAMES = {
 }
 REGION_RE = re.compile(r"^r\.(-?\d+)\.(-?\d+)\.mca$")
 CHUNK_RE = re.compile(r"^(-?\d+),(-?\d+)$")
+PROBE_MANIFEST = "geology-priority-chunks.txt"
 
 
 def fail(message: str) -> None:
@@ -52,6 +53,24 @@ def parse_chunk(value: str) -> tuple[int, int]:
     if match is None:
         raise argparse.ArgumentTypeError("chunk must use CX,CZ, for example 31,0 or -17,-25")
     return int(match.group(1)), int(match.group(2))
+
+
+def load_probe_manifest(world: Path) -> tuple[tuple[tuple[int, int], ...], Path | None]:
+    path = world.parent / PROBE_MANIFEST
+    if not path.is_file():
+        return (), None
+    chunks: list[tuple[int, int]] = []
+    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        value = raw.strip()
+        if not value or value.startswith("#"):
+            continue
+        try:
+            chunks.append(parse_chunk(value))
+        except argparse.ArgumentTypeError as exc:
+            fail(f"invalid {PROBE_MANIFEST} line {line_number}: {exc}")
+    if not chunks:
+        fail(f"{PROBE_MANIFEST} exists but contains no chunk coordinates")
+    return tuple(dict.fromkeys(chunks)), path
 
 
 def generated_chunks(region_dir: Path):
@@ -281,10 +300,25 @@ def main() -> None:
     if args.world is None:
         parser.error("--world is required")
 
-    required_ores = tuple(dict.fromkeys(args.required_ores))
-    required_blocks = tuple(dict.fromkeys(args.required_blocks))
-    priority_chunks = tuple(dict.fromkeys(args.priority_chunks))
-    result = audit(args.world.resolve(), max(1, args.max_chunks), priority_chunks)
+    world = args.world.resolve()
+    manifest_chunks, manifest_path = load_probe_manifest(world)
+    cli_priority = tuple(dict.fromkeys(args.priority_chunks))
+    priority_chunks = tuple(dict.fromkeys(cli_priority + manifest_chunks))
+
+    required_ores_input = list(args.required_ores)
+    required_blocks_input = list(args.required_blocks)
+    # A smoke-generated probe manifest marks the strict CI geology profile. It
+    # includes a dedicated gold probe, so gold becomes a release gate alongside
+    # the explicitly requested diamond/emerald rare ores without changing generic
+    # ad-hoc audits of arbitrary worlds.
+    if manifest_path is not None:
+        required_ores_input.insert(0, "gold")
+        required_blocks_input.insert(0, "minecraft:deepslate_gold_ore")
+
+    required_ores = tuple(dict.fromkeys(required_ores_input))
+    required_blocks = tuple(dict.fromkeys(required_blocks_input))
+    result = audit(world, max(1, args.max_chunks), priority_chunks)
+    result["priority_chunk_source"] = str(manifest_path) if manifest_path is not None else None
     missing_ores, missing_blocks = missing_required(result, required_ores, required_blocks)
     result["required_ores"] = list(required_ores)
     result["required_blocks"] = list(required_blocks)
