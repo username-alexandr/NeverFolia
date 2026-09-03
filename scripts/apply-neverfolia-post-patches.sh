@@ -47,8 +47,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOL
 echo "[NeverFolia] Applying NeverOverworld sculk worldgen chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-sculk-ownership.py" "${FOLIA_DIR}"
 
-echo "[NeverFolia] Restoring original vanilla 26.2 resource-ore build bounds"
-python3 "${ROOT_DIR}/scripts/apply-never-overworld-vanilla-ore-bounds.py" "${FOLIA_DIR}"
+# Vanilla resource-ore vertical preservation is handled in the NeverOverworld
+# datapack by resolving the original 26.2 above_bottom/below_top anchors to
+# absolute coordinates. Do not couple this to OreFeature internals.
 
 echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
@@ -56,8 +57,11 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}
 echo "[NeverFolia] Extending NeverOverworld native ore geology with coal and emerald"
 python3 "${ROOT_DIR}/scripts/extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"
 
-echo "[NeverFolia] Tuning NeverOverworld deep diamond and emerald balance"
+echo "[NeverFolia] Applying established deep diamond and emerald balance v2"
 python3 "${ROOT_DIR}/scripts/tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Calibrating all NeverOverworld deep ores toward measured vanilla 26.2 density"
+python3 "${ROOT_DIR}/scripts/tune-never-overworld-ore-balance-v3.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Relocating NeverOverworld native geology to SURFACE before CARVERS"
 python3 "${ROOT_DIR}/scripts/relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"
