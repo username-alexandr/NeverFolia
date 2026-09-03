@@ -38,12 +38,25 @@ def chunk_status(root: dict) -> str:
     return value if isinstance(value, str) else ""
 
 
-def deterministic_candidates(region: Path) -> list[tuple[int, int]]:
+def generated_coords(region: Path) -> list[tuple[int, int]]:
     coords = list(dict.fromkeys(A.generated_chunks(region)))
-    if not coords:
-        fail("no generated chunks found")
     coords.sort(key=sample_key)
     return coords
+
+
+def full_coords(region: Path) -> tuple[set[tuple[int, int]], Counter[str]]:
+    result: set[tuple[int, int]] = set()
+    statuses: Counter[str] = Counter()
+    for cx, cz in generated_coords(region):
+        try:
+            root = A.BASE.read_chunk_nbt(region, cx, cz)
+        except Exception:
+            continue
+        status = chunk_status(root)
+        statuses[status or "<missing>"] += 1
+        if status in FULL_STATUSES:
+            result.add((cx, cz))
+    return result, statuses
 
 
 def per_chunk(counts: Counter[str], chunks: int) -> dict[str, float]:
@@ -58,74 +71,80 @@ def ratio(deep: Counter[str], vanilla: Counter[str]) -> dict[str, float | None]:
     return result
 
 
-def audit(world: Path, max_chunks: int) -> dict:
-    region = A.NR.find_region_dir(world)
-    candidates = deterministic_candidates(region)
+def count_range(root: dict, min_section: int, max_section: int, counts: Counter[str], blocks: Counter[str]) -> int:
+    sections = 0
+    for section in A.BASE.section_list(root):
+        sy = section.get("Y")
+        if not isinstance(sy, int) or sy < min_section or sy > max_section:
+            continue
+        sections += 1
+        A.count_section(section, counts, blocks)
+    return sections
+
+
+def audit(world: Path, max_chunks: int, vanilla_world: Path | None = None) -> dict:
+    deep_region = A.NR.find_region_dir(world)
+    vanilla_region = A.NR.find_region_dir(vanilla_world) if vanilla_world is not None else deep_region
+
+    deep_full, deep_statuses = full_coords(deep_region)
+    vanilla_full, vanilla_statuses = full_coords(vanilla_region)
+    common = sorted(deep_full & vanilla_full, key=sample_key)[:max_chunks]
+    if not common:
+        fail("no common FULL chunks between NeverOverworld and vanilla reference worlds")
+
     deep: Counter[str] = Counter()
     deep_blocks: Counter[str] = Counter()
     vanilla: Counter[str] = Counter()
     vanilla_blocks: Counter[str] = Counter()
-    status_counts: Counter[str] = Counter()
-    candidates_read = 0
-    full_chunks_scanned = 0
-    deep_sections = 0
-    vanilla_sections = 0
     chunks_with_deep = Counter()
     chunks_with_vanilla = Counter()
+    deep_sections = 0
+    vanilla_sections = 0
+    scanned = 0
 
-    for cx, cz in candidates:
-        if full_chunks_scanned >= max_chunks:
-            break
+    for cx, cz in common:
         try:
-            root = A.BASE.read_chunk_nbt(region, cx, cz)
+            deep_root = A.BASE.read_chunk_nbt(deep_region, cx, cz)
+            vanilla_root = A.BASE.read_chunk_nbt(vanilla_region, cx, cz)
         except Exception:
             continue
-        candidates_read += 1
-        status = chunk_status(root)
-        status_counts[status or "<missing>"] += 1
-        if status not in FULL_STATUSES:
+        if chunk_status(deep_root) not in FULL_STATUSES or chunk_status(vanilla_root) not in FULL_STATUSES:
             continue
-
-        full_chunks_scanned += 1
+        scanned += 1
         deep_before = deep.copy()
         vanilla_before = vanilla.copy()
-        for section in A.BASE.section_list(root):
-            sy = section.get("Y")
-            if not isinstance(sy, int):
-                continue
-            if DEEP_MIN_SECTION <= sy <= DEEP_MAX_SECTION:
-                deep_sections += 1
-                A.count_section(section, deep, deep_blocks)
-            elif VANILLA_MIN_SECTION <= sy <= VANILLA_MAX_SECTION:
-                vanilla_sections += 1
-                A.count_section(section, vanilla, vanilla_blocks)
+        deep_sections += count_range(deep_root, DEEP_MIN_SECTION, DEEP_MAX_SECTION, deep, deep_blocks)
+        vanilla_sections += count_range(vanilla_root, VANILLA_MIN_SECTION, VANILLA_MAX_SECTION, vanilla, vanilla_blocks)
         for kind in A.ORE_KINDS:
             if deep.get(kind, 0) > deep_before.get(kind, 0):
                 chunks_with_deep[kind] += 1
             if vanilla.get(kind, 0) > vanilla_before.get(kind, 0):
                 chunks_with_vanilla[kind] += 1
 
-    if full_chunks_scanned == 0:
-        fail(f"no FULL chunks found; observed statuses: {dict(status_counts)}")
+    if scanned == 0:
+        fail("common FULL chunk set became unreadable")
     if vanilla_sections == 0 or deep_sections == 0:
         fail(f"expected both vanilla and deep sections, got vanilla={vanilla_sections} deep={deep_sections}")
 
     result = {
-        "schema": 2,
-        "sample_method": "sha256-spatial-mix-full-chunks-v2",
+        "schema": 3,
+        "sample_method": "common-full-chunks-sha256-v3",
+        "reference_mode": "separate-vanilla-world" if vanilla_world is not None else "same-world-upper-range",
         "full_chunks_requested": max_chunks,
-        "generated_chunk_candidates": len(candidates),
-        "candidates_read": candidates_read,
-        "full_chunks_scanned": full_chunks_scanned,
-        "status_counts_read": dict(sorted(status_counts.items())),
+        "neveroverworld_full_chunks_available": len(deep_full),
+        "vanilla_full_chunks_available": len(vanilla_full),
+        "common_full_chunks_available": len(deep_full & vanilla_full),
+        "common_full_chunks_scanned": scanned,
+        "neveroverworld_status_counts": dict(sorted(deep_statuses.items())),
+        "vanilla_status_counts": dict(sorted(vanilla_statuses.items())),
         "deep_y": [-512, -97],
         "vanilla_reference_y": [-64, 319],
         "deep_sections_scanned": deep_sections,
         "vanilla_sections_scanned": vanilla_sections,
         "deep_ore_blocks": {kind: deep.get(kind, 0) for kind in A.ORE_KINDS},
         "vanilla_reference_ore_blocks": {kind: vanilla.get(kind, 0) for kind in A.ORE_KINDS},
-        "deep_ore_blocks_per_full_chunk": per_chunk(deep, full_chunks_scanned),
-        "vanilla_reference_ore_blocks_per_full_chunk": per_chunk(vanilla, full_chunks_scanned),
+        "deep_ore_blocks_per_full_chunk": per_chunk(deep, scanned),
+        "vanilla_reference_ore_blocks_per_full_chunk": per_chunk(vanilla, scanned),
         "deep_to_vanilla_ratio": ratio(deep, vanilla),
         "chunks_with_deep_ore": {kind: chunks_with_deep.get(kind, 0) for kind in A.ORE_KINDS},
         "chunks_with_vanilla_reference_ore": {kind: chunks_with_vanilla.get(kind, 0) for kind in A.ORE_KINDS},
@@ -150,12 +169,13 @@ def self_test() -> None:
     r = ratio(d, v)
     if r["iron"] != 2.0 or r["diamond"] is not None:
         fail("SELF-TEST: ratio calculation failed")
-    print("[NeverFolia][NeverOverworld ore balance audit] FULL-CHUNK SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld ore balance audit] TRUE-VANILLA FULL-CHUNK SELF-TEST OK")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare NR deep native ore density with preserved vanilla 26.2 ore density in FULL chunks")
+    parser = argparse.ArgumentParser(description="Compare NR deep native ore density with a true vanilla 26.2 FULL-chunk reference")
     parser.add_argument("--world", type=Path)
+    parser.add_argument("--vanilla-world", type=Path)
     parser.add_argument("--max-chunks", type=int, default=1024)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
@@ -168,7 +188,11 @@ def main() -> None:
     if args.max_chunks <= 0:
         parser.error("--max-chunks must be positive")
 
-    result = audit(args.world.resolve(), args.max_chunks)
+    result = audit(
+        args.world.resolve(),
+        args.max_chunks,
+        args.vanilla_world.resolve() if args.vanilla_world is not None else None,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
