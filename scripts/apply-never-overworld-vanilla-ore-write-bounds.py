@@ -9,6 +9,7 @@ ORE_FEATURE_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/leve
 MARKER = "NeverFolia: preserve original vanilla 26.2 resource-ore write bounds"
 RESOURCE_HELPER = "neverfolia$isVanillaResourceOre"
 WORLD_HELPER = "neverfolia$isExtendedNeverOverworld"
+LOCAL_FLAG = "neverfolia$originalVanillaOreBounds"
 
 
 def fail(message: str) -> None:
@@ -72,8 +73,14 @@ def matching(source: str, start: int, opening: str, closing: str) -> int:
     fail(f"unterminated delimiter {opening}{closing}")
 
 
+def method_indent(source: str, method_start: int) -> str:
+    line_start = source.rfind("\n", 0, method_start) + 1
+    match = re.match(r"[ \t]*", source[line_start:method_start])
+    return match.group(0) if match else "    "
+
+
 def patch_source(source: str) -> str:
-    if MARKER in source or RESOURCE_HELPER in source or WORLD_HELPER in source:
+    if MARKER in source or RESOURCE_HELPER in source or WORLD_HELPER in source or LOCAL_FLAG in source:
         fail("OreFeature is already patched for NeverOverworld vanilla ore write bounds")
 
     method = re.search(r"\b(?:protected|public|private)\s+boolean\s+doPlace\s*\(", source)
@@ -104,15 +111,21 @@ def patch_source(source: str) -> str:
     call = calls[0]
     y = call.group(1)
     original = call.group(0)
+
+    indent = method_indent(source, method.start()) + "    "
+    classification = (
+        "\n"
+        f"{indent}// {MARKER}.\n"
+        f"{indent}// Compute the NR/resource classification once per feature placement; the\n"
+        f"{indent}// inner voxel loop only performs a boolean + Y-range check.\n"
+        f"{indent}final boolean {LOCAL_FLAG} = {WORLD_HELPER}({level}) && {RESOURCE_HELPER}({config});\n"
+    )
     replacement = (
         f"{original}\n"
-        f"                        // {MARKER}.\n"
-        f"                        && (!{WORLD_HELPER}({level})\n"
-        f"                            || !{RESOURCE_HELPER}({config})\n"
-        f"                            || ({y} >= -64 && {y} <= 319))"
+        f"                        && (!{LOCAL_FLAG} || ({y} >= -64 && {y} <= 319))"
     )
     patched_body = body[: call.start()] + replacement + body[call.end() :]
-    patched = source[: body_open + 1] + patched_body + source[body_close:]
+    patched = source[: body_open + 1] + classification + patched_body + source[body_close:]
 
     class_close = patched.rfind("}")
     if class_close < 0:
@@ -152,9 +165,8 @@ def patch_source(source: str) -> str:
 
     for required in (
         MARKER,
-        f"{WORLD_HELPER}({level})",
-        f"{RESOURCE_HELPER}({config})",
-        f"{y} >= -64 && {y} <= 319",
+        f"final boolean {LOCAL_FLAG} = {WORLD_HELPER}({level}) && {RESOURCE_HELPER}({config});",
+        f"!{LOCAL_FLAG} || ({y} >= -64 && {y} <= 319)",
         "Blocks.DEEPSLATE_DIAMOND_ORE",
         "Blocks.DEEPSLATE_EMERALD_ORE",
     ):
@@ -162,6 +174,10 @@ def patch_source(source: str) -> str:
             fail(f"patched source missing {required!r}")
     if patched.count(MARKER) != 1:
         fail("write-bounds marker was not injected exactly once")
+    if patched.count(f"{RESOURCE_HELPER}({config})") != 1:
+        fail("resource-ore classification must execute exactly once per doPlace call")
+    if patched.count(f"{WORLD_HELPER}({level})") != 1:
+        fail("extended-world classification must execute exactly once per doPlace call")
     return patched
 
 
@@ -182,9 +198,8 @@ class OreFeature {
     for required in (
         MARKER,
         "!level.isOutsideBuildHeight(y)",
-        f"!{WORLD_HELPER}(level)",
-        f"!{RESOURCE_HELPER}(config)",
-        "y >= -64 && y <= 319",
+        f"final boolean {LOCAL_FLAG} = {WORLD_HELPER}(level) && {RESOURCE_HELPER}(config);",
+        f"!{LOCAL_FLAG} || (y >= -64 && y <= 319)",
         "level.getMinY() == -512",
         "level.getHeight() == 1024",
         "Blocks.DEEPSLATE_DIAMOND_ORE",
@@ -192,10 +207,15 @@ class OreFeature {
     ):
         if required not in patched:
             fail(f"SELF-TEST: missing {required!r}")
+    if patched.count(f"{RESOURCE_HELPER}(config)") != 1:
+        fail("SELF-TEST: resource classification leaked into inner voxel loop")
+    if patched.count(f"{WORLD_HELPER}(level)") != 1:
+        fail("SELF-TEST: world classification leaked into inner voxel loop")
     if "deep_tuff" in patched:
         fail("SELF-TEST: resource filter must not special-case material geology")
     print("[NeverFolia][NeverOverworld vanilla ore write bounds] STRUCTURAL SELF-TEST OK")
     print("  vanilla resource ore writes restricted to original Y=-64..319 only in extended NR overworld")
+    print("  resource/world classification executes once per doPlace; inner voxel loop uses a boolean flag")
     print("  non-resource OreFeature placements remain allowed across the extended dimension")
 
 
@@ -219,6 +239,7 @@ def main() -> None:
     print("[NeverFolia][NeverOverworld vanilla ore write bounds] ORIGINAL 26.2 WRITE BOUNDS RESTORED")
     print("  resource ore write Y: -64..319")
     print("  extended NeverOverworld Y: -512..511")
+    print("  resource/world classification: once per doPlace")
     print(f"  source: {path}")
 
 
