@@ -40,6 +40,9 @@ jobs:
       - name: Validate NeverOverworld worldgen specification
         run: python3 ./scripts/validate-never-overworld-spec.py
 
+      - name: Validate NeverOverworld native structures contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
       - name: Validate reserved NeverEnd worldgen specification
         run: python3 ./scripts/validate-never-end-spec.py
 
@@ -63,6 +66,24 @@ jobs:
 
       - name: Self-test NeverOverworld Core builder
         run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
+
+      - name: Self-test NeverOverworld native structure pack builder
+        run: python3 ./scripts/build-never-overworld-native-structures.py --self-test
+
+      - name: Self-test NeverOverworld structure type normalization
+        run: python3 ./scripts/normalize-never-overworld-structure-type.py --self-test
+
+      - name: Self-test NeverOverworld native Jigsaw placement resolver
+        run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+
+      - name: Self-test NeverOverworld ChunkPos 26.2 normalization
+        run: python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+
+      - name: Self-test NeverOverworld predictive fast locate
+        run: python3 ./scripts/apply-never-overworld-fast-locate.py --self-test
+
+      - name: Self-test NeverOverworld sculk worldgen ownership
+        run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
 
       - name: Self-test semantic NeverOverworld generation hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
@@ -132,11 +153,15 @@ jobs:
             echo "Git commit: ${GITHUB_SHA}"
             echo "Folia ref: ${FOLIA_REF}"
             echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
-            echo "Overworld test core: NR-DEV-1-core-test1"
+            echo "Overworld core: NR-DEV-1 native-final + structures-v1"
             echo "Overworld mode: VANILLA_FLOODED"
             echo "Overworld flood level: Y=128"
             echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
             echo "Overworld aquifer: native lava branch disabled"
+            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald"
+            echo "Overworld structures: 8 native NeverFolia structures / natural structure_set placement"
+            echo "Overworld locate: predictive no-generation fast locate v1"
+            echo "Overworld sculk: chunk-owned worldgen spread"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
             echo "Nether test core: NN-DEV-1-core-test1"
             echo "End worldgen: ${WORLDGEN_END}"
@@ -159,15 +184,20 @@ jobs:
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
           python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
 
-      - name: Build and fingerprint NeverOverworld core test datapack
+      - name: Build and fingerprint NeverOverworld native core with structures
         run: |
           set -euo pipefail
           JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
           python3 ./scripts/build-never-overworld-core-pack.py \
             --server-jar "${JAR}" \
-            --output artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip
-          python3 ./scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --inject
-          python3 ./scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-Core-NR-DEV-1-test1.zip --verify
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py \
+            --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py \
+            --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
       - name: Smoke test NeverNether runtime and fingerprint guard
         run: |
@@ -184,6 +214,30 @@ jobs:
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
           chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
           ./scripts/smoke-test-never-overworld-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Force-decode and place all NeverOverworld structure templates
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
+          ./scripts/smoke-test-never-overworld-native-structures.sh "${JAR}" "${PACK}"
+
+      - name: Verify natural NeverOverworld structure_set placement writes real starts
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-natural-structures.sh
+          ./scripts/probe-never-overworld-natural-structures.sh "${JAR}" "${PACK}"
+
+      - name: Verify NeverOverworld fast locate creates zero chunks and predicts real start
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-fast-locate.sh
+          ./scripts/probe-never-overworld-fast-locate.sh "${JAR}" "${PACK}"
 
       - name: Smoke test NeverOverworld fingerprint guard
         run: |
@@ -240,6 +294,7 @@ jobs:
           path: |
             overworld-determinism-test/world-a-hash.json
             overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/component-diff.json
             overworld-determinism-test/world-a/server.log
             overworld-determinism-test/world-b/server.log
           if-no-files-found: warn
