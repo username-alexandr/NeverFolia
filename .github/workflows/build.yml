@@ -85,6 +85,21 @@ jobs:
       - name: Self-test NeverOverworld sculk worldgen ownership
         run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
 
+      - name: Self-test NeverOverworld native deterministic ore geology
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld coal and emerald geology extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld deep diamond and emerald balance v2
+        run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld native geology NBT audit
+        run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+      - name: Self-test NeverOverworld geology SURFACE stage relocation
+        run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
+
       - name: Self-test semantic NeverOverworld generation hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
@@ -158,7 +173,7 @@ jobs:
             echo "Overworld flood level: Y=128"
             echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
             echo "Overworld aquifer: native lava branch disabled"
-            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald"
+            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; diamond/emerald balance v2"
             echo "Overworld structures: 8 native NeverFolia structures / natural structure_set placement"
             echo "Overworld locate: predictive no-generation fast locate v1"
             echo "Overworld sculk: chunk-owned worldgen spread"
@@ -214,6 +229,27 @@ jobs:
           PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
           chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
           ./scripts/smoke-test-never-overworld-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Audit NeverOverworld persisted deep diamond and emerald geology
+        run: |
+          set -euo pipefail
+          python3 ./scripts/audit-never-overworld-native-geology.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --require diamond \
+            --require emerald \
+            --require-block minecraft:deepslate_diamond_ore \
+            --require-block minecraft:deepslate_emerald_ore \
+            --output artifacts/NeverOverworld-geology-audit.json
+
+      - name: Upload NeverOverworld geology diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-geology-${{ github.sha }}
+          path: artifacts/NeverOverworld-geology-audit.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Force-decode and place all NeverOverworld structure templates
         run: |
@@ -304,7 +340,7 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          sha256sum *.jar *.zip > SHA256SUMS.txt
+          sha256sum *.jar *.zip *.json > SHA256SUMS.txt
 
       - name: Upload NeverFolia build artifact
         uses: actions/upload-artifact@v4
@@ -313,6 +349,7 @@ jobs:
           path: |
             artifacts/*.jar
             artifacts/*.zip
+            artifacts/*.json
             artifacts/SHA256SUMS.txt
             artifacts/BUILD-INFO.txt
           if-no-files-found: error
