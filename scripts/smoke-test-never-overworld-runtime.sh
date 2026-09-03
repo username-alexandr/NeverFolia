@@ -15,9 +15,10 @@ DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
 NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
 FLOOD_MARKER='[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128'
 
-# Seven dispersed geometry/flood samples plus two deterministic balance-v2
-# rare-ore probes. For seed NeverOverworld-CI-Test-1 the latter directly load
-# the candidate chunks intersecting a diamond vein and an emerald vein.
+# Seven dispersed geometry/flood samples plus three deterministic native-geology
+# probes for seed NeverOverworld-CI-Test-1. The rare-ore chunks were selected from
+# the exact NR-DEV-1 hash/province model with enough pre-carver voxel headroom:
+# diamond chunk 31,0; emerald chunk -17,-25; gold chunk -4,-17.
 SAMPLE_BLOCKS=(
   '0 0'
   '512 0'
@@ -27,7 +28,8 @@ SAMPLE_BLOCKS=(
   '512 512'
   '-512 -512'
   '503 7'
-  '544 552'
+  '-264 -398'
+  '-60 -268'
 )
 
 rm -rf "${TEST_DIR}"
@@ -170,7 +172,7 @@ over = importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(
 region = over.find_region_dir(world)
 print('NeverOverworld region directory:', region)
 
-sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32),(31,0),(34,34)]
+sample_chunks = [(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32),(31,0),(-17,-25),(-4,-17)]
 chunks = {}
 for cx, cz in sample_chunks:
     try:
