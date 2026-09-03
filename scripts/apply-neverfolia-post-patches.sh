@@ -15,8 +15,6 @@ echo "[NeverFolia] Applying NeverNether native placement hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-placement-hook.py" "${FOLIA_DIR}"
 
 # Minecraft 26.2 renamed ResourceKey#location() to ResourceKey#identifier().
-# Keep this explicit compatibility normalization until the transformer is promoted
-# to a conventional post-apply source patch after TEST1 stabilizes.
 sed -i 's/key\.location()/key.identifier()/g' "${HELPER_FILE}"
 if grep -q 'key\.location()' "${HELPER_FILE}"; then
   echo "[NeverFolia] Failed to normalize ResourceKey API in placement helper" >&2
@@ -46,6 +44,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-fluid-feature-filter.py" "${F
 echo "[NeverFolia] Applying NeverOverworld SeagrassFeature chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-seagrass-ownership.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld sculk worldgen chunk ownership hook"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-sculk-ownership.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverOverworld native deterministic ore geology"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
 
@@ -55,16 +56,9 @@ python3 "${ROOT_DIR}/scripts/extend-never-overworld-ore-geology.py" "${FOLIA_DIR
 echo "[NeverFolia] Relocating NeverOverworld native geology to SURFACE before CARVERS"
 python3 "${ROOT_DIR}/scripts/relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"
 
-# Folia 26.2 uses Moonrise's ChunkLightTask as the actual LIGHT runtime path.
-# The vanilla ChunkStatusTasks.light(...) method still compiles but is bypassed by
-# the Moonrise chunk scheduler, so the flood barrier must live in ChunkLightTask.
 echo "[NeverFolia] Applying NeverOverworld Moonrise LIGHT flood barrier"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-moonrise-light-flood-hook.py" "${FOLIA_DIR}"
 
-# Radius-1 FEATURES may race with the owning chunk's Moonrise LIGHT task. Make
-# dry replaceable decorations part of the floodable volume so final geometry is
-# independent from whether vegetation/leaf litter arrived immediately before or
-# after the flood pass.
 echo "[NeverFolia] Applying NeverOverworld deterministic floodable-volume semantics"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-floodable-volume.py" "${FOLIA_DIR}"
 

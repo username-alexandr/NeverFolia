@@ -1,0 +1,112 @@
+name: Gate NeverOverworld sculk ownership
+
+on:
+  push:
+    branches:
+      - wip/never-overworld-sculk-ownership
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Sculk ownership self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Self-test sculk ownership transformer
+        run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
+      - name: Validate NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-worldgen-spec.py
+      - name: Validate structure contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
+  runtime:
+    name: Java 25 sculk ownership determinism
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply NeverFolia post-patch chain including sculk ownership
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+      - name: Collect test JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-sculk-ownership.jar
+      - name: Build native NR Core with structures
+        run: |
+          set -euo pipefail
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-sculk-ownership.jar \
+            --output artifacts/NeverOverworld-Core-sculk-ownership.zip
+          python3 ./scripts/promote-never-overworld-native-geology-pack.py \
+            --input artifacts/NeverOverworld-Core-sculk-ownership.zip
+          python3 ./scripts/build-never-overworld-native-structures.py \
+            --input artifacts/NeverOverworld-Core-sculk-ownership.zip
+          python3 ./scripts/normalize-never-overworld-structure-type.py \
+            --input artifacts/NeverOverworld-Core-sculk-ownership.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-sculk-ownership.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-sculk-ownership.zip --verify
+      - name: Strict chunk-order determinism pass 1
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-sculk-ownership.jar \
+            artifacts/NeverOverworld-Core-sculk-ownership.zip
+          mkdir -p artifacts/determinism-pass-1
+          cp overworld-determinism-test/world-a-hash.json artifacts/determinism-pass-1/
+          cp overworld-determinism-test/world-b-hash.json artifacts/determinism-pass-1/
+      - name: Strict chunk-order determinism pass 2
+        run: |
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-sculk-ownership.jar \
+            artifacts/NeverOverworld-Core-sculk-ownership.zip
+          mkdir -p artifacts/determinism-pass-2
+          cp overworld-determinism-test/world-a-hash.json artifacts/determinism-pass-2/
+          cp overworld-determinism-test/world-b-hash.json artifacts/determinism-pass-2/
+      - name: Upload sculk ownership diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-sculk-ownership-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-Core-sculk-ownership.zip
+            artifacts/determinism-pass-1/
+            artifacts/determinism-pass-2/
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
