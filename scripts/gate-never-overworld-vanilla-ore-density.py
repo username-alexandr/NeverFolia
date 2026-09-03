@@ -25,6 +25,7 @@ TUNER = load_module("nr_ore_balance_v3", TUNER_PATH)
 TARGETS: dict[str, float] = dict(TUNER.TARGET_BLOCKS_PER_FULL_CHUNK)
 DEFAULT_MIN_RATIO = 0.65
 DEFAULT_MAX_RATIO = 1.35
+DEFAULT_MIN_FULL_CHUNKS = 128
 
 
 def fail(message: str) -> None:
@@ -47,7 +48,7 @@ def evaluate(actual: dict[str, float], min_ratio: float, max_ratio: float) -> di
         if not passed:
             failures.append(kind)
     return {
-        "schema": 1,
+        "schema": 2,
         "reference": "true-vanilla-26.2 / NeverOverworld-CI-Test-1 / 230 FULL chunks",
         "tolerance_ratio": [min_ratio, max_ratio],
         "emerald_policy": "excluded-from-global-density-target; biome-specific vanilla ore; presence covered by native geology audit",
@@ -76,8 +77,11 @@ def self_test() -> None:
 
     if "emerald" in TARGETS:
         fail("SELF-TEST: emerald must not use a global vanilla density target")
+    if DEFAULT_MIN_FULL_CHUNKS < 128:
+        fail("SELF-TEST: representative FULL-chunk floor drifted below 128")
     print("[NeverFolia][NeverOverworld vanilla-like ore gate] SELF-TEST OK")
     print(f"  accepted ratio: {DEFAULT_MIN_RATIO:.2f}..{DEFAULT_MAX_RATIO:.2f} of measured vanilla 26.2")
+    print(f"  minimum representative sample: {DEFAULT_MIN_FULL_CHUNKS} FULL chunks")
 
 
 def main() -> None:
@@ -86,6 +90,7 @@ def main() -> None:
     )
     parser.add_argument("--world", type=Path)
     parser.add_argument("--max-chunks", type=int, default=1024)
+    parser.add_argument("--min-full-chunks", type=int, default=DEFAULT_MIN_FULL_CHUNKS)
     parser.add_argument("--min-ratio", type=float, default=DEFAULT_MIN_RATIO)
     parser.add_argument("--max-ratio", type=float, default=DEFAULT_MAX_RATIO)
     parser.add_argument("--output", type=Path)
@@ -97,8 +102,10 @@ def main() -> None:
         return
     if args.world is None or args.output is None:
         parser.error("--world and --output are required")
-    if args.max_chunks <= 0:
-        parser.error("--max-chunks must be positive")
+    if args.max_chunks <= 0 or args.min_full_chunks <= 0:
+        parser.error("--max-chunks and --min-full-chunks must be positive")
+    if args.max_chunks < args.min_full_chunks:
+        parser.error("--max-chunks must be >= --min-full-chunks")
     if not (0.0 < args.min_ratio <= 1.0 <= args.max_ratio):
         parser.error("expected 0 < min-ratio <= 1 <= max-ratio")
 
@@ -106,18 +113,24 @@ def main() -> None:
     # consumed by the gate. The upper-range counters remain useful diagnostics,
     # and its vanilla anchors are independently normalized in the NR datapack.
     audit = AUDITOR.audit(args.world.resolve(), args.max_chunks, None)
+    scanned = int(audit["common_full_chunks_scanned"])
     actual = audit["deep_ore_blocks_per_full_chunk"]
     verdict = evaluate(actual, args.min_ratio, args.max_ratio)
-    verdict["full_chunks_scanned"] = audit["common_full_chunks_scanned"]
+    verdict["full_chunks_scanned"] = scanned
+    verdict["minimum_required_full_chunks"] = args.min_full_chunks
+    verdict["sample_size_passed"] = scanned >= args.min_full_chunks
     verdict["deep_y"] = audit["deep_y"]
     verdict["deep_ore_blocks"] = audit["deep_ore_blocks"]
     verdict["deep_ore_block_variants"] = audit["deep_ore_block_variants"]
+    verdict["passed"] = bool(verdict["passed"] and verdict["sample_size_passed"])
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(verdict, indent=2, ensure_ascii=False))
 
-    if not verdict["passed"]:
+    if not verdict["sample_size_passed"]:
+        fail(f"only {scanned} FULL chunks were available; require at least {args.min_full_chunks}")
+    if verdict["failed_ores"]:
         failures = ", ".join(
             f"{kind}={verdict['ores'][kind]['ratio_to_vanilla']:.3f}x"
             for kind in verdict["failed_ores"]
