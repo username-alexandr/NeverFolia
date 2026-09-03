@@ -60,8 +60,8 @@ jobs:
       - name: Self-test NeverOverworld SeagrassFeature chunk ownership
         run: python3 ./scripts/apply-never-overworld-seagrass-ownership.py --self-test
 
-      - name: Self-test NeverOverworld vanilla resource-ore original bounds
-        run: python3 ./scripts/apply-never-overworld-vanilla-ore-bounds.py --self-test
+      - name: Self-test NeverOverworld vanilla resource-ore anchor normalization
+        run: python3 ./scripts/normalize-never-overworld-vanilla-ore-anchors.py --self-test
 
       - name: Self-test NeverOverworld native deterministic ore geology
         run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
@@ -71,6 +71,9 @@ jobs:
 
       - name: Self-test NeverOverworld deep diamond and emerald balance v2
         run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like all-ore balance v3
+        run: python3 ./scripts/tune-never-overworld-ore-balance-v3.py --self-test
 
       - name: Self-test NeverOverworld geology SURFACE stage relocation
         run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
