@@ -109,8 +109,13 @@ if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Failed to load dat
   exit 1
 fi
 
-if [ ! -d "${TEST_DIR}/world/region" ]; then
-  echo 'Vanilla ore reference world region directory missing.' >&2
+if [ -d "${TEST_DIR}/world/region" ]; then
+  echo "Vanilla reference region layout: ${TEST_DIR}/world/region"
+elif [ -d "${TEST_DIR}/world/dimensions/minecraft/overworld/region" ]; then
+  echo "Vanilla reference region layout: ${TEST_DIR}/world/dimensions/minecraft/overworld/region"
+else
+  echo 'Vanilla ore reference region directory missing in supported layouts.' >&2
+  find "${TEST_DIR}/world" -maxdepth 6 -type d -name region -print >&2 || true
   exit 1
 fi
 
