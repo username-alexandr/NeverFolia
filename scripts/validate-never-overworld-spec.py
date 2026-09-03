@@ -34,6 +34,11 @@ def main() -> None:
     native_wrapper = text("scripts/build-never-overworld-core-pack.py")
     flood = text("scripts/apply-never-overworld-flood-hook.py")
     native_fluid = text("scripts/apply-never-overworld-fluid-picker.py")
+    geology = text("scripts/apply-never-overworld-ore-geology.py")
+    geology_extension = text("scripts/extend-never-overworld-ore-geology.py")
+    geology_balance = text("scripts/tune-never-overworld-ore-balance.py")
+    geology_audit = text("scripts/audit-never-overworld-native-geology.py")
+    post_patches = text("scripts/apply-neverfolia-post-patches.sh")
     fingerprint = text("scripts/fingerprint-never-overworld-pack.py")
     guard = text("scripts/apply-never-overworld-fingerprint-guard.py")
     hasher = text("scripts/hash-never-overworld-generation-chunks.py")
@@ -110,6 +115,64 @@ def main() -> None:
         require(native_fluid, marker, "NeverOverworld native fluid picker")
 
     for marker in (
+        "public final class NeverOverworldOreGeology",
+        "EXPECTED_MIN_Y = -512",
+        "EXPECTED_HEIGHT = 1024",
+        "provinceStrength",
+        "hashCell",
+        "hashBlock",
+        "Math.floorDiv",
+        "chunk.getPos()",
+        "chunk.setBlockState",
+        "current.is(Blocks.DEEPSLATE) || current.is(Blocks.TUFF)",
+        "current.is(Blocks.STONE)",
+        "Blocks.DIAMOND_ORE",
+        "Blocks.DEEPSLATE_DIAMOND_ORE",
+    ):
+        require(geology, marker, "NeverOverworld native ore geology")
+    for forbidden in ("new Random(", "RandomSource", "level.getChunk("):
+        forbid(geology, forbidden, "NeverOverworld native ore geology")
+
+    for marker in (
+        "COAL(0x07A8B9C0D1E2F314L",
+        "EMERALD(0x77A8122334455667L",
+        "Blocks.COAL_ORE",
+        "Blocks.DEEPSLATE_COAL_ORE",
+        "Blocks.EMERALD_ORE",
+        "Blocks.DEEPSLATE_EMERALD_ORE",
+    ):
+        require(geology_extension, marker, "NeverOverworld coal/emerald geology extension")
+
+    for marker in (
+        "DIAMOND(0x66F7011223344556L, 112, 0.20D, 0.50D, -496, -160",
+        "EMERALD(0x77A8122334455667L, 144, 0.12D, 0.62D, -384, -96",
+        "Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE",
+        "Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE",
+        "deep diamond + emerald balance applied",
+    ):
+        require(geology_balance, marker, "NeverOverworld diamond/emerald balance v2")
+
+    for marker in (
+        '"minecraft:deepslate_diamond_ore": "diamond"',
+        '"minecraft:deepslate_emerald_ore": "emerald"',
+        'parser.add_argument("--require"',
+        'parser.add_argument("--require-block"',
+        '"requirements_satisfied"',
+        '"ore_block_variants"',
+        '"chunks_with_diamond"',
+        '"chunks_with_emerald"',
+    ):
+        require(geology_audit, marker, "NeverOverworld persisted geology audit")
+
+    for marker in (
+        'apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"',
+        'extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"',
+        'tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"',
+        'relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"',
+    ):
+        require(post_patches, marker, "NeverFolia post-patch pipeline")
+
+    for marker in (
         'WORLDGEN_ID = "NR-DEV-1"',
         'ROOT_FINGERPRINT_ENTRY = "neveroverworld-worldgen-fingerprint.json"',
         'RESOURCE_FINGERPRINT_ENTRY = "data/neverfolia/neveroverworld/worldgen_fingerprint.json"',
@@ -140,6 +203,11 @@ def main() -> None:
         "Maximum build/generation Y: `511`",
         "Flood plane: `Y=128`",
         "Sealed caves",
+        "Diamond | `-496..-160`",
+        "Emerald | `-384..-96`",
+        "minecraft:deepslate_diamond_ore",
+        "minecraft:deepslate_emerald_ore",
+        "Predictive fast locate",
         "strict chunk-order",
         ".neverfolia-neveroverworld-worldgen.lock",
     ):
@@ -158,8 +226,9 @@ def main() -> None:
     print("  dimension: Y=-512..511 (1024)")
     print("  upper: vanilla 26.2 from Y>=-64")
     print("  aquifer: native lava branch disabled")
-    print("  ores: native geology v2 wrapper / no legacy deep placed ores in output")
+    print("  ores: native chunk-owned geology + diamond/emerald balance v2 + persisted NBT gate")
     print("  flood: surface-connected to Y=128 at LIGHT barrier")
+    print("  structures: native structures-v1 + predictive no-generation locate")
     print("  fingerprint: independent NR-DEV-1 lock")
 
 
