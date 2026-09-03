@@ -29,6 +29,15 @@ python3 "${ROOT_DIR}/scripts/normalize-never-overworld-placement-chunkpos-api.py
 echo "[NeverFolia] Applying NeverOverworld predictive no-generation fast locate"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fast-locate.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Rejecting submerged vanilla dry-land structure starts"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-policy.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Forcing vanilla mineshafts into the NeverOverworld deep range"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-mineshaft-depth-policy.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Accepting XYZ syntax in the Folia region profiler"
+python3 "${ROOT_DIR}/scripts/apply-neverfolia-profiler-xyz.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Applying NeverNether Basalt Columns chunk ownership hook"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-basalt-columns-ownership.py" "${FOLIA_DIR}"
 
@@ -74,6 +83,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-moonrise-light-flood-hook.py"
 
 echo "[NeverFolia] Applying NeverOverworld deterministic floodable-volume semantics"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-floodable-volume.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Removing flooded tree remnants and exposed rails"
+python3 "${ROOT_DIR}/scripts/harden-never-overworld-flood-ecology.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
