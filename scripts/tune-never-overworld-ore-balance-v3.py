@@ -37,13 +37,19 @@ OLD = {
 # coal 0.529, iron 1.061, copper 0.899, gold 0.593, redstone 0.923,
 # lapis 1.342, diamond 1.340. Candidate 9f33d6f then measured:
 # coal 1.198, iron 1.063, copper 0.898, gold 0.873, redstone 0.922,
-# lapis 0.917, diamond 0.950. All hard limits passed and only coal remained
-# above the preferred 0.85..1.15 band. This final micro-pass reduces only coal
-# base chance from 0.90 to 0.79, targeting roughly 1.05x vanilla while keeping
-# the same compact/dispersed vein geometry and deterministic ownership.
+# lapis 0.917, diamond 0.950.
+#
+# After field-r1 integration, authoritative full candidate a8946ac measured
+# coal 1.201 and iron 1.212 while every other calibrated ore remained inside
+# the preferred 0.85..1.15 band. This micro-pass therefore adjusts only the
+# candidate gate frequency of coal and iron. Coal moves 0.79 -> 0.70; because
+# its high-province chance was partially capped at 0.98 this targets ~1.08x
+# rather than a pure linear 1.06x estimate. Iron is uncapped and moves
+# 0.46 -> 0.41, targeting ~1.08x. Geometry, salts, fills and ownership stay
+# unchanged.
 NEW = {
-    "COAL": "        COAL(0x07A8B9C0D1E2F314L, 48, 0.79D, 0.12D, -256, DEEP_MAX_Y, 26.0D, 60.0D, 1.7D, 3.2D, 0.68D, 0.65D, Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),",
-    "IRON": "        IRON(0x11A2B3C4D5E6F701L, 64, 0.46D, 0.20D, -480, DEEP_MAX_Y, 28.0D, 72.0D, 1.5D, 3.0D, 0.70D, 0.84D, Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),",
+    "COAL": "        COAL(0x07A8B9C0D1E2F314L, 48, 0.70D, 0.12D, -256, DEEP_MAX_Y, 26.0D, 60.0D, 1.7D, 3.2D, 0.68D, 0.65D, Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),",
+    "IRON": "        IRON(0x11A2B3C4D5E6F701L, 64, 0.41D, 0.20D, -480, DEEP_MAX_Y, 28.0D, 72.0D, 1.5D, 3.0D, 0.70D, 0.84D, Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),",
     "COPPER": "        COPPER(0x22B3C4D5E6F70112L, 56, 0.63D, 0.20D, -300, DEEP_MAX_Y, 22.0D, 56.0D, 1.8D, 3.4D, 0.62D, 0.80D, Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE),",
     "GOLD": "        GOLD(0x33C4D5E6F7011223L, 48, 0.66D, 0.32D, -420, -128, 16.0D, 44.0D, 1.2D, 2.2D, 0.58D, 0.72D, Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE),",
     "REDSTONE": "        REDSTONE(0x44D5E6F701122334L, 48, 0.47D, 0.26D, -480, -160, 20.0D, 54.0D, 1.0D, 1.9D, 0.52D, 0.70D, Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),",
