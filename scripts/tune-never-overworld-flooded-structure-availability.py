@@ -99,13 +99,15 @@ NEW_RADIUS_METHOD = '''    private static int sampleRadius(final String id) {
     }
 '''
 
+SAMPLE_RADIUS_SIGNATURE = '    private static int sampleRadius(final String id) {'
+
 
 def fail(message: str) -> None:
     raise SystemExit(f'[NeverFolia][flooded structure availability] {message}')
 
 
 def replace_footprint(text: str, replacement: str) -> str:
-    # Match from the established footprint start through its terminal return true.
+    # This block has a stable terminal return before the enclosing method closes.
     pattern = re.compile(
         r'        final int radius = sampleRadius\(id\);\n'
         r'.*?'
@@ -118,17 +120,161 @@ def replace_footprint(text: str, replacement: str) -> str:
     return pattern.sub(replacement, text, count=1)
 
 
+def replace_java_method(text: str, signature: str, replacement: str) -> str:
+    """Replace one Java method by matching braces, not by regex.
+
+    The previous transformer used a non-greedy regex ending at the first line
+    containing four-space + '}'. sampleRadius contains nested if blocks, so that
+    regex stopped at the first nested closing brace and left the rest of the old
+    method in the source, producing an uncompilable helper. Brace matching makes
+    the transformer insensitive to nested blocks.
+    """
+    if text.count(signature) != 1:
+        fail(f'expected exactly one Java method signature {signature!r}, got {text.count(signature)}')
+
+    start = text.find(signature)
+    opening = text.find('{', start + len(signature) - 1)
+    if opening < 0:
+        fail(f'opening brace not found for Java method {signature!r}')
+
+    depth = 0
+    in_string = False
+    in_char = False
+    in_line_comment = False
+    in_block_comment = False
+    escaped = False
+    i = opening
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ''
+
+        if in_line_comment:
+            if ch == '\n':
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            if ch == '*' and nxt == '/':
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if in_char:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == "'":
+                in_char = False
+            i += 1
+            continue
+
+        if ch == '/' and nxt == '/':
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == '/' and nxt == '*':
+            in_block_comment = True
+            i += 2
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if ch == "'":
+            in_char = True
+            i += 1
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                if end < len(text) and text[end] == '\n':
+                    end += 1
+                return text[:start] + replacement + text[end:]
+        i += 1
+
+    fail(f'unterminated Java method {signature!r}')
+
+
+def java_braces_balanced(text: str) -> bool:
+    """Cheap structural guard that ignores Java comments and quoted literals."""
+    depth = 0
+    in_string = False
+    in_char = False
+    in_line_comment = False
+    in_block_comment = False
+    escaped = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ''
+        if in_line_comment:
+            if ch == '\n':
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            if ch == '*' and nxt == '/':
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if in_char:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == '/' and nxt == '/':
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == '/' and nxt == '*':
+            in_block_comment = True
+            i += 2
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "'":
+            in_char = True
+        elif ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth < 0:
+                return False
+        i += 1
+    return depth == 0 and not in_string and not in_char and not in_block_comment
+
+
 def replace_radius_method(text: str) -> str:
-    pattern = re.compile(
-        r'    private static int sampleRadius\(final String id\) \{\n'
-        r'.*?'
-        r'    \}\n',
-        re.DOTALL,
-    )
-    matches = list(pattern.finditer(text))
-    if len(matches) != 1:
-        fail(f'expected exactly one sampleRadius method, got {len(matches)}')
-    return pattern.sub(NEW_RADIUS_METHOD, text, count=1)
+    return replace_java_method(text, SAMPLE_RADIUS_SIGNATURE, NEW_RADIUS_METHOD)
 
 
 def tune(text: str, *, fast: bool) -> str:
@@ -137,6 +283,7 @@ def tune(text: str, *, fast: bool) -> str:
         fail('obsolete woodland_mansion id survived replacement')
     text = replace_footprint(text, FAST_FOOTPRINT if fast else POLICY_FOOTPRINT)
     text = replace_radius_method(text)
+
     required = (
         '"minecraft:mansion"',
         'return 48;',
@@ -153,6 +300,15 @@ def tune(text: str, *, fast: bool) -> str:
         fail('fast helper lost preliminary-surface footprint sampling')
     if not fast and 'Heightmap.Types.WORLD_SURFACE_WG' not in text:
         fail('generation policy lost WORLD_SURFACE_WG footprint sampling')
+
+    if text.count(SAMPLE_RADIUS_SIGNATURE) != 1:
+        fail('sampleRadius definition count is not exactly one after tuning')
+    if text.count('    private static int minDrySamples(final String id) {') != 1:
+        fail('minDrySamples definition count is not exactly one after tuning')
+    if 'return 80;' in text or 'return 96;' in text or 'halfRadius' in text:
+        fail('old 5x5 footprint/radius code survived tuning')
+    if not java_braces_balanced(text):
+        fail('tuned Java source has unbalanced structural braces')
     return text
 
 
@@ -191,8 +347,12 @@ def self_test() -> None:
         return true;
     }
     private static int sampleRadius(final String id) {
-        if ("minecraft:woodland_mansion".equals(id)) { return 80; }
-        if (id.startsWith("minecraft:village_")) { return 96; }
+        if ("minecraft:woodland_mansion".equals(id)) {
+            return 80;
+        }
+        if (id.startsWith("minecraft:village_")) {
+            return 96;
+        }
         return 32;
     }
 }
@@ -214,23 +374,37 @@ def self_test() -> None:
         return true;
     }
     private static int sampleRadius(final String id) {
-        if ("minecraft:woodland_mansion".equals(id)) { return 80; }
-        if (id.startsWith("minecraft:village_")) { return 96; }
+        if ("minecraft:woodland_mansion".equals(id)) {
+            return 80;
+        }
+        if (id.startsWith("minecraft:village_")) {
+            return 96;
+        }
         return 32;
     }
 }
 '''
     with tempfile.TemporaryDirectory(prefix='nr-flooded-structure-availability-') as tmp:
         root = Path(tmp)
-        fp = root / FAST_REL; pp = root / POLICY_REL
+        fp = root / FAST_REL
+        pp = root / POLICY_REL
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(fast_fixture, encoding='utf-8')
         pp.write_text(policy_fixture, encoding='utf-8')
         apply(root)
         out_fast = fp.read_text(encoding='utf-8')
         out_policy = pp.read_text(encoding='utf-8')
-        if OLD_ID in out_fast or OLD_ID in out_policy:
-            fail('SELF-TEST: obsolete mansion id survived')
+        for label, output in (('fast', out_fast), ('policy', out_policy)):
+            if OLD_ID in output:
+                fail(f'SELF-TEST {label}: obsolete mansion id survived')
+            if output.count(SAMPLE_RADIUS_SIGNATURE) != 1:
+                fail(f'SELF-TEST {label}: sampleRadius definition count mismatch')
+            if output.count('    private static int minDrySamples(final String id) {') != 1:
+                fail(f'SELF-TEST {label}: minDrySamples definition count mismatch')
+            if 'return 80;' in output or 'return 96;' in output or 'halfRadius' in output:
+                fail(f'SELF-TEST {label}: old nested method tail survived')
+            if not java_braces_balanced(output):
+                fail(f'SELF-TEST {label}: Java braces are unbalanced')
         if 'preliminarySurfaceY(state, centerX, centerZ)' not in out_fast:
             fail('SELF-TEST: fast dry-center probe missing')
         if 'drySamples >= minDrySamples(id)' not in out_policy:
