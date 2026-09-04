@@ -35,6 +35,9 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-pol
 echo "[NeverFolia] Forcing vanilla mineshafts into the NeverOverworld deep range"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-mineshaft-depth-policy.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Re-anchoring swamp huts to the flooded waterline"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-swamp-hut-waterline.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Accepting XYZ syntax in the Folia region profiler"
 python3 "${ROOT_DIR}/scripts/apply-neverfolia-profiler-xyz.py" "${FOLIA_DIR}"
 
