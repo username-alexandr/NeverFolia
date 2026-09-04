@@ -27,49 +27,35 @@ def find_source(folia: Path) -> Path:
     return candidates[0]
 
 
+def replace_once(source: str, old: str, new: str, label: str) -> str:
+    count = source.count(old)
+    if count != 1:
+        fail(f"{label}: expected exactly one marker, got {count}")
+    return source.replace(old, new, 1)
+
+
 def patch_source(source: str) -> str:
     if "NeverFolia: accept XYZ profiler syntax" in source:
         fail("CommandProfiler already patched")
-    old_check = "if (args.length < 4 || args.length > 5) {"
-    if old_check not in source:
-        fail("argument-count guard not found")
-    if OLD_USAGE not in source:
-        fail("upstream usage marker not found")
 
-    source = source.replace(
-        old_check,
+    source = replace_once(
+        source,
+        "if (args.length < 4 || args.length > 5) {",
         "// NeverFolia: accept XYZ profiler syntax used by in-game diagnostics.\n"
         "        // Folia regions are 2D, therefore Y is validated but intentionally ignored.\n"
         "        if (args.length < 4 || args.length > 6) {",
-        1,
+        "argument-count guard",
     )
-    source = source.replace(OLD_USAGE, NEW_USAGE, 1)
-
-    # Rewrite the existing XZ/time/radius parser before adding the new Y
-    # validation. Otherwise a generic args[2] replacement could accidentally
-    # rewrite the validation itself rather than the original block-Z parser.
-    if source.count("Integer.parseInt(args[2])") < 1:
-        fail("block-z parser marker not found")
-    source = source.replace("Integer.parseInt(args[2])", "Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])", 1)
-    if source.count("Double.parseDouble(args[3])") < 1:
-        fail("time parser marker not found")
-    source = source.replace("Double.parseDouble(args[3])", "Double.parseDouble(args[neverFoliaXYZ ? 4 : 3])", 1)
-
-    old_radius_guard = "if (args.length > 4) {"
-    if old_radius_guard not in source:
-        fail("radius guard marker not found")
-    source = source.replace(old_radius_guard, "if (neverFoliaXYZ || args.length > 4) {", 1)
-    if source.count("Double.parseDouble(args[4])") < 1:
-        fail("radius parser marker not found")
-    source = source.replace("Double.parseDouble(args[4])", "Double.parseDouble(args[neverFoliaXYZ ? 5 : 4])", 1)
+    source = replace_once(source, OLD_USAGE, NEW_USAGE, "usage string")
 
     world_marker = "final World world = Bukkit.getWorld(args[0]);"
-    if world_marker not in source:
-        fail("world lookup marker not found")
     prefix = '''final boolean neverFoliaXYZ = args.length == 6;
-        if (neverFoliaXYZ) {
+        final int neverFoliaBlockZArg = neverFoliaXYZ ? 3 : 2;
+        final int neverFoliaTimeArg = neverFoliaXYZ ? 4 : 3;
+        final int neverFoliaRadiusArg = neverFoliaXYZ ? 5 : 4;
+        if (neverFoliaXYZ && !args[2].equals("~")) {
             try {
-                Integer.parseInt(args[2]);
+                Double.parseDouble(args[2]);
             } catch (final NumberFormatException ex) {
                 sender.sendMessage(Component.text("Invalid input for block y: " + args[2], NamedTextColor.RED));
                 return true;
@@ -77,55 +63,124 @@ def patch_source(source: str) -> str:
         }
 
         '''
-    source = source.replace(world_marker, prefix + world_marker, 1)
+    source = replace_once(source, world_marker, prefix + world_marker, "world lookup")
+
+    # Folia 26.2 parses X/Z as doubles and supports '~' for entity senders.
+    z_old = 'blockZ = (args[2].equals("~") && sender instanceof Entity entity) ? entity.getLocation().getZ() : Double.parseDouble(args[2]);'
+    z_new = 'blockZ = (args[neverFoliaBlockZArg].equals("~") && sender instanceof Entity entity) ? entity.getLocation().getZ() : Double.parseDouble(args[neverFoliaBlockZArg]);'
+    source = replace_once(source, z_old, z_new, "block-z parser")
+    source = replace_once(
+        source,
+        'sender.sendMessage(Component.text("Invalid input for block z: " + args[2], NamedTextColor.RED));',
+        'sender.sendMessage(Component.text("Invalid input for block z: " + args[neverFoliaBlockZArg], NamedTextColor.RED));',
+        "block-z error",
+    )
+
+    source = replace_once(
+        source,
+        "time = Double.parseDouble(args[3]);",
+        "time = Double.parseDouble(args[neverFoliaTimeArg]);",
+        "time parser",
+    )
+    source = replace_once(
+        source,
+        'sender.sendMessage(Component.text("Invalid input for time: " + args[3], NamedTextColor.RED));',
+        'sender.sendMessage(Component.text("Invalid input for time: " + args[neverFoliaTimeArg], NamedTextColor.RED));',
+        "time error",
+    )
+
+    source = replace_once(
+        source,
+        "if (args.length > 4) {",
+        "if (neverFoliaXYZ || args.length > 4) {",
+        "radius guard",
+    )
+    source = replace_once(
+        source,
+        "radius = Double.parseDouble(args[4]);",
+        "radius = Double.parseDouble(args[neverFoliaRadiusArg]);",
+        "radius parser",
+    )
+    source = replace_once(
+        source,
+        'sender.sendMessage(Component.text("Invalid input for radius: " + args[4], NamedTextColor.RED));',
+        'sender.sendMessage(Component.text("Invalid input for radius: " + args[neverFoliaRadiusArg], NamedTextColor.RED));',
+        "radius error",
+    )
 
     required = (
         "neverFoliaXYZ = args.length == 6",
-        "Integer.parseInt(args[2]);",
-        "args[neverFoliaXYZ ? 3 : 2]",
-        "args[neverFoliaXYZ ? 4 : 3]",
-        "args[neverFoliaXYZ ? 5 : 4]",
+        "neverFoliaBlockZArg = neverFoliaXYZ ? 3 : 2",
+        "neverFoliaTimeArg = neverFoliaXYZ ? 4 : 3",
+        "neverFoliaRadiusArg = neverFoliaXYZ ? 5 : 4",
+        "Double.parseDouble(args[2]);",
+        "args[neverFoliaBlockZArg]",
+        "args[neverFoliaTimeArg]",
+        "args[neverFoliaRadiusArg]",
         "Invalid input for block y",
     )
     for marker in required:
         if marker not in source:
             fail(f"patched source missing {marker!r}")
-    if source.index("neverFoliaXYZ = args.length == 6") > source.index("if (neverFoliaXYZ) {"):
-        fail("XYZ mode declaration must precede validation")
-    if source.count("Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])") != 1:
-        fail("block-z parser must be rewritten exactly once")
     return source
 
 
 def self_test() -> None:
-    fixture = '''public final class CommandProfiler {
+    fixture = '''public final class CommandProfiler extends Command {
     public boolean execute(final CommandSender sender, final String commandLabel, final String[] args) {
         if (args.length < 4 || args.length > 5) {
             sender.sendMessage(Component.text("Usage: /profiler <world> <block x> <block z> <time in s> [radius, default 100 blocks]", NamedTextColor.RED));
             return true;
         }
         final World world = Bukkit.getWorld(args[0]);
-        final int blockX;
-        final int blockZ;
-        try { blockX = Integer.parseInt(args[1]); blockZ = Integer.parseInt(args[2]); } catch (NumberFormatException ex) { return true; }
+        final double blockX;
+        final double blockZ;
         final double time;
-        try { time = Double.parseDouble(args[3]); } catch (NumberFormatException ex) { return true; }
+        try {
+            blockX = (args[1].equals("~") && sender instanceof Entity entity) ? entity.getLocation().getX() : Double.parseDouble(args[1]);
+        } catch (final NumberFormatException ex) {
+            sender.sendMessage(Component.text("Invalid input for block x: " + args[1], NamedTextColor.RED));
+            return true;
+        }
+        try {
+            blockZ = (args[2].equals("~") && sender instanceof Entity entity) ? entity.getLocation().getZ() : Double.parseDouble(args[2]);
+        } catch (final NumberFormatException ex) {
+            sender.sendMessage(Component.text("Invalid input for block z: " + args[2], NamedTextColor.RED));
+            return true;
+        }
+        try {
+            time = Double.parseDouble(args[3]);
+        } catch (final NumberFormatException ex) {
+            sender.sendMessage(Component.text("Invalid input for time: " + args[3], NamedTextColor.RED));
+            return true;
+        }
         final double radius;
         if (args.length > 4) {
-            try { radius = Double.parseDouble(args[4]); } catch (final NumberFormatException ex) { return true; }
-        } else { radius = 100.0; }
+            try {
+                radius = Double.parseDouble(args[4]);
+            } catch (final NumberFormatException ex) {
+                sender.sendMessage(Component.text("Invalid input for radius: " + args[4], NamedTextColor.RED));
+                return true;
+            }
+        } else {
+            radius = 100.0;
+        }
         return true;
     }
 }
 '''
     patched = patch_source(fixture)
-    for marker in ("args.length > 6", "neverFoliaXYZ", "Invalid input for block y", "OR /profiler"):
+    checks = (
+        "args.length > 6",
+        "Invalid input for block y",
+        'blockZ = (args[neverFoliaBlockZArg].equals("~")',
+        "time = Double.parseDouble(args[neverFoliaTimeArg]);",
+        "radius = Double.parseDouble(args[neverFoliaRadiusArg]);",
+        "OR /profiler",
+    )
+    for marker in checks:
         if marker not in patched:
             fail(f"SELF-TEST missing {marker}")
-    if "blockZ = Integer.parseInt(args[neverFoliaXYZ ? 3 : 2])" not in patched:
-        fail("SELF-TEST: XYZ Z-coordinate mapping failed")
-    if "Integer.parseInt(args[2]);" not in patched:
-        fail("SELF-TEST: Y validation disappeared")
     print("[NeverFolia][profiler xyz] SELF-TEST OK")
 
 
@@ -143,6 +198,8 @@ def main() -> None:
     path = find_source(args.folia.resolve())
     path.write_text(patch_source(path.read_text(encoding="utf-8")), encoding="utf-8")
     print("[NeverFolia][profiler xyz] XYZ-compatible profiler syntax applied")
+    print("  accepted legacy: /profiler <world> <x> <z> <time> [radius]")
+    print("  accepted XYZ:    /profiler <world> <x> <y> <z> <time> <radius>")
     print(f"  source: {path}")
 
 
