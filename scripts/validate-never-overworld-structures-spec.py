@@ -70,6 +70,21 @@ def main() -> None:
     flood = baseline.get("flood_surface_policy", {})
     if flood.get("minimum_dry_surface_y") != 129 or flood.get("reject_submerged_surface_starts") is not True:
         fail("flood surface structure policy drifted")
+    footprint = flood.get("dry_footprint_sampling", {})
+    expected_footprint = {
+        "grid": "5x5",
+        "village_radius_blocks": 96,
+        "woodland_mansion_radius_blocks": 80,
+        "pillager_outpost_radius_blocks": 64,
+        "pyramid_radius_blocks": 32,
+        "igloo_radius_blocks": 24,
+        "noise_only": True,
+        "loads_neighbor_chunks": False,
+    }
+    for key, value in expected_footprint.items():
+        if footprint.get(key) != value:
+            fail(f"dry footprint sampling drift: {key}={footprint.get(key)!r}, expected {value!r}")
+
     dry_only = set(flood.get("dry_land_only", []))
     for required in (
         "minecraft:village_plains",
@@ -158,6 +173,7 @@ def main() -> None:
     print("  stronghold/end portal: disabled")
     print("  mineshaft: deep-only Y=-448..-112")
     print("  trial chambers: deep-only Y=-320..-96")
+    print("  dry flooded structures: conservative 5x5 footprint sampling")
     print("  swamp hut: flood-adapted to waterline Y>=129")
     print(f"  custom native structure/dungeon ids: {total}")
     print("  placement: deterministic candidate grid, no neighbor generation")
