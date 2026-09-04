@@ -28,12 +28,12 @@ CALL_NEW = '''        if (placed == 0 && fallbackIndex >= 0) {
 '''
 INSERT_BEFORE = '    private static boolean isSugarCaneBiome(final WorldGenLevel level, final BlockPos pos) {\n'
 METHOD = r'''    // NeverFolia: sparse raised-bank fallback for flooded sugar cane.
-    // The Y=128 flood can move the shoreline so far above vanilla terrain that
-    // no naturally generated cane substrate survives at water level. In that
-    // case a small fraction of river/swamp chunks receive one deterministic
-    // 1x1 sand bank and a 1-3 block cane clump. Reads/writes remain strictly
-    // inside the owning chunk (local coordinates 1..14), preserving Folia
-    // ownership and chunk-order determinism.
+    // Raising the flood plane from the old vanilla sea level to Y=128 means a
+    // river/swamp column can be dozens of blocks above its former seabed. Requiring
+    // solid terrain directly at Y=127 therefore made the fallback impossible in
+    // the exact flooded biomes that need it. Create a tiny deterministic emergent
+    // dirt hummock instead. It is intentionally sparse, non-gravity, chunk-owned,
+    // and only appears in river/swamp biome cells with water around it.
     private static void createSparseSugarCaneBankAtFloodShoreline(
         final WorldGenLevel level,
         final ChunkAccess chunk,
@@ -41,15 +41,14 @@ METHOD = r'''    // NeverFolia: sparse raised-bank fallback for flooded sugar ca
         final int minZ
     ) {
         final long chunkHash = shorelineHash(chunk.getPos(), 0x7C7C);
-        // Roughly one fallback bank per sixteen qualifying chunks. Natural
-        // shoreline cane, when available, always wins and bypasses this path.
-        if (Math.floorMod(chunkHash, 16L) != 0L) {
+        // Approximately one fallback hummock per four eligible river/swamp chunks.
+        // Natural relocated/reseeded cane always wins and bypasses this path.
+        if (Math.floorMod(chunkHash, 4L) != 0L) {
             return;
         }
 
         final BlockPos.MutableBlockPos surface = new BlockPos.MutableBlockPos();
         final BlockPos.MutableBlockPos above = new BlockPos.MutableBlockPos();
-        final BlockPos.MutableBlockPos below = new BlockPos.MutableBlockPos();
         int bestIndex = -1;
         long bestScore = Long.MAX_VALUE;
 
@@ -58,15 +57,9 @@ METHOD = r'''    // NeverFolia: sparse raised-bank fallback for flooded sugar ca
                 final int index = (localZ << 4) | localX;
                 surface.set(minX + localX, FLOOD_LEVEL, minZ + localZ);
                 above.set(minX + localX, FLOOD_LEVEL + 1, minZ + localZ);
-                below.set(minX + localX, FLOOD_LEVEL - 1, minZ + localZ);
 
                 if (!chunk.getBlockState(surface).is(Blocks.WATER)
                     || !chunk.getBlockState(above).isAir()) {
-                    continue;
-                }
-
-                final BlockState belowState = chunk.getBlockState(below);
-                if (belowState.isAir() || belowState.is(Blocks.WATER)) {
                     continue;
                 }
                 if (!hasChunkLocalWaterNeighbor(chunk, minX, minZ, localX, localZ)) {
@@ -90,8 +83,18 @@ METHOD = r'''    // NeverFolia: sparse raised-bank fallback for flooded sugar ca
 
         final int localX = bestIndex & 15;
         final int localZ = (bestIndex >>> 4) & 15;
-        surface.set(minX + localX, FLOOD_LEVEL, minZ + localZ);
-        chunk.setBlockState(surface, Blocks.SAND.defaultBlockState(), 0);
+
+        // Form a three-block-deep maximum root/hummock. DIRT is deliberately used
+        // instead of gravity-affected SAND so the new Y=128 ecology remains stable
+        // even when the historic seabed is far below the raised flood plane.
+        for (int depth = 0; depth < 3; ++depth) {
+            surface.set(minX + localX, FLOOD_LEVEL - depth, minZ + localZ);
+            if (!chunk.getBlockState(surface).is(Blocks.WATER)) {
+                break;
+            }
+            chunk.setBlockState(surface, Blocks.DIRT.defaultBlockState(), 0);
+        }
+
         final long caneHash = shorelineHash(chunk.getPos(), bestIndex ^ 0x3E3E);
         placeSugarCaneColumn(chunk, minX, minZ, localX, localZ, caneHash);
     }
@@ -118,11 +121,12 @@ def patch(text: str) -> str:
 def validate(text: str) -> None:
     required = (
         MARKER,
-        'Math.floorMod(chunkHash, 16L)',
+        'Math.floorMod(chunkHash, 4L)',
         'localX = 1; localX <= 14',
         'localZ = 1; localZ <= 14',
         'chunk.getBlockState(surface).is(Blocks.WATER)',
-        'chunk.setBlockState(surface, Blocks.SAND.defaultBlockState(), 0)',
+        'depth = 0; depth < 3',
+        'chunk.setBlockState(surface, Blocks.DIRT.defaultBlockState(), 0)',
         'createSparseSugarCaneBankAtFloodShoreline(level, chunk, minX, minZ)',
         'hasChunkLocalWaterNeighbor(chunk, minX, minZ, localX, localZ)',
         'isSugarCaneBiome(level, above)',
@@ -143,9 +147,9 @@ def apply(root: Path) -> None:
     text = patch(helper.read_text(encoding='utf-8'))
     validate(text)
     helper.write_text(text, encoding='utf-8')
-    print('[NeverFolia][shoreline cane bank] sparse deterministic bank fallback applied')
-    print('  density: ~1/16 qualifying river/swamp chunks, only when natural relocation failed')
-    print('  bank: one Y=128 sand cell; cane: Y=129..131')
+    print('[NeverFolia][shoreline cane bank] sparse deterministic hummock fallback applied')
+    print('  density: ~1/4 eligible river/swamp chunks, only when natural relocation failed')
+    print('  hummock: Y=128 down to at most Y=126 using stable dirt; cane: Y=129..131')
     print('  ownership: local coordinates 1..14 only; no neighboring chunk access')
 
 
