@@ -85,6 +85,14 @@ jobs:
           echo "Frozen datapack: ${PACK}"
           sha256sum "${JAR}" "${PACK}"
 
+      - name: Probe flooded vanilla locate availability matrix
+        run: |
+          set -euo pipefail
+          JAR="$(find candidate-compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find frozen-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-vanilla-locate-matrix.sh
+          ./scripts/probe-never-overworld-vanilla-locate-matrix.sh "${JAR}" "${PACK}"
+
       - name: Probe vanilla field structures and locate latency
         run: |
           set -euo pipefail
@@ -94,10 +102,13 @@ jobs:
           ./scripts/probe-never-overworld-vanilla-field-structures.sh "${JAR}" "${PACK}"
 
       - name: Probe positive shoreline flora relocation
+        if: always()
         run: |
           set -euo pipefail
           JAR="$(find candidate-compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find frozen-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          test -n "${JAR}"
+          test -n "${PACK}"
           chmod +x ./scripts/probe-never-overworld-shoreline-flora.sh
           ./scripts/probe-never-overworld-shoreline-flora.sh "${JAR}" "${PACK}"
 
@@ -107,8 +118,11 @@ jobs:
         with:
           name: TEST1-candidate-early-runtime-${{ env.TARGET_SHA }}
           path: |
+            artifacts/NeverOverworld-vanilla-locate-matrix.json
             artifacts/NeverOverworld-vanilla-field-structures.json
             artifacts/NeverOverworld-shoreline-flora.json
+            overworld-vanilla-locate-matrix-test/locate-matrix.tsv
+            overworld-vanilla-locate-matrix-test/server.log
             overworld-vanilla-field-structures-test/locate-results.tsv
             overworld-vanilla-field-structures-test/server.log
             overworld-shoreline-flora-test/biome-results.tsv
