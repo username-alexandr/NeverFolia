@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      TARGET_SHA: 2352512da4bdcfeedf1a60e62d66ffd4e38b4a1c
-      TARGET_BUILD_RUN: '33905476059'
+      TARGET_SHA: f357ac1dfe93f1d31360a05e276a70ff6bc13414
+      TARGET_BUILD_RUN: '33908301914'
       FROZEN_RUN: '33890427028'
       FROZEN_SHA: 2f680ee1bf6024ba43a7894868977f1f65fdfd78
 
@@ -30,6 +30,32 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+
+      - name: Wait for candidate compiled JAR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXPECTED="NeverFolia-compiled-${TARGET_SHA}"
+          for attempt in $(seq 1 150); do
+            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_BUILD_RUN}/artifacts")"
+            FOUND="$(jq -r --arg name "${EXPECTED}" '.artifacts[]? | select(.name == $name and (.expired | not)) | .id' <<<"${DATA}" | head -n 1)"
+            if [ -n "${FOUND}" ]; then
+              echo "Compiled artifact is ready: ${FOUND}"
+              exit 0
+            fi
+            RUN="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_BUILD_RUN}")"
+            STATUS="$(jq -r '.status' <<<"${RUN}")"
+            CONCLUSION="$(jq -r '.conclusion // ""' <<<"${RUN}")"
+            if [ "${STATUS}" = "completed" ] && [ "${CONCLUSION}" != "success" ]; then
+              echo "Candidate build terminated before early artifact became available: ${CONCLUSION}" >&2
+              exit 1
+            fi
+            echo "Waiting for compiled candidate artifact (${attempt}/150)..."
+            sleep 10
+          done
+          echo "Timed out waiting for ${EXPECTED}" >&2
+          exit 1
 
       - name: Download candidate compiled JAR
         uses: actions/download-artifact@v5
