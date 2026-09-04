@@ -14,6 +14,8 @@ WORLD_DIR="${TEST_DIR}/world"
 DATAPACK="${WORLD_DIR}/datapacks/NeverOverworld-Core.zip"
 NATIVE_FLUID_MARKER='[NeverFolia][NeverOverworld] Native fluid picker active: lava aquifer disabled'
 FLOOD_MARKER='[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128'
+PROFILER_STARTED='Started profiler #'
+PROFILER_FINISHED='Finished profiler #'
 
 # Seven dispersed geometry/flood samples plus three deterministic native-geology
 # probes for seed NeverOverworld-CI-Test-1. The rare-ore chunks were selected from
@@ -120,6 +122,13 @@ wait_literal "${NATIVE_FLUID_MARKER}" 15
 send_console 'execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0'
 wait_literal 'Gamerule random_tick_speed is now set to: 0' 15
 
+# Regression test for the user-facing XYZ form. Folia regions are 2D, but the
+# NeverFolia command accepts and validates Y so `/profiler world X Y Z T R`
+# does not fall through to the old usage error.
+send_console 'profiler world 0 90 0 1 10'
+wait_literal "${PROFILER_STARTED}" 15
+wait_literal "${PROFILER_FINISHED}" 30
+
 sample_index=0
 for coords in "${SAMPLE_BLOCKS[@]}"; do
   read -r x z <<< "${coords}"
@@ -153,6 +162,11 @@ if ! grep -Fq -- "${NATIVE_FLUID_MARKER}" "${LOG}"; then
 fi
 if ! grep -Fq -- "${FLOOD_MARKER}" "${LOG}"; then
   echo 'NeverOverworld LIGHT flood hook did not activate.' >&2
+  cat "${LOG}" >&2
+  exit 1
+fi
+if ! grep -Fq -- "${PROFILER_STARTED}" "${LOG}" || ! grep -Fq -- "${PROFILER_FINISHED}" "${LOG}"; then
+  echo 'NeverFolia XYZ /profiler regression probe did not complete.' >&2
   cat "${LOG}" >&2
   exit 1
 fi
@@ -273,6 +287,17 @@ if b'file/NeverOverworld-Core.zip' not in payload:
     raise SystemExit('NeverOverworld-Core.zip is not recorded as enabled')
 print('[NeverFolia][NeverOverworld CI] native aquifer + runtime geometry + flood diagnostics OK')
 PY
+
+# Field-r1 regression telemetry for the giant vertical canyons / rectangular
+# extrusion reported in the first real server test. Initially diagnostic-only;
+# after observing a healthy candidate distribution we can lock conservative gates.
+mkdir -p "${ROOT_DIR}/artifacts"
+python3 "${ROOT_DIR}/scripts/audit-never-overworld-cave-topology.py" \
+  --world "${WORLD_DIR}" \
+  --max-chunks 1024 \
+  --min-y -496 \
+  --max-y -96 \
+  --output "${ROOT_DIR}/artifacts/NeverOverworld-cave-topology-audit.json"
 
 echo '[NeverFolia][NeverOverworld CI] smoke test passed.'
 tail -n 100 "${LOG}"
