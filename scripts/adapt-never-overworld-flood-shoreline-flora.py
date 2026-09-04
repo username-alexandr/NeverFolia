@@ -129,7 +129,12 @@ METHODS = r'''    // NeverFolia: preserve biome-driven cane/lily presence at the
                         continue;
                     }
 
-                    final long hash = mix64(chunk.getPos().toLong() ^ ((long)sourceIndex * 0x9E3779B97F4A7C15L));
+                    // Minecraft 26.2 exposes ChunkPos coordinates as x()/z(); it has no
+                    // instance toLong(). Build a stable local key directly from them.
+                    final ChunkPos chunkPos = chunk.getPos();
+                    final long chunkKey = ((long)chunkPos.x() * 0x9E3779B97F4A7C15L)
+                        ^ ((long)chunkPos.z() * 0xC2B2AE3D27D4EB4FL);
+                    final long hash = mix64(chunkKey ^ ((long)sourceIndex * 0x165667B19E3779F9L));
                     final int height = 1 + (int)Math.floorMod(hash, 3L);
                     for (int dy = 0; dy < height; ++dy) {
                         pos.set(minX + localX, FLOOD_LEVEL + 1 + dy, minZ + localZ);
@@ -217,9 +222,13 @@ def patch_source(source: str) -> str:
         "BlockTags.DIRT",
         "BlockTags.SAND",
         "localX < 1 || localX > 14",
+        "chunkPos.x()",
+        "chunkPos.z()",
     ):
         if marker not in source:
             fail(f"patched source missing {marker!r}")
+    if ".toLong()" in source:
+        fail("obsolete ChunkPos.toLong() API survived shoreline patch")
     return source
 
 
@@ -243,6 +252,8 @@ def self_test() -> None:
         fail("SELF-TEST: flora snapshot must precede generated-fluid removal")
     if patched.index("restoreFloodShorelineFlora(chunk, shorelineFlora)") < patched.index("floodSurfaceConnectedVolume"):
         fail("SELF-TEST: flora restore must follow flood")
+    if "chunkPos.x()" not in patched or "chunkPos.z()" not in patched or ".toLong()" in patched:
+        fail("SELF-TEST: Minecraft 26.2 ChunkPos API normalization failed")
     print("[NeverFolia][flood shoreline flora] SELF-TEST OK")
 
 
@@ -264,6 +275,7 @@ def main() -> None:
     print("[NeverFolia][flood shoreline flora] flood shoreline adaptation applied")
     print("  drowned old cane/lily: removed by flood")
     print("  vanilla presence signal: relocated to Y=128 shoreline chunk-locally")
+    print("  chunk key: Minecraft 26.2 x()/z() accessors; no ChunkPos.toLong()")
     print(f"  helper: {path}")
 
 
