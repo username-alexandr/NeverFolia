@@ -16,8 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      TARGET_SHA: 714ca8fe912a93fffd57fc8ef632a40ccb3c59bd
-      TARGET_BUILD_RUN: '33911102330'
+      TARGET_BRANCH: wip/test1-field-fixes-candidate
       FROZEN_RUN: '33890427028'
       FROZEN_SHA: 2f680ee1bf6024ba43a7894868977f1f65fdfd78
 
@@ -31,27 +30,53 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Wait for candidate compiled JAR
+      - name: Resolve exact candidate SHA
+        id: target
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          ENCODED_BRANCH="${TARGET_BRANCH//\//%2F}"
+          SHA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/branches/${ENCODED_BRANCH}" --jq '.commit.sha')"
+          test -n "${SHA}"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "Candidate branch ${TARGET_BRANCH}: ${SHA}"
+
+      - name: Wait for exact candidate compiled JAR
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ENCODED_BRANCH="${TARGET_BRANCH//\//%2F}"
           EXPECTED="NeverFolia-compiled-${TARGET_SHA}"
-          for attempt in $(seq 1 150); do
-            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_BUILD_RUN}/artifacts")"
+          for attempt in $(seq 1 180); do
+            RUNS="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?branch=${ENCODED_BRANCH}&per_page=20")"
+            RUN_ID="$(jq -r --arg sha "${TARGET_SHA}" '.workflow_runs[] | select(.head_sha == $sha) | .id' <<<"${RUNS}" | head -n 1)"
+            if [ -z "${RUN_ID}" ]; then
+              echo "Waiting for build run for ${TARGET_SHA} (${attempt}/180)..."
+              sleep 10
+              continue
+            fi
+
+            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts")"
             FOUND="$(jq -r --arg name "${EXPECTED}" '.artifacts[]? | select(.name == $name and (.expired | not)) | .id' <<<"${DATA}" | head -n 1)"
             if [ -n "${FOUND}" ]; then
-              echo "Compiled artifact is ready: ${FOUND}"
+              echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
+              echo "artifact_id=${FOUND}" >> "${GITHUB_OUTPUT}"
+              echo "Compiled artifact is ready: run=${RUN_ID} artifact=${FOUND}"
               exit 0
             fi
-            RUN="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_BUILD_RUN}")"
+
+            RUN="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
             STATUS="$(jq -r '.status' <<<"${RUN}")"
             CONCLUSION="$(jq -r '.conclusion // ""' <<<"${RUN}")"
             if [ "${STATUS}" = "completed" ] && [ "${CONCLUSION}" != "success" ]; then
-              echo "Candidate build terminated before early artifact became available: ${CONCLUSION}" >&2
+              echo "Candidate build ${RUN_ID} terminated before early artifact became available: ${CONCLUSION}" >&2
               exit 1
             fi
-            echo "Waiting for compiled candidate artifact (${attempt}/150)..."
+            echo "Waiting for compiled candidate artifact ${EXPECTED} in run ${RUN_ID} (${attempt}/180)..."
             sleep 10
           done
           echo "Timed out waiting for ${EXPECTED}" >&2
@@ -60,10 +85,10 @@ jobs:
       - name: Download candidate compiled JAR
         uses: actions/download-artifact@v5
         with:
-          name: NeverFolia-compiled-${{ env.TARGET_SHA }}
+          name: NeverFolia-compiled-${{ steps.target.outputs.sha }}
           path: candidate-compiled
           github-token: ${{ github.token }}
-          run-id: ${{ env.TARGET_BUILD_RUN }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
 
       - name: Download frozen TEST1 pack source
         uses: actions/download-artifact@v5
@@ -74,6 +99,8 @@ jobs:
           run-id: ${{ env.FROZEN_RUN }}
 
       - name: Verify early QA inputs
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
           JAR="$(find candidate-compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
@@ -126,7 +153,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TEST1-candidate-early-runtime-${{ env.TARGET_SHA }}
+          name: TEST1-candidate-early-runtime-${{ steps.target.outputs.sha }}
           path: |
             artifacts/NeverOverworld-vanilla-locate-matrix.json
             artifacts/NeverOverworld-vanilla-field-structures.json
