@@ -73,6 +73,14 @@ def audit(world: Path, max_chunks: int) -> dict:
         "flooded_shore_flora_blocks": 0,
         "sterile_band_ore_blocks": 0,
     }
+    observations = {
+        # These are not failure counters. They prove whether the deterministic
+        # smoke sample actually contains flora relocated to the new Y=128
+        # shoreline; a dedicated positive-presence gate can then be added only
+        # when the fixed seed gives a stable non-zero sample.
+        "shoreline_lily_pad_blocks_y129": 0,
+        "shoreline_sugar_cane_blocks_y129_131": 0,
+    }
     violations: list[dict] = []
 
     for cx, cz in TOPO.generated_chunks(region):
@@ -94,6 +102,16 @@ def audit(world: Path, max_chunks: int) -> dict:
         scanned += 1
         base_x = cx * 16
         base_z = cz * 16
+
+        # Positive shoreline observations. The relocation hook writes lily pads
+        # at Y=129 and sugar cane starting at Y=129, up to three blocks tall.
+        for lz in range(1, 15):
+            for lx in range(1, 15):
+                if block_at(decoded, 129, lx, lz) == "minecraft:lily_pad" and block_at(decoded, 128, lx, lz) == "minecraft:water":
+                    observations["shoreline_lily_pad_blocks_y129"] += 1
+                for y in range(129, 132):
+                    if block_at(decoded, y, lx, lz) == "minecraft:sugar_cane":
+                        observations["shoreline_sugar_cane_blocks_y129_131"] += 1
 
         # Surface-flood regression checks. Edges are skipped so that deciding
         # whether a block is submerged never requires reading a neighbour chunk.
@@ -148,7 +166,7 @@ def audit(world: Path, max_chunks: int) -> dict:
         fail("no Y=128 flooded columns were observed; field surface audit sample is ineffective")
 
     return {
-        "schema": 1,
+        "schema": 2,
         "purpose": "lock first-field-test regressions at the Y=128 NeverOverworld flood surface",
         "flood_y": FLOOD_Y,
         "surface_scan_y": [SCAN_MIN_Y, FLOOD_Y],
@@ -161,6 +179,7 @@ def audit(world: Path, max_chunks: int) -> dict:
             "flooded_columns": flooded_columns,
         },
         "counts": counts,
+        "observations": observations,
         "violations": violations,
     }
 
