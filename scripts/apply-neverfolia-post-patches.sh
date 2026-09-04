@@ -35,6 +35,8 @@ echo "[NeverFolia] Scoping flooded vanilla predictive locate to NeverOverworld o
 python3 "${ROOT_DIR}/scripts/harden-never-overworld-vanilla-fast-locate-scope.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Replacing vanilla fast-locate vertical surface scans with preliminary density sampling"
 python3 "${ROOT_DIR}/scripts/optimize-never-overworld-vanilla-fast-locate.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Aligning vanilla fast-locate biome validation to predicted surface Y"
+python3 "${ROOT_DIR}/scripts/align-never-overworld-vanilla-fast-locate-biome-y.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Rejecting submerged vanilla dry-land structure starts"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-policy.py" "${FOLIA_DIR}"
