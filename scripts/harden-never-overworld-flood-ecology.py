@@ -10,7 +10,9 @@ NEW = '''return state.isAir()
             || (state.getFluidState().isEmpty() && state.canBeReplaced())
             || state.is(net.minecraft.tags.BlockTags.LOGS)
             || state.is(net.minecraft.tags.BlockTags.LEAVES)
-            || state.is(net.minecraft.tags.BlockTags.RAILS);'''
+            || state.is(net.minecraft.tags.BlockTags.RAILS)
+            || state.is(net.minecraft.world.level.block.Blocks.SUGAR_CANE)
+            || state.is(net.minecraft.world.level.block.Blocks.LILY_PAD);'''
 
 
 def fail(message: str) -> None:
@@ -23,7 +25,13 @@ def patch_source(source: str) -> str:
     if source.count(OLD) != 1:
         fail(f"expected one floodable predicate, got {source.count(OLD)}")
     source = source.replace(OLD, NEW, 1)
-    for marker in ("BlockTags.LOGS", "BlockTags.LEAVES", "BlockTags.RAILS"):
+    for marker in (
+        "BlockTags.LOGS",
+        "BlockTags.LEAVES",
+        "BlockTags.RAILS",
+        "Blocks.SUGAR_CANE",
+        "Blocks.LILY_PAD",
+    ):
         if marker not in source:
             fail(f"patched helper missing {marker}")
     return source
@@ -37,8 +45,9 @@ def self_test() -> None:
 }
 '''
     patched = patch_source(fixture)
-    if patched.count("BlockTags.RAILS") != 1:
-        fail("SELF-TEST: rail cleanup marker count drifted")
+    for marker in ("BlockTags.RAILS", "Blocks.SUGAR_CANE", "Blocks.LILY_PAD"):
+        if patched.count(marker) != 1:
+            fail(f"SELF-TEST: cleanup marker count drifted for {marker}")
     print("[NeverFolia][NeverOverworld flood ecology] SELF-TEST OK")
 
 
@@ -57,7 +66,8 @@ def main() -> None:
     if not path.is_file():
         fail(f"NeverOverworldFlood helper not found: {path}")
     path.write_text(patch_source(path.read_text(encoding="utf-8")), encoding="utf-8")
-    print("[NeverFolia][NeverOverworld flood ecology] flooded logs/leaves/rails cleanup applied")
+    print("[NeverFolia][NeverOverworld flood ecology] flooded vegetation/rail cleanup applied")
+    print("  removes submerged logs, leaves, rails, sugar cane and lily pads")
     print(f"  helper: {path}")
 
 
