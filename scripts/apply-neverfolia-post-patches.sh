@@ -87,8 +87,11 @@ python3 "${ROOT_DIR}/scripts/apply-never-overworld-moonrise-light-flood-hook.py"
 echo "[NeverFolia] Applying NeverOverworld deterministic floodable-volume semantics"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-floodable-volume.py" "${FOLIA_DIR}"
 
-echo "[NeverFolia] Removing flooded tree remnants and exposed rails"
+echo "[NeverFolia] Removing flooded tree remnants, old shoreline flora and exposed rails"
 python3 "${ROOT_DIR}/scripts/harden-never-overworld-flood-ecology.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Relocating sugar cane and lily pads to the new Y=128 shoreline"
+python3 "${ROOT_DIR}/scripts/adapt-never-overworld-flood-shoreline-flora.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
