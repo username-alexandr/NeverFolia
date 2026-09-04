@@ -202,14 +202,13 @@ def validate(text: str) -> None:
         fail('legacy passesBiome method survived')
     if text.count('    private static boolean passesBiomeAtY(') != 1:
         fail('passesBiomeAtY definition count mismatch')
-    # The center density must only be computed once in the policy. Additional
-    # preliminarySurfaceY calls belong to the eight footprint probes and helper.
     policy_start, policy_end = find_method_end(text, POLICY_SIG)
     policy = text[policy_start:policy_end]
     if policy.count('preliminarySurfaceY(state, centerX, centerZ)') != 1:
         fail('dry center is not evaluated exactly once')
-    if policy.find('centerSurfaceY < MIN_DRY_BASE_HEIGHT') > policy.find('passesBiomeAtY('):
-        fail('biome validation occurs before cheap dry-center rejection')
+    dry_biome_call = 'passesBiomeAtY(generator, state, chunkPos, structureHolder, centerSurfaceY)'
+    if policy.find('centerSurfaceY < MIN_DRY_BASE_HEIGHT') > policy.find(dry_biome_call):
+        fail('dry biome validation occurs before cheap dry-center rejection')
 
 
 def apply(root: Path) -> None:
