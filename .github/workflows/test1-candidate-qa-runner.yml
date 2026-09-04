@@ -1,0 +1,104 @@
+name: TEST1 Candidate QA Runner
+
+on:
+  push:
+    branches:
+      - wip/test1-field-fixes-qa-runner
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  candidate-regressions:
+    name: Candidate vanilla structures and shoreline flora
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET_SHA: 2352512da4bdcfeedf1a60e62d66ffd4e38b4a1c
+      TARGET_BRANCH: wip/test1-field-fixes-candidate
+
+    steps:
+      - name: Checkout QA source
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Wait for exact candidate build
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?branch=${TARGET_BRANCH//\//%2F}&per_page=20")"
+            RUN_ID="$(jq -r --arg sha "${TARGET_SHA}" '.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success") | .id' <<<"${DATA}" | head -n 1)"
+            if [ -n "${RUN_ID}" ]; then
+              echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
+              echo "Candidate build succeeded: ${RUN_ID}"
+              exit 0
+            fi
+            TERMINAL="$(jq -r --arg sha "${TARGET_SHA}" '.workflow_runs[] | select(.head_sha == $sha and .status == "completed") | .conclusion' <<<"${DATA}" | head -n 1)"
+            if [ -n "${TERMINAL}" ] && [ "${TERMINAL}" != "null" ]; then
+              echo "Candidate build completed without success: ${TERMINAL}" >&2
+              exit 1
+            fi
+            echo "Waiting for candidate build ${TARGET_SHA} (${attempt}/180)..."
+            sleep 10
+          done
+          echo "Timed out waiting for candidate build ${TARGET_SHA}" >&2
+          exit 1
+
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: NeverFolia-${{ env.TARGET_SHA }}
+          path: candidate-artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
+
+      - name: Verify candidate inputs
+        run: |
+          set -euo pipefail
+          JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          test -n "${JAR}"
+          test -n "${PACK}"
+          grep -F "Git commit: ${TARGET_SHA}" candidate-artifact/BUILD-INFO.txt
+          sha256sum "${JAR}" "${PACK}"
+
+      - name: Probe vanilla field structures and locate latency
+        run: |
+          set -euo pipefail
+          JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-vanilla-field-structures.sh
+          ./scripts/probe-never-overworld-vanilla-field-structures.sh "${JAR}" "${PACK}"
+
+      - name: Probe positive shoreline flora relocation
+        run: |
+          set -euo pipefail
+          JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-shoreline-flora.sh
+          ./scripts/probe-never-overworld-shoreline-flora.sh "${JAR}" "${PACK}"
+
+      - name: Upload QA diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TEST1-candidate-qa-${{ env.TARGET_SHA }}
+          path: |
+            artifacts/NeverOverworld-vanilla-field-structures.json
+            artifacts/NeverOverworld-shoreline-flora.json
+            overworld-vanilla-field-structures-test/locate-results.tsv
+            overworld-vanilla-field-structures-test/server.log
+            overworld-shoreline-flora-test/biome-results.tsv
+            overworld-shoreline-flora-test/server.log
+          if-no-files-found: warn
+          retention-days: 30
