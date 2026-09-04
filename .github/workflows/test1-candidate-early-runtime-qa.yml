@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      TARGET_SHA: a65298dc552239493b6ce0081d24d0df4e4681c5
-      TARGET_BUILD_RUN: '33909553215'
+      TARGET_SHA: 714ca8fe912a93fffd57fc8ef632a40ccb3c59bd
+      TARGET_BUILD_RUN: '33911102330'
       FROZEN_RUN: '33890427028'
       FROZEN_SHA: 2f680ee1bf6024ba43a7894868977f1f65fdfd78
 
@@ -85,6 +85,13 @@ jobs:
           echo "Frozen datapack: ${PACK}"
           sha256sum "${JAR}" "${PACK}"
 
+      - name: Normalize mansion QA id for Minecraft 26.2
+        run: |
+          set -euo pipefail
+          sed -i 's/minecraft:woodland_mansion/minecraft:mansion/g' ./scripts/probe-never-overworld-vanilla-locate-matrix.sh
+          sed -i 's/minecraft:woodland_mansion/minecraft:mansion/g' ./scripts/probe-never-overworld-vanilla-field-structures.sh
+          ! grep -R -F 'minecraft:woodland_mansion' ./scripts/probe-never-overworld-vanilla-locate-matrix.sh ./scripts/probe-never-overworld-vanilla-field-structures.sh
+
       - name: Probe flooded vanilla locate availability matrix
         run: |
           set -euo pipefail
@@ -94,10 +101,13 @@ jobs:
           ./scripts/probe-never-overworld-vanilla-locate-matrix.sh "${JAR}" "${PACK}"
 
       - name: Probe vanilla field structures and locate latency
+        if: always()
         run: |
           set -euo pipefail
           JAR="$(find candidate-compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find frozen-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          test -n "${JAR}"
+          test -n "${PACK}"
           chmod +x ./scripts/probe-never-overworld-vanilla-field-structures.sh
           ./scripts/probe-never-overworld-vanilla-field-structures.sh "${JAR}" "${PACK}"
 
