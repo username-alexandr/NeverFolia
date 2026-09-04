@@ -162,7 +162,9 @@ def self_test() -> None:
             placeSugarCaneColumn(chunk, minX, minZ, localX, localZ, hash);
         }
     }
-    private static boolean isSugarCaneBiome(final WorldGenLevel level, final BlockPos pos) { return true; }
+    private static boolean isSugarCaneBiome(final WorldGenLevel level, final BlockPos pos) {
+        return true;
+    }
     private static boolean hasChunkLocalWaterNeighbor(ChunkAccess chunk, int minX, int minZ, int localX, int localZ) { return true; }
     private static long shorelineHash(Object pos, int index) { return 0L; }
     private static void placeSugarCaneColumn(ChunkAccess chunk, int minX, int minZ, int localX, int localZ, long hash) {}
