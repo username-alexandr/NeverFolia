@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      TARGET_SHA: 2352512da4bdcfeedf1a60e62d66ffd4e38b4a1c
       TARGET_BRANCH: wip/test1-field-fixes-candidate
 
     steps:
@@ -29,26 +28,40 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Wait for exact candidate build
-        id: candidate
+      - name: Resolve exact candidate SHA
+        id: target
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 180); do
-            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?branch=${TARGET_BRANCH//\//%2F}&per_page=20")"
+          ENCODED_BRANCH="${TARGET_BRANCH//\//%2F}"
+          SHA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/branches/${ENCODED_BRANCH}" --jq '.commit.sha')"
+          test -n "${SHA}"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "Candidate branch ${TARGET_BRANCH}: ${SHA}"
+
+      - name: Wait for exact candidate build
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ENCODED_BRANCH="${TARGET_BRANCH//\//%2F}"
+          for attempt in $(seq 1 240); do
+            DATA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?branch=${ENCODED_BRANCH}&per_page=20")"
             RUN_ID="$(jq -r --arg sha "${TARGET_SHA}" '.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success") | .id' <<<"${DATA}" | head -n 1)"
             if [ -n "${RUN_ID}" ]; then
               echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
-              echo "Candidate build succeeded: ${RUN_ID}"
+              echo "Candidate build succeeded: ${RUN_ID} @ ${TARGET_SHA}"
               exit 0
             fi
             TERMINAL="$(jq -r --arg sha "${TARGET_SHA}" '.workflow_runs[] | select(.head_sha == $sha and .status == "completed") | .conclusion' <<<"${DATA}" | head -n 1)"
             if [ -n "${TERMINAL}" ] && [ "${TERMINAL}" != "null" ]; then
-              echo "Candidate build completed without success: ${TERMINAL}" >&2
+              echo "Candidate build ${TARGET_SHA} completed without success: ${TERMINAL}" >&2
               exit 1
             fi
-            echo "Waiting for candidate build ${TARGET_SHA} (${attempt}/180)..."
+            echo "Waiting for candidate build ${TARGET_SHA} (${attempt}/240)..."
             sleep 10
           done
           echo "Timed out waiting for candidate build ${TARGET_SHA}" >&2
@@ -57,12 +70,14 @@ jobs:
       - name: Download exact candidate artifact
         uses: actions/download-artifact@v5
         with:
-          name: NeverFolia-${{ env.TARGET_SHA }}
+          name: NeverFolia-${{ steps.target.outputs.sha }}
           path: candidate-artifact
           github-token: ${{ github.token }}
           run-id: ${{ steps.candidate.outputs.run_id }}
 
       - name: Verify candidate inputs
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
           JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
@@ -72,19 +87,41 @@ jobs:
           grep -F "Git commit: ${TARGET_SHA}" candidate-artifact/BUILD-INFO.txt
           sha256sum "${JAR}" "${PACK}"
 
-      - name: Probe vanilla field structures and locate latency
+      - name: Normalize mansion QA id for Minecraft 26.2
+        run: |
+          set -euo pipefail
+          sed -i 's/minecraft:woodland_mansion/minecraft:mansion/g' ./scripts/probe-never-overworld-vanilla-locate-matrix.sh || true
+          sed -i 's/minecraft:woodland_mansion/minecraft:mansion/g' ./scripts/probe-never-overworld-vanilla-field-structures.sh
+
+      - name: Probe flooded vanilla locate availability matrix
         run: |
           set -euo pipefail
           JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          if [ -f ./scripts/probe-never-overworld-vanilla-locate-matrix.sh ]; then
+            chmod +x ./scripts/probe-never-overworld-vanilla-locate-matrix.sh
+            ./scripts/probe-never-overworld-vanilla-locate-matrix.sh "${JAR}" "${PACK}"
+          fi
+
+      - name: Probe vanilla field structures and locate latency
+        if: always()
+        run: |
+          set -euo pipefail
+          JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          test -n "${JAR}"
+          test -n "${PACK}"
           chmod +x ./scripts/probe-never-overworld-vanilla-field-structures.sh
           ./scripts/probe-never-overworld-vanilla-field-structures.sh "${JAR}" "${PACK}"
 
       - name: Probe positive shoreline flora relocation
+        if: always()
         run: |
           set -euo pipefail
           JAR="$(find candidate-artifact -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
           PACK="$(find candidate-artifact -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          test -n "${JAR}"
+          test -n "${PACK}"
           chmod +x ./scripts/probe-never-overworld-shoreline-flora.sh
           ./scripts/probe-never-overworld-shoreline-flora.sh "${JAR}" "${PACK}"
 
@@ -92,10 +129,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TEST1-candidate-qa-${{ env.TARGET_SHA }}
+          name: TEST1-candidate-qa-${{ steps.target.outputs.sha }}
           path: |
+            artifacts/NeverOverworld-vanilla-locate-matrix.json
             artifacts/NeverOverworld-vanilla-field-structures.json
             artifacts/NeverOverworld-shoreline-flora.json
+            overworld-vanilla-locate-matrix-test/locate-matrix.tsv
+            overworld-vanilla-locate-matrix-test/server.log
             overworld-vanilla-field-structures-test/locate-results.tsv
             overworld-vanilla-field-structures-test/server.log
             overworld-shoreline-flora-test/biome-results.tsv
