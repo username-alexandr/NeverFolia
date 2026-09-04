@@ -1,0 +1,2 @@
+candidate_sha=8a9996254b34fb8a984bf7063830a18fde61b914
+purpose=rerun TEST1 candidate runtime QA after shoreline cane bank fix
