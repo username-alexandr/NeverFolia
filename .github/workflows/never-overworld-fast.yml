@@ -51,6 +51,9 @@ jobs:
       - name: Self-test NeverOverworld flooded vanilla preliminary-surface locate
         run: python3 ./scripts/optimize-never-overworld-vanilla-fast-locate.py --self-test
 
+      - name: Self-test NeverOverworld flooded vanilla surface-biome locate
+        run: python3 ./scripts/align-never-overworld-vanilla-fast-locate-biome-y.py --self-test
+
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
