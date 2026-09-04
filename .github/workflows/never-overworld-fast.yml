@@ -42,6 +42,9 @@ jobs:
       - name: Self-test NeverOverworld flooded surface structure policy
         run: python3 ./scripts/apply-never-overworld-flooded-surface-structure-policy.py --self-test
 
+      - name: Self-test NeverOverworld flooded vanilla fast locate
+        run: python3 ./scripts/apply-never-overworld-vanilla-fast-locate.py --self-test
+
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
