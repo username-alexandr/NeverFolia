@@ -51,6 +51,16 @@
     "flood_surface_policy": {
       "minimum_dry_surface_y": 129,
       "reject_submerged_surface_starts": true,
+      "dry_footprint_sampling": {
+        "grid": "5x5",
+        "village_radius_blocks": 96,
+        "woodland_mansion_radius_blocks": 80,
+        "pillager_outpost_radius_blocks": 64,
+        "pyramid_radius_blocks": 32,
+        "igloo_radius_blocks": 24,
+        "noise_only": true,
+        "loads_neighbor_chunks": false
+      },
       "dry_land_only": [
         "minecraft:village_plains",
         "minecraft:village_desert",
