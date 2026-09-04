@@ -45,6 +45,9 @@ jobs:
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
+      - name: Self-test NeverOverworld swamp hut waterline policy
+        run: python3 ./scripts/apply-never-overworld-swamp-hut-waterline.py --self-test
+
       - name: Self-test NeverFolia profiler XYZ compatibility
         run: python3 ./scripts/apply-neverfolia-profiler-xyz.py --self-test
 
