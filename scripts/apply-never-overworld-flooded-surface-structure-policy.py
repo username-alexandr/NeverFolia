@@ -27,6 +27,10 @@ import net.minecraft.world.level.levelgen.structure.Structure;
  * base-height sampling. No generated chunk is loaded and no neighboring mutable
  * state is observed, preserving Folia ownership and chunk-order determinism.</p>
  *
+ * <p>Large dry structures use a conservative 5x5 terrain footprint. The purpose
+ * is to reject a candidate before Jigsaw/piece generation when any representative
+ * part of the possible structure envelope would sit at or below Y=128.</p>
+ *
  * <p>Swamp huts are intentionally not in DRY_LAND_ONLY. They are re-anchored
  * separately to the Y=129 flooded waterline.</p>
  */
@@ -79,9 +83,10 @@ final class NeverOverworldVanillaStructurePolicy {
         }
 
         final int radius = sampleRadius(id);
+        final int halfRadius = Math.max(1, radius / 2);
         final int centerX = chunkPos.getMiddleBlockX();
         final int centerZ = chunkPos.getMiddleBlockZ();
-        final int[] offsets = {-radius, 0, radius};
+        final int[] offsets = {-radius, -halfRadius, 0, halfRadius, radius};
         for (final int dx : offsets) {
             for (final int dz : offsets) {
                 final int base = generator.getBaseHeight(
@@ -101,12 +106,21 @@ final class NeverOverworldVanillaStructurePolicy {
 
     private static int sampleRadius(final String id) {
         if ("minecraft:woodland_mansion".equals(id)) {
+            return 80;
+        }
+        if (id.startsWith("minecraft:village_")) {
+            return 96;
+        }
+        if ("minecraft:pillager_outpost".equals(id)) {
             return 64;
         }
-        if (id.startsWith("minecraft:village_") || "minecraft:pillager_outpost".equals(id)) {
+        if ("minecraft:desert_pyramid".equals(id) || "minecraft:jungle_pyramid".equals(id)) {
             return 32;
         }
-        return 16;
+        if ("minecraft:igloo".equals(id)) {
+            return 24;
+        }
+        return 32;
     }
 }
 '''
@@ -200,7 +214,14 @@ def self_test() -> None:
     for marker in (MARKER, "entry.structure()", "randomState, chunk, chunkPos, dimension"):
         if marker not in patched:
             fail(f"SELF-TEST missing {marker}")
-    for marker in ("minecraft:stronghold", "minecraft:woodland_mansion", "MIN_DRY_BASE_HEIGHT"):
+    for marker in (
+        "minecraft:stronghold",
+        "minecraft:woodland_mansion",
+        "MIN_DRY_BASE_HEIGHT",
+        "{-radius, -halfRadius, 0, halfRadius, radius}",
+        "return 96;",
+        "return 80;",
+    ):
         if marker not in HELPER:
             fail(f"SELF-TEST helper missing {marker}")
     if '"minecraft:swamp_hut"' in HELPER:
@@ -227,8 +248,10 @@ def main() -> None:
     chunk.write_text(patch_source(chunk.read_text(encoding="utf-8")), encoding="utf-8")
     helper.parent.mkdir(parents=True, exist_ok=True)
     helper.write_text(HELPER, encoding="utf-8")
-    print("[NeverFolia][flooded surface structures] dry-land start rejection applied")
+    print("[NeverFolia][flooded surface structures] conservative dry-footprint rejection applied")
     print("  flood plane: Y=128")
+    print("  sample grid: 5x5")
+    print("  village radius: 96 blocks; mansion radius: 80 blocks")
     print("  swamp hut: delegated to flood-adapted waterline placement")
     print("  stronghold/end portal: rejected")
     print(f"  generator: {chunk}")
