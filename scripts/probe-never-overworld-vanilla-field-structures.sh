@@ -97,7 +97,10 @@ for target in "${TARGETS[@]}"; do
   for _ in $(seq 1 120); do
     segment="$(tail -n +"${start_line}" "${TEST_DIR}/server.log" 2>/dev/null || true)"
     if grep -Fq -- 'Could not find' <<<"${segment}"; then status="not_found"; break; fi
-    if grep -Eq '\[[[:space:]]*-?[0-9]+[[:space:]]*,[[:space:]]*[^,\]]+[[:space:]]*,[[:space:]]*-?[0-9]+[[:space:]]*\]' <<<"${segment}"; then status="found"; break; fi
+    # Minecraft prints an unknown/estimated Y as '~' for structures such as
+    # mineshafts. Match the stable locate-result prefix instead of trying to
+    # validate the coordinate tuple with grep; Python below parses X/Z exactly.
+    if grep -Fq -- "The nearest ${target} is at [" <<<"${segment}"; then status="found"; break; fi
     if ! kill -0 "${SERVER_PID}" 2>/dev/null; then break; fi
     sleep 1
   done
@@ -252,12 +255,6 @@ for line in results.read_text().splitlines():
         if miny < 129:
             raise SystemExit(f'swamp hut remained below flood waterline: bbox={row["bbox"]}')
     rows.append(row)
-
-# Global negative guard independent from /locate result.
-for path in sorted(region.glob('r.*.*.mca')):
-    # Sampling the starts around generated target windows is enough here; all
-    # generated chunks were produced after the stronghold datapack/runtime guard.
-    pass
 
 report={'schema':1,'seed':'NeverOverworld-Vanilla-Field-Structures-1','results':rows}
 report_path.parent.mkdir(parents=True,exist_ok=True)
