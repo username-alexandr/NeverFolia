@@ -54,6 +54,9 @@ jobs:
       - name: Self-test NeverOverworld flooded vanilla surface-biome locate
         run: python3 ./scripts/align-never-overworld-vanilla-fast-locate-biome-y.py --self-test
 
+      - name: Self-test NeverOverworld flooded vanilla structure availability
+        run: python3 ./scripts/tune-never-overworld-flooded-structure-availability.py --self-test
+
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
@@ -83,6 +86,9 @@ jobs:
 
       - name: Self-test NeverOverworld shoreline flora relocation
         run: python3 ./scripts/adapt-never-overworld-flood-shoreline-flora.py --self-test
+
+      - name: Self-test NeverOverworld shoreline sugar-cane substrate support
+        run: python3 ./scripts/fix-never-overworld-shoreline-sugar-cane.py --self-test
 
       - name: Self-test NeverOverworld LIGHT flood activation instrumentation
         run: python3 ./scripts/instrument-never-overworld-flood-debug.py --self-test
