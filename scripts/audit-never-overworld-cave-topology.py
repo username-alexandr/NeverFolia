@@ -29,6 +29,7 @@ OPEN_BLOCKS = {
     "minecraft:lava",
     "minecraft:bubble_column",
 }
+FULL_STATUSES = {"full", "minecraft:full"}
 
 
 def fail(message: str) -> None:
@@ -51,6 +52,19 @@ def generated_chunks(region_dir: Path):
             yield rx * 32 + (index & 31), rz * 32 + (index >> 5)
 
 
+def chunk_status(root: dict) -> str | None:
+    raw = root.get("Status", root.get("status"))
+    return raw.lower() if isinstance(raw, str) else None
+
+
+def is_full_chunk(root: dict) -> bool:
+    return chunk_status(root) in FULL_STATUSES
+
+
+def required_section_ys(min_y: int, max_y: int) -> set[int]:
+    return set(range(min_y // 16, max_y // 16 + 1))
+
+
 def palette_name(entry) -> str:
     if isinstance(entry, str):
         return entry
@@ -64,10 +78,10 @@ def palette_name(entry) -> str:
 def decode_section(section: dict) -> list[str]:
     states = section.get("block_states", section.get("BlockStates"))
     if not isinstance(states, dict):
-        return ["minecraft:air"] * 4096
+        raise ValueError(f"section Y={section.get('Y')} has no block_states payload")
     raw_palette = states.get("palette")
     if not isinstance(raw_palette, list) or not raw_palette:
-        return ["minecraft:air"] * 4096
+        raise ValueError(f"section Y={section.get('Y')} has no block-state palette")
     palette = [palette_name(entry) for entry in raw_palette]
     if len(palette) == 1:
         return [palette[0]] * 4096
@@ -90,6 +104,24 @@ def decode_section(section: dict) -> list[str]:
     return result
 
 
+def decoded_sample_sections(root: dict, min_y: int, max_y: int) -> dict[int, list[str]]:
+    required = required_section_ys(min_y, max_y)
+    raw_sections: dict[int, dict] = {}
+    for section in BASE.section_list(root):
+        sy = section.get("Y")
+        if isinstance(sy, int) and sy in required:
+            raw_sections[sy] = section
+
+    missing = sorted(required - set(raw_sections))
+    if missing:
+        raise LookupError(f"sample is missing section Y values: {missing}")
+
+    decoded: dict[int, list[str]] = {}
+    for sy in sorted(required):
+        decoded[sy] = decode_section(raw_sections[sy])
+    return decoded
+
+
 def percentile(values: list[int], q: float) -> float:
     if not values:
         return 0.0
@@ -107,6 +139,7 @@ def metrics_from_layers(layers: list[int]) -> dict:
     if not layers:
         return {
             "max_vertical_open_run": 0,
+            "p95_vertical_open_run": 0.0,
             "columns_ge_128": 0,
             "columns_ge_192": 0,
             "columns_ge_256": 0,
@@ -148,16 +181,7 @@ def metrics_from_layers(layers: list[int]) -> dict:
 
 
 def audit_chunk(root: dict, min_y: int, max_y: int) -> dict:
-    sections: dict[int, list[str]] = {}
-    for section in BASE.section_list(root):
-        sy = section.get("Y")
-        if not isinstance(sy, int):
-            continue
-        section_min = sy * 16
-        section_max = section_min + 15
-        if section_max < min_y or section_min > max_y:
-            continue
-        sections[sy] = decode_section(section)
+    sections = decoded_sample_sections(root, min_y, max_y)
 
     layers: list[int] = []
     open_blocks = 0
@@ -166,15 +190,14 @@ def audit_chunk(root: dict, min_y: int, max_y: int) -> dict:
     for y in range(min_y, max_y + 1):
         sy = y // 16
         local_y = y - sy * 16
-        decoded = sections.get(sy)
+        decoded = sections[sy]
         mask = 0
-        if decoded is not None:
-            for local_z in range(16):
-                for local_x in range(16):
-                    index = (local_y << 8) | (local_z << 4) | local_x
-                    if decoded[index] in OPEN_BLOCKS:
-                        column = (local_z << 4) | local_x
-                        mask |= 1 << column
+        for local_z in range(16):
+            for local_x in range(16):
+                index = (local_y << 8) | (local_z << 4) | local_x
+                if decoded[index] in OPEN_BLOCKS:
+                    column = (local_z << 4) | local_x
+                    mask |= 1 << column
         count = mask.bit_count()
         open_blocks += count
         sampled_blocks += 256
@@ -190,26 +213,60 @@ def audit_chunk(root: dict, min_y: int, max_y: int) -> dict:
 def audit(world: Path, max_chunks: int, min_y: int, max_y: int) -> dict:
     region = NR.find_region_dir(world)
     rows: list[dict] = []
+    records_seen = 0
+    skipped_not_full = 0
+    skipped_incomplete_sections = 0
+    skipped_decode_error = 0
+
     for cx, cz in generated_chunks(region):
         if len(rows) >= max_chunks:
             break
+        records_seen += 1
         try:
             root = BASE.read_chunk_nbt(region, cx, cz)
-            metrics = audit_chunk(root, min_y, max_y)
         except Exception:
+            skipped_decode_error += 1
             continue
-        rows.append({"chunk": [cx, cz], **metrics})
+        if not is_full_chunk(root):
+            skipped_not_full += 1
+            continue
+        try:
+            metrics = audit_chunk(root, min_y, max_y)
+        except LookupError:
+            skipped_incomplete_sections += 1
+            continue
+        except Exception:
+            skipped_decode_error += 1
+            continue
+        rows.append({
+            "chunk": [cx, cz],
+            "status": chunk_status(root),
+            **metrics,
+        })
 
     if not rows:
-        fail("no readable generated NeverOverworld chunks were available")
+        fail(
+            "no complete FULL NeverOverworld chunks were available for the requested vertical sample; "
+            f"records_seen={records_seen} not_full={skipped_not_full} "
+            f"incomplete_sections={skipped_incomplete_sections} decode_errors={skipped_decode_error}"
+        )
 
     longest = sorted(rows, key=lambda row: (row["max_vertical_open_run"], row["max_identical_partial_mask_run"]), reverse=True)
     boxiest = sorted(rows, key=lambda row: (row["max_identical_partial_mask_run"], row["max_vertical_open_run"]), reverse=True)
     return {
-        "schema": 1,
-        "purpose": "diagnose giant vertical canyons and axis-aligned extruded cave boxes",
+        "schema": 2,
+        "purpose": "diagnose giant vertical canyons and axis-aligned extruded cave boxes in complete FULL chunks only",
         "sample_y": [min_y, max_y],
+        "required_section_y": [min(required_section_ys(min_y, max_y)), max(required_section_ys(min_y, max_y))],
         "open_blocks": sorted(OPEN_BLOCKS),
+        "selection": {
+            "full_statuses": sorted(FULL_STATUSES),
+            "records_seen": records_seen,
+            "chunks_scanned": len(rows),
+            "skipped_not_full": skipped_not_full,
+            "skipped_incomplete_sections": skipped_incomplete_sections,
+            "skipped_decode_error": skipped_decode_error,
+        },
         "chunks_scanned": len(rows),
         "global": {
             "max_vertical_open_run": max(row["max_vertical_open_run"] for row in rows),
@@ -242,6 +299,23 @@ def self_test() -> None:
     section = {"Y": -10, "block_states": {"palette": [{"Name": "minecraft:air"}]}}
     if decode_section(section) != ["minecraft:air"] * 4096:
         fail("SELF-TEST single-palette decode failed")
+
+    if not is_full_chunk({"Status": "minecraft:full"}) or not is_full_chunk({"status": "full"}):
+        fail("SELF-TEST FULL chunk status normalization failed")
+    if is_full_chunk({"Status": "minecraft:noise"}) or is_full_chunk({}):
+        fail("SELF-TEST non-FULL chunk status rejection failed")
+
+    expected_sections = {-31, -30, -29, -28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6}
+    if required_section_ys(DEFAULT_MIN_Y, DEFAULT_MAX_Y) != expected_sections:
+        fail("SELF-TEST requested section coverage calculation failed")
+
+    try:
+        decode_section({"Y": -10})
+    except ValueError:
+        pass
+    else:
+        fail("SELF-TEST missing block_states must not be interpreted as air")
+
     print("[NeverFolia][NeverOverworld topology audit] SELF-TEST OK")
 
 
