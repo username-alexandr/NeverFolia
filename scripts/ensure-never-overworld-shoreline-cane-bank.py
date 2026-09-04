@@ -152,7 +152,7 @@ def apply(root: Path) -> None:
 def self_test() -> None:
     fixture = '''final class NeverOverworldFlood {
     private static final int FLOOD_LEVEL = 128;
-    private static void reseedSugarCaneAtFloodShoreline(Object level, Object chunk, int minX, int minZ) {
+    private static void reseedSugarCaneAtFloodShoreline(final WorldGenLevel level, final ChunkAccess chunk, int minX, int minZ) {
         int placed = 0;
         int fallbackIndex = -1;
         if (placed == 0 && fallbackIndex >= 0) {
@@ -163,9 +163,9 @@ def self_test() -> None:
         }
     }
     private static boolean isSugarCaneBiome(final WorldGenLevel level, final BlockPos pos) { return true; }
-    private static boolean hasChunkLocalWaterNeighbor(Object chunk, int minX, int minZ, int localX, int localZ) { return true; }
+    private static boolean hasChunkLocalWaterNeighbor(ChunkAccess chunk, int minX, int minZ, int localX, int localZ) { return true; }
     private static long shorelineHash(Object pos, int index) { return 0L; }
-    private static void placeSugarCaneColumn(Object chunk, int minX, int minZ, int localX, int localZ, long hash) {}
+    private static void placeSugarCaneColumn(ChunkAccess chunk, int minX, int minZ, int localX, int localZ, long hash) {}
 }
 '''
     with tempfile.TemporaryDirectory(prefix='nr-shoreline-cane-bank-') as tmp:
