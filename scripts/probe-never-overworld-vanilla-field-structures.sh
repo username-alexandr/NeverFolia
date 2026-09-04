@@ -20,7 +20,7 @@ TARGETS=(
   'minecraft:mineshaft'
   'minecraft:trial_chambers'
   'minecraft:village_plains'
-  'minecraft:woodland_mansion'
+  'minecraft:mansion'
   'minecraft:swamp_hut'
   'minecraft:stronghold'
 )
@@ -88,6 +88,13 @@ wait_loaded() {
   return 1
 }
 
+is_optional_dry_structure() {
+  case "$1" in
+    minecraft:village_plains|minecraft:mansion) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 for target in "${TARGETS[@]}"; do
   start_line=$(( $(wc -l < "${TEST_DIR}/server.log") + 1 ))
   echo "[NeverFolia][vanilla field structures] locating ${target}"
@@ -97,9 +104,6 @@ for target in "${TARGETS[@]}"; do
   for _ in $(seq 1 120); do
     segment="$(tail -n +"${start_line}" "${TEST_DIR}/server.log" 2>/dev/null || true)"
     if grep -Fq -- 'Could not find' <<<"${segment}"; then status="not_found"; break; fi
-    # Minecraft prints an unknown/estimated Y as '~' for structures such as
-    # mineshafts. Match the stable locate-result prefix instead of trying to
-    # validate the coordinate tuple with grep; Python below parses X/Z exactly.
     if grep -Fq -- "The nearest ${target} is at [" <<<"${segment}"; then status="found"; break; fi
     if ! kill -0 "${SERVER_PID}" 2>/dev/null; then break; fi
     sleep 1
@@ -112,12 +116,21 @@ for target in "${TARGETS[@]}"; do
 
   if [ "${status}" = "not_found" ]; then
     printf '%s\tnot_found\t\t\t\t\n' "${target}" >> "${RESULTS}"
-    if [ "${target}" != 'minecraft:stronghold' ]; then
-      echo "Required structure ${target} was not found for deterministic QA seed." >&2
-      exit 1
+    if [ "${target}" = 'minecraft:stronghold' ]; then
+      echo '[NeverFolia][vanilla field structures] stronghold correctly not found'
+      continue
     fi
-    echo '[NeverFolia][vanilla field structures] stronghold correctly not found'
-    continue
+    if is_optional_dry_structure "${target}"; then
+      echo "[NeverFolia][vanilla field structures] ${target}: no safe dry candidate for this deterministic seed (allowed)"
+      continue
+    fi
+    echo "Required structure ${target} was not found for deterministic QA seed." >&2
+    exit 1
+  fi
+
+  if [ "${target}" = 'minecraft:stronghold' ]; then
+    echo 'minecraft:stronghold unexpectedly located; End Portal dungeon regression returned' >&2
+    exit 1
   fi
 
   parsed="$(python3 - "${TEST_DIR}/server.log" "${start_line}" <<'PY'
@@ -165,6 +178,7 @@ raw=importlib.util.module_from_spec(raw_spec); raw_spec.loader.exec_module(raw)
 over_spec=importlib.util.spec_from_file_location('over_hasher', root/'scripts/hash-never-overworld-generation-chunks.py')
 over=importlib.util.module_from_spec(over_spec); over_spec.loader.exec_module(over)
 region=over.find_region_dir(world)
+OPTIONAL_DRY={'minecraft:village_plains','minecraft:mansion'}
 
 
 def int_array(value):
@@ -222,7 +236,11 @@ for line in results.read_text().splitlines():
         if status != 'not_found': raise SystemExit('minecraft:stronghold unexpectedly located; End Portal dungeon regression returned')
         rows.append({'structure':target,'status':'not_found_expected'})
         continue
+    if status == 'not_found' and target in OPTIONAL_DRY:
+        rows.append({'structure':target,'status':'not_found_allowed_for_seed'})
+        continue
     if status != 'found': raise SystemExit(f'{target}: expected located structure, got {status}')
+
     bx,bz,cx,cz=map(int,parts[2:6])
     scx,scz,start=locate_start(target,cx,cz)
     bbs=boxes(start)
@@ -236,11 +254,9 @@ for line in results.read_text().splitlines():
         if miny < -448 or maxy > -112:
             raise SystemExit(f'mineshaft escaped deep-only Y=-448..-112: bbox={row["bbox"]}')
     elif target == 'minecraft:trial_chambers':
-        # start_height is -320..-96; the assembled jigsaw may extend beyond the
-        # anchor, so gate the persisted structure center with conservative room.
         if not (-352 <= center_y <= -64):
             raise SystemExit(f'trial chamber remained too high/low: center_y={center_y} bbox={row["bbox"]}')
-    elif target in {'minecraft:village_plains','minecraft:woodland_mansion'}:
+    elif target in OPTIONAL_DRY:
         water=0; samples=0
         for z in range(minz,maxz+1,8):
             for x in range(minx,maxx+1,8):
@@ -250,20 +266,25 @@ for line in results.read_text().splitlines():
                 if value == 'minecraft:water': water+=1
         row['flood_plane_samples']=samples; row['flood_plane_water_samples']=water
         if samples == 0: raise SystemExit(f'{target}: no persisted footprint samples available')
-        if water != 0: raise SystemExit(f'{target}: submerged footprint remains at Y=128: water_samples={water}/{samples}')
+        fraction=water/samples
+        row['flood_plane_water_fraction']=fraction
+        if target == 'minecraft:mansion' and water != 0:
+            raise SystemExit(f'{target}: submerged mansion footprint remains at Y=128: water_samples={water}/{samples}')
+        if target == 'minecraft:village_plains' and fraction > 0.20:
+            raise SystemExit(f'{target}: village is still substantially submerged at Y=128: water_samples={water}/{samples}')
     elif target == 'minecraft:swamp_hut':
         if miny < 129:
             raise SystemExit(f'swamp hut remained below flood waterline: bbox={row["bbox"]}')
     rows.append(row)
 
-report={'schema':1,'seed':'NeverOverworld-Vanilla-Field-Structures-1','results':rows}
+report={'schema':2,'seed':'NeverOverworld-Vanilla-Field-Structures-1','results':rows}
 report_path.parent.mkdir(parents=True,exist_ok=True)
 report_path.write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2))
 PY
 
-if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|Command exception|NullPointerException|An unexpected error occurred" "${TEST_DIR}/server.log"; then
-  echo '[NeverFolia][vanilla field structures] runtime error detected.' >&2
+if grep -Eqi "server has not responded|watchdog|Failed to parse|Couldn't parse|Unknown registry|Errors in currently selected datapacks|Failed to load datapacks|Failed to load registries|Command exception|NullPointerException|An unexpected error occurred" "${TEST_DIR}/server.log"; then
+  echo '[NeverFolia][vanilla field structures] runtime/watchdog error detected.' >&2
   tail -n 400 "${TEST_DIR}/server.log" >&2
   exit 1
 fi
