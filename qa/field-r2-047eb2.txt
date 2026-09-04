@@ -1,0 +1,3 @@
+Dynamic QA trigger for candidate branch wip/test1-field-fixes-candidate.
+Expected candidate at trigger time: 047eb2afa11aac7e7d052504ef6fcd49eb329208
+Focus: bounded vanilla locate, deep structure policy, stronghold absence, flooded shoreline cane/lily relocation.
