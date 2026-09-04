@@ -40,6 +40,8 @@ python3 "${ROOT_DIR}/scripts/align-never-overworld-vanilla-fast-locate-biome-y.p
 
 echo "[NeverFolia] Rejecting submerged vanilla dry-land structure starts"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-policy.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Restoring practical flooded-world vanilla structure availability"
+python3 "${ROOT_DIR}/scripts/tune-never-overworld-flooded-structure-availability.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Forcing vanilla mineshafts into the NeverOverworld deep range"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-mineshaft-depth-policy.py" "${FOLIA_DIR}"
@@ -101,6 +103,8 @@ python3 "${ROOT_DIR}/scripts/harden-never-overworld-flood-ecology.py" "${FOLIA_D
 
 echo "[NeverFolia] Relocating sugar cane and lily pads to the new Y=128 shoreline"
 python3 "${ROOT_DIR}/scripts/adapt-never-overworld-flood-shoreline-flora.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Expanding raised-shoreline sugar-cane substrate support to canonical 26.2 tags"
+python3 "${ROOT_DIR}/scripts/fix-never-overworld-shoreline-sugar-cane.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Instrumenting NeverOverworld LIGHT flood activation"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-flood-debug.py" "${FOLIA_DIR}"
