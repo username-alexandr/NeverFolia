@@ -29,6 +29,9 @@ python3 "${ROOT_DIR}/scripts/normalize-never-overworld-placement-chunkpos-api.py
 echo "[NeverFolia] Applying NeverOverworld predictive no-generation fast locate"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-fast-locate.py" "${FOLIA_DIR}"
 
+echo "[NeverFolia] Applying NeverOverworld flooded vanilla predictive fast locate"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-vanilla-fast-locate.py" "${FOLIA_DIR}"
+
 echo "[NeverFolia] Rejecting submerged vanilla dry-land structure starts"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-policy.py" "${FOLIA_DIR}"
 
