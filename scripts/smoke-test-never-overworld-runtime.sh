@@ -124,7 +124,13 @@ wait_literal 'Gamerule random_tick_speed is now set to: 0' 15
 
 # Regression test for the user-facing XYZ form. Folia regions are 2D, but the
 # NeverFolia command accepts and validates Y so `/profiler world X Y Z T R`
-# does not fall through to the old usage error.
+# does not fall through to the old usage error. Ensure a real FULL chunk/tick
+# region exists at the probe location first; otherwise Folia correctly reports
+# "No regions around specified location in radius to profile" even when parsing
+# the XYZ syntax succeeded.
+send_console 'execute in minecraft:overworld run forceload add 0 0'
+wait_chunk_loaded "0" "0" "NEVEROVERWORLD_PROFILER_FULL_0_0"
+sleep 1
 send_console 'profiler world 0 90 0 1 10'
 wait_literal "${PROFILER_STARTED}" 15
 wait_literal "${PROFILER_FINISHED}" 30
