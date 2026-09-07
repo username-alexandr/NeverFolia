@@ -82,3 +82,17 @@ Manual TEST1 inspection of fresh NeverNether chunks reported no visible generati
 - intended roof construction space therefore extends from immediately above the bedrock roof through the legal top of the dimension, with the exact lower usable Y depending on local bedrock irregularity.
 
 Current field verdict for NeverNether terrain and vertical limits: **PASS**.
+
+## NeverOverworld underground manual observations — 2026-09-07
+
+Manual inspection of the current TEST1 Overworld underground shows a substantially vanilla-like cave topology again.
+
+- large caverns are irregular and organically connected instead of appearing as long rectangular or extruded masks;
+- dripstone caves render naturally with varied floors, ceilings, pillars and local openings;
+- deep deepslate/sculk terrain and ore exposure coexist normally with the cave network;
+- very large open spaces still occur, but in the inspected areas they read as natural Minecraft cave systems rather than the pathological surface-to-bottom shafts seen in the earlier regression;
+- no obvious repeated chunk-edge cave pattern or giant straight vertical canyon is visible in the supplied field screenshots.
+
+Current manual field verdict for NeverOverworld cave topology: **PASS**.
+
+Note: this verdict is specifically for cave/underground terrain topology. The explicit abandoned-mineshaft placement/depth policy remains a separate structure check unless an actual `minecraft:mineshaft` start is inspected.
