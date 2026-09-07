@@ -8,12 +8,8 @@ from pathlib import Path
 FAST_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java')
 POLICY_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java')
 
-OLD_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
+VILLAGE_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
             return 48;
-        }
-'''
-NEW_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
-            return 32;
         }
 '''
 
@@ -29,13 +25,14 @@ OLD_DRY_SAMPLES = '''    private static int minDrySamples(final String id) {
 '''
 NEW_DRY_SAMPLES = '''    private static int minDrySamples(final String id) {
         if (id.startsWith("minecraft:village_")) {
-            // Villages are common gameplay anchors. Keep the centre dry, but a
-            // simple majority of the 3x3 footprint is enough for broad shores and
-            // practical islands in the flooded world.
-            return 5;
+            // R4 field QA proved that the old majority gate could accept a
+            // materially flooded village envelope. R5 keeps the representative
+            // 3x3 footprint fully above Y=128 and restores availability through
+            // placement policy instead of weakening terrain safety.
+            return 9;
         }
         if ("minecraft:pillager_outpost".equals(id)) {
-            // Outposts remain more selective than villages.
+            // Outposts remain shoreline-tolerant but require a strong majority.
             return 7;
         }
         // Compact monuments and mansions stay fully above the Y=128 flood plane.
@@ -45,29 +42,21 @@ NEW_DRY_SAMPLES = '''    private static int minDrySamples(final String id) {
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f'[NeverFolia][TEST1 R3 village availability] {message}')
+    raise SystemExit(f'[NeverFolia][TEST1 R5 village safety] {message}')
 
 
 def tune(text: str, label: str) -> str:
-    # Idempotence is useful when a local developer reapplies post-patches while
-    # iterating in an existing worktree. A half-applied state is never accepted.
-    radius_new = text.count(NEW_RADIUS)
-    dry_new = text.count(NEW_DRY_SAMPLES)
-    radius_old = text.count(OLD_RADIUS)
-    dry_old = text.count(OLD_DRY_SAMPLES)
+    if text.count(VILLAGE_RADIUS) != 1:
+        fail(f'{label}: expected village radius=48 exactly once, got {text.count(VILLAGE_RADIUS)}')
 
-    if radius_new == 1 and dry_new == 1 and radius_old == 0 and dry_old == 0:
+    dry_new = text.count(NEW_DRY_SAMPLES)
+    dry_old = text.count(OLD_DRY_SAMPLES)
+    if dry_new == 1 and dry_old == 0:
         validate(text, label)
         return text
+    if dry_old != 1 or dry_new != 0:
+        fail(f'{label}: expected one pre-R5 dry-sample block; old={dry_old}, new={dry_new}')
 
-    if radius_old != 1 or dry_old != 1:
-        fail(
-            f'{label}: expected exactly one pre-R3 village radius/dry-sample block; '
-            f'old_radius={radius_old}, old_dry={dry_old}, '
-            f'new_radius={radius_new}, new_dry={dry_new}'
-        )
-
-    text = text.replace(OLD_RADIUS, NEW_RADIUS, 1)
     text = text.replace(OLD_DRY_SAMPLES, NEW_DRY_SAMPLES, 1)
     validate(text, label)
     return text
@@ -75,34 +64,33 @@ def tune(text: str, label: str) -> str:
 
 def validate(text: str, label: str) -> None:
     required = (
-        NEW_RADIUS,
+        VILLAGE_RADIUS,
         NEW_DRY_SAMPLES,
         'if ("minecraft:pillager_outpost".equals(id))',
-        'return 5;',
         'return 7;',
         'return 9;',
     )
     missing = [marker for marker in required if marker not in text]
     if missing:
-        fail(f'{label}: missing R3 markers: {missing}')
-    if OLD_RADIUS in text or OLD_DRY_SAMPLES in text:
-        fail(f'{label}: pre-R3 village policy survived transformation')
+        fail(f'{label}: missing R5 markers: {missing}')
+    if OLD_DRY_SAMPLES in text:
+        fail(f'{label}: pre-R5 village dry gate survived transformation')
+    if 'return 32;' in text:
+        fail(f'{label}: obsolete R3 village radius=32 survived')
+    if 'return 5;' in text:
+        fail(f'{label}: obsolete R3 village dry gate=5 survived')
 
 
 def apply(root: Path) -> None:
-    paths = (
-        ('fast-locate', root / FAST_REL),
-        ('generation-policy', root / POLICY_REL),
-    )
-    for label, path in paths:
+    for label, rel in (('fast-locate', FAST_REL), ('generation-policy', POLICY_REL)):
+        path = root / rel
         if not path.is_file():
             fail(f'{label}: helper not found: {path}')
-        text = path.read_text(encoding='utf-8')
-        path.write_text(tune(text, label), encoding='utf-8')
+        path.write_text(tune(path.read_text(encoding='utf-8'), label), encoding='utf-8')
 
-    print('[NeverFolia][TEST1 R3 village availability] flooded village policy applied')
-    print('  village footprint radius: 32 blocks')
-    print('  village dry gate: dry centre + >=5/9 dry samples')
+    print('[NeverFolia][TEST1 R5 village safety] flooded village policy applied')
+    print('  village footprint radius: 48 blocks')
+    print('  village dry gate: dry centre + 9/9 dry samples')
     print('  pillager outpost remains: radius=24, >=7/9 dry samples')
     print('  mansion remains: radius=40, 9/9 dry samples')
 
@@ -142,26 +130,19 @@ def fixture(class_name: str) -> str:
 
 
 def self_test() -> None:
-    with tempfile.TemporaryDirectory(prefix='nr-r3-village-availability-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='nr-r5-village-safety-') as tmp:
         root = Path(tmp)
-        for rel, class_name in (
-            (FAST_REL, 'NeverOverworldVanillaFastLocate'),
-            (POLICY_REL, 'NeverOverworldVanillaStructurePolicy'),
-        ):
+        for rel, class_name in ((FAST_REL, 'NeverOverworldVanillaFastLocate'), (POLICY_REL, 'NeverOverworldVanillaStructurePolicy')):
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(fixture(class_name), encoding='utf-8')
-
         apply(root)
-
         for label, rel in (('fast-locate', FAST_REL), ('generation-policy', POLICY_REL)):
             text = (root / rel).read_text(encoding='utf-8')
             validate(text, label)
-            # Verify idempotence as part of the self-test.
             if tune(text, label) != text:
                 fail(f'SELF-TEST {label}: idempotent reapply changed output')
-
-    print('[NeverFolia][TEST1 R3 village availability] SELF-TEST OK')
+    print('[NeverFolia][TEST1 R5 village safety] SELF-TEST OK')
 
 
 def main() -> None:
@@ -169,7 +150,6 @@ def main() -> None:
     parser.add_argument('folia_root', nargs='?', type=Path)
     parser.add_argument('--self-test', action='store_true')
     args = parser.parse_args()
-
     if args.self_test:
         self_test()
         return
