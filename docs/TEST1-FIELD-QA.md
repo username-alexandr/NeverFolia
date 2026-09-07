@@ -75,9 +75,10 @@ When reporting a failure, capture: exact coordinates, F3 Y-level, structure ID i
 Manual TEST1 inspection of fresh NeverNether chunks reported no visible generation bugs.
 
 - observed primary lava surface: approximately `Y=30`; target is `Y=32`, so this is within the intended local terrain/surface variation around the configured primary lava level;
-- observed upper bedrock: approximately `Y=381`; generated terrain body intentionally closes at `Y=383`, followed by the roof construction zone;
+- the roof is directly walkable at player feet `Y≈381.4` in the inspected location; this is the practical top surface of the irregular bedrock roof, not merely the Y-coordinate of a buried bedrock block;
+- the generated terrain body still intentionally closes near the `Y=383` contract boundary, with local irregular bedrock thickness accounting for the walkable surface around `Y=381`;
 - manual building was confirmed at least through `Y=667` before the tester stopped the tower test;
-- dimension contract is `min_y=-128`, `height=1024`, therefore the legal coordinate range ends at `Y=895` and the intended roof construction zone is `Y=384..895`;
-- exact ceiling should be checked with commands rather than manual tower building: place a block at `Y=895` (must succeed) and at `Y=896` (must fail).
+- the client/server build-limit message confirms a maximum construction height of `Y=895`, matching the dimension contract `min_y=-128`, `height=1024`;
+- intended roof construction space therefore extends from immediately above the bedrock roof through the legal top of the dimension, with the exact lower usable Y depending on local bedrock irregularity.
 
-Current field verdict for NeverNether terrain: **PASS pending exact build-ceiling command check**.
+Current field verdict for NeverNether terrain and vertical limits: **PASS**.
