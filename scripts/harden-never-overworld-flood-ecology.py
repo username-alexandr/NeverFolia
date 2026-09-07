@@ -12,7 +12,10 @@ NEW = '''return state.isAir()
             || state.is(net.minecraft.tags.BlockTags.LEAVES)
             || state.is(net.minecraft.tags.BlockTags.RAILS)
             || state.is(net.minecraft.world.level.block.Blocks.SUGAR_CANE)
-            || state.is(net.minecraft.world.level.block.Blocks.LILY_PAD);'''
+            || state.is(net.minecraft.world.level.block.Blocks.LILY_PAD)
+            || state.is(net.minecraft.world.level.block.Blocks.MUSHROOM_STEM)
+            || state.is(net.minecraft.world.level.block.Blocks.RED_MUSHROOM_BLOCK)
+            || state.is(net.minecraft.world.level.block.Blocks.BROWN_MUSHROOM_BLOCK);'''
 
 
 def fail(message: str) -> None:
@@ -31,6 +34,9 @@ def patch_source(source: str) -> str:
         "BlockTags.RAILS",
         "Blocks.SUGAR_CANE",
         "Blocks.LILY_PAD",
+        "Blocks.MUSHROOM_STEM",
+        "Blocks.RED_MUSHROOM_BLOCK",
+        "Blocks.BROWN_MUSHROOM_BLOCK",
     ):
         if marker not in source:
             fail(f"patched helper missing {marker}")
@@ -45,7 +51,14 @@ def self_test() -> None:
 }
 '''
     patched = patch_source(fixture)
-    for marker in ("BlockTags.RAILS", "Blocks.SUGAR_CANE", "Blocks.LILY_PAD"):
+    for marker in (
+        "BlockTags.RAILS",
+        "Blocks.SUGAR_CANE",
+        "Blocks.LILY_PAD",
+        "Blocks.MUSHROOM_STEM",
+        "Blocks.RED_MUSHROOM_BLOCK",
+        "Blocks.BROWN_MUSHROOM_BLOCK",
+    ):
         if patched.count(marker) != 1:
             fail(f"SELF-TEST: cleanup marker count drifted for {marker}")
     print("[NeverFolia][NeverOverworld flood ecology] SELF-TEST OK")
@@ -67,7 +80,7 @@ def main() -> None:
         fail(f"NeverOverworldFlood helper not found: {path}")
     path.write_text(patch_source(path.read_text(encoding="utf-8")), encoding="utf-8")
     print("[NeverFolia][NeverOverworld flood ecology] flooded vegetation/rail cleanup applied")
-    print("  removes submerged logs, leaves, rails, sugar cane and lily pads")
+    print("  removes submerged logs, leaves, rails, cane, lily pads and giant mushroom blocks")
     print(f"  helper: {path}")
 
 
