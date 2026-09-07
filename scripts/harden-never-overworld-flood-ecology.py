@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from pathlib import Path
 
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
+WEATHER_SCRIPT = Path(__file__).with_name("weather-never-overworld-flooded-surface.py")
 OLD = "return state.isAir() || (state.getFluidState().isEmpty() && state.canBeReplaced());"
 NEW = '''return state.isAir()
             || (state.getFluidState().isEmpty() && state.canBeReplaced())
@@ -20,6 +22,17 @@ NEW = '''return state.isAir()
 
 def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][NeverOverworld flood ecology] {message}")
+
+
+def load_weather_module():
+    if not WEATHER_SCRIPT.is_file():
+        fail(f"drowned-surface weathering transformer not found: {WEATHER_SCRIPT}")
+    spec = importlib.util.spec_from_file_location("never_overworld_drowned_surface", WEATHER_SCRIPT)
+    if spec is None or spec.loader is None:
+        fail("could not load drowned-surface weathering transformer")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def patch_source(source: str) -> str:
@@ -74,13 +87,26 @@ def main() -> None:
         return
     if args.folia is None:
         parser.error("folia worktree is required unless --self-test is used")
+
     self_test()
     path = args.folia.resolve() / HELPER_REL
     if not path.is_file():
         fail(f"NeverOverworldFlood helper not found: {path}")
-    path.write_text(patch_source(path.read_text(encoding="utf-8")), encoding="utf-8")
+
+    text = patch_source(path.read_text(encoding="utf-8"))
+
+    # R4: the same LIGHT-barrier pass now also ages the former land surface.
+    # Keeping this chained to the existing ecology transformer guarantees the
+    # new behaviour is applied by every existing build/QA workflow without a
+    # second shell-level patch hook.
+    weather = load_weather_module()
+    weather.self_test()
+    text = weather.patch_source(text)
+
+    path.write_text(text, encoding="utf-8")
     print("[NeverFolia][NeverOverworld flood ecology] flooded vegetation/rail cleanup applied")
     print("  removes submerged logs, leaves, rails, cane, lily pads and giant mushroom blocks")
+    print("  R4 drowned surface: living topsoil is weathered into sediment/mineral patches")
     print(f"  helper: {path}")
 
 
