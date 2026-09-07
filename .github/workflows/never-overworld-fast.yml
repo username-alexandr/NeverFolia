@@ -87,6 +87,9 @@ jobs:
       - name: Self-test NeverOverworld flooded ecology cleanup
         run: python3 ./scripts/harden-never-overworld-flood-ecology.py --self-test
 
+      - name: Self-test NeverOverworld drowned surface NBT audit
+        run: python3 ./scripts/audit-never-overworld-drowned-surface.py --self-test
+
       - name: Self-test NeverOverworld shoreline flora relocation
         run: python3 ./scripts/adapt-never-overworld-flood-shoreline-flora.py --self-test
 
