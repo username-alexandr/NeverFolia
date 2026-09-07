@@ -16,6 +16,12 @@ METHODS = r'''    // NEVERFOLIA: drowned surface weathering
     // into coherent patches of sediment and exposed substrate. This deliberately
     // does not touch structure blocks: only vanilla natural soil/snow/moss states
     // are eligible, and every read/write remains inside the owning chunk.
+    //
+    // Do not use OCEAN_FLOOR_WG here. The LIGHT flood mutates the final generated
+    // volume after FEATURES and the cached worldgen heightmap is not guaranteed to
+    // describe the first actual substrate under the new Y=128 water column. Scan
+    // the owning column itself so stepped slopes and former land are handled from
+    // the exact post-flood block state that will be persisted to NBT.
     private static void weatherSubmergedSurface(
         final ChunkAccess chunk,
         final int minY,
@@ -24,40 +30,60 @@ METHODS = r'''    // NEVERFOLIA: drowned surface weathering
         final ChunkPos chunkPos = chunk.getPos();
         final int minX = chunkPos.getMinBlockX();
         final int minZ = chunkPos.getMinBlockZ();
-        final BlockPos.MutableBlockPos surface = new BlockPos.MutableBlockPos();
-        final BlockPos.MutableBlockPos above = new BlockPos.MutableBlockPos();
+        final int scanBottom = Math.max(minY, -96);
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final BlockPos.MutableBlockPos floodPlane = new BlockPos.MutableBlockPos();
 
         for (int localZ = 0; localZ < 16; ++localZ) {
             for (int localX = 0; localX < 16; ++localX) {
-                // Heightmaps store the first free Y above the ocean floor block.
-                final int surfaceY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ) - 1;
-                if (surfaceY < minY || surfaceY >= maxY) {
+                // Islets and surviving dry terrain occupy the flood plane itself;
+                // only columns whose final Y=128 block is source water are drowned.
+                floodPlane.set(minX + localX, maxY, minZ + localZ);
+                if (!chunk.getBlockState(floodPlane).is(Blocks.WATER)) {
                     continue;
                 }
 
-                surface.set(minX + localX, surfaceY, minZ + localZ);
-                above.set(minX + localX, surfaceY + 1, minZ + localZ);
-                if (!chunk.getBlockState(above).is(Blocks.WATER)) {
-                    continue;
-                }
+                for (int y = maxY - 1; y >= scanBottom; --y) {
+                    pos.set(minX + localX, y, minZ + localZ);
+                    final BlockState original = chunk.getBlockState(pos);
 
-                final BlockState original = chunk.getBlockState(surface);
-                if (!isWeatherableFloodedSurface(original)) {
-                    continue;
-                }
+                    if (isDrownedSurfaceOverlay(original)) {
+                        continue;
+                    }
 
-                final int waterDepth = maxY - surfaceY;
-                final BlockState weathered = drownedSurfaceState(
-                    minX + localX,
-                    surfaceY,
-                    minZ + localZ,
-                    waterDepth
-                );
-                if (weathered != original) {
-                    chunk.setBlockState(surface, weathered, 0);
+                    // The first non-water/non-overlay block is the real persisted
+                    // drowned substrate. Never search through a structure or rock
+                    // layer to alter blocks hidden below it.
+                    if (!isWeatherableFloodedSurface(original)) {
+                        break;
+                    }
+
+                    final int waterDepth = maxY - y;
+                    final BlockState weathered = drownedSurfaceState(
+                        minX + localX,
+                        y,
+                        minZ + localZ,
+                        waterDepth
+                    );
+                    if (weathered != original) {
+                        chunk.setBlockState(pos, weathered, 0);
+                    }
+                    break;
                 }
             }
         }
+    }
+
+    private static boolean isDrownedSurfaceOverlay(final BlockState state) {
+        return state.isAir()
+            || state.is(Blocks.WATER)
+            || state.is(Blocks.SEAGRASS)
+            || state.is(Blocks.TALL_SEAGRASS)
+            || state.is(Blocks.KELP)
+            || state.is(Blocks.KELP_PLANT)
+            || state.is(Blocks.SEA_PICKLE)
+            || state.is(Blocks.BUBBLE_COLUMN)
+            || state.is(Blocks.SUGAR_CANE);
     }
 
     private static boolean isWeatherableFloodedSurface(final BlockState state) {
@@ -140,10 +166,15 @@ def patch_source(source: str) -> str:
     required = (
         MARKER,
         "weatherSubmergedSurface(chunk, minY, FLOOD_LEVEL)",
-        "Heightmap.Types.OCEAN_FLOOR_WG",
+        "scanBottom = Math.max(minY, -96)",
+        "isDrownedSurfaceOverlay",
+        "Blocks.SEAGRASS",
+        "Blocks.KELP",
+        "Blocks.SEA_PICKLE",
         "Blocks.GRASS_BLOCK",
         "Blocks.DIRT",
         "Blocks.COARSE_DIRT",
+        "Blocks.ROOTED_DIRT",
         "Blocks.MUD",
         "Blocks.GRAVEL",
         "Blocks.SAND",
@@ -159,6 +190,8 @@ def patch_source(source: str) -> str:
     missing = [marker for marker in required if marker not in source]
     if missing:
         fail(f"patched helper missing markers: {missing}")
+    if "Heightmap.Types.OCEAN_FLOOR_WG" in source[source.index(MARKER):source.index(METHOD_ANCHOR)]:
+        fail("drowned weathering must not depend on the post-flood OCEAN_FLOOR_WG heightmap")
     return source
 
 
@@ -179,10 +212,15 @@ def self_test() -> None:
         fail("SELF-TEST: weathering marker count drifted")
     if patched.index("weatherSubmergedSurface(chunk, minY, FLOOD_LEVEL)") < patched.index("floodSurfaceConnectedVolume"):
         fail("SELF-TEST: submerged surface weathering must run after flood")
+    if "Heightmap.Types.OCEAN_FLOOR_WG" in patched:
+        fail("SELF-TEST: stale heightmap dependency survived")
     for material in ("Blocks.MUD", "Blocks.GRAVEL", "Blocks.SAND", "Blocks.CLAY", "Blocks.STONE"):
         if material not in patched:
             fail(f"SELF-TEST: missing substrate material {material}")
-    print("[NeverFolia][NeverOverworld drowned surface] SELF-TEST OK")
+    for overlay in ("Blocks.SEAGRASS", "Blocks.KELP", "Blocks.SEA_PICKLE"):
+        if overlay not in patched:
+            fail(f"SELF-TEST: aquatic overlay skip missing {overlay}")
+    print("[NeverFolia][NeverOverworld drowned surface] FINAL-COLUMN SCAN SELF-TEST OK")
 
 
 def main() -> None:
@@ -202,10 +240,11 @@ def main() -> None:
     if not helper.is_file():
         fail(f"NeverOverworldFlood helper not found: {helper}")
     helper.write_text(patch_source(helper.read_text(encoding="utf-8")), encoding="utf-8")
-    print("[NeverFolia][NeverOverworld drowned surface] drowned surface weathering applied")
-    print("  living topsoil: grass/podzol/mycelium/path/moss/snow no longer survives underwater")
+    print("[NeverFolia][NeverOverworld drowned surface] final-column drowned surface weathering applied")
+    print("  detection: scans final Y=128 flooded columns instead of cached worldgen heightmaps")
+    print("  aquatic overlays: seagrass/kelp/sea-pickle are skipped while resolving substrate")
+    print("  living topsoil: grass/podzol/mycelium/path/moss/snow/rooted dirt cannot remain as drowned floor")
     print("  substrate: coherent dirt/coarse-dirt/mud/gravel/sand/clay/stone/andesite patches")
-    print("  depth: deeper flooded shelves bias toward sediment and exposed mineral substrate")
     print("  ownership: all reads/writes remain inside the owning chunk")
     print(f"  helper: {helper}")
 
