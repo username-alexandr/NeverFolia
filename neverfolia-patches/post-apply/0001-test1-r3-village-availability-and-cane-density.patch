@@ -1,0 +1,76 @@
+diff --git a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java
+--- a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java
++++ b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java
+@@ -268,7 +268,7 @@ final class NeverOverworldVanillaFastLocate {
+             return 40;
+         }
+         if (id.startsWith("minecraft:village_")) {
+-            return 48;
++            return 32;
+         }
+         if ("minecraft:pillager_outpost".equals(id)) {
+             return 24;
+@@ -284,10 +284,15 @@ final class NeverOverworldVanillaFastLocate {
+     }
+ 
+     private static int minDrySamples(final String id) {
+-        if (id.startsWith("minecraft:village_") || "minecraft:pillager_outpost".equals(id)) {
+-            // Flooded-world settlements may touch the shoreline, but their core
+-            // and a strong majority of the sampled footprint must remain dry.
++        if (id.startsWith("minecraft:village_")) {
++            // Villages are common gameplay anchors. In the flooded world require
++            // a dry centre plus a simple majority of the 3x3 footprint so they
++            // can occupy practical islands and broad shorelines without becoming
++            // fully submerged settlements.
++            return 5;
++        }
++        if ("minecraft:pillager_outpost".equals(id)) {
++            // Outposts stay more selective than villages.
+             return 7;
+         }
+         // Compact monuments and mansions stay fully above the Y=128 flood plane.
+diff --git a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java
+--- a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java
++++ b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java
+@@ -113,7 +113,7 @@ final class NeverOverworldVanillaStructurePolicy {
+             return 40;
+         }
+         if (id.startsWith("minecraft:village_")) {
+-            return 48;
++            return 32;
+         }
+         if ("minecraft:pillager_outpost".equals(id)) {
+             return 24;
+@@ -129,10 +129,15 @@ final class NeverOverworldVanillaStructurePolicy {
+     }
+ 
+     private static int minDrySamples(final String id) {
+-        if (id.startsWith("minecraft:village_") || "minecraft:pillager_outpost".equals(id)) {
+-            // Flooded-world settlements may touch the shoreline, but their core
+-            // and a strong majority of the sampled footprint must remain dry.
++        if (id.startsWith("minecraft:village_")) {
++            // Keep generation in lockstep with predictive locate: dry centre plus
++            // a majority-dry 3x3 footprint is enough for flooded-world villages.
++            return 5;
++        }
++        if ("minecraft:pillager_outpost".equals(id)) {
++            // Outposts stay more selective than villages.
+             return 7;
+         }
+         // Compact monuments and mansions stay fully above the Y=128 flood plane.
+diff --git a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java
+--- a/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java
++++ b/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java
+@@ -292,9 +292,10 @@ final class NeverOverworldFlood {
+         final int minZ
+     ) {
+         final long chunkHash = shorelineHash(chunk.getPos(), 0x7C7C);
+-        // Approximately one fallback hummock per four eligible river/swamp chunks.
++        // Keep emergency cane banks visibly sparse. A 1/4 fallback rate produced
++        // artificial isolated dirt/cane pillars across open flooded areas.
+         // Natural relocated/reseeded cane always wins and bypasses this path.
+-        if (Math.floorMod(chunkHash, 4L) != 0L) {
++        if (Math.floorMod(chunkHash, 16L) != 0L) {
+             return;
+         }
+ 
