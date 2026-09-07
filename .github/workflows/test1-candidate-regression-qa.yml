@@ -8,6 +8,7 @@ on:
       - completed
     branches:
       - wip/test1-field-fixes-candidate
+      - wip/neverfolia-test1-r4-candidate
 
 permissions:
   actions: read
