@@ -42,6 +42,8 @@ echo "[NeverFolia] Rejecting submerged vanilla dry-land structure starts"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-flooded-surface-structure-policy.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Restoring practical flooded-world vanilla structure availability"
 python3 "${ROOT_DIR}/scripts/tune-never-overworld-flooded-structure-availability.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Relaxing flooded village availability for TEST1 R3"
+python3 "${ROOT_DIR}/scripts/tune-never-overworld-village-availability-r3.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Bounding flooded vanilla locate cost on the Folia global region"
 python3 "${ROOT_DIR}/scripts/optimize-never-overworld-vanilla-fast-locate-policy.py" "${FOLIA_DIR}"
 
