@@ -305,5 +305,16 @@ python3 "${ROOT_DIR}/scripts/audit-never-overworld-cave-topology.py" \
   --max-y -96 \
   --output "${ROOT_DIR}/artifacts/NeverOverworld-cave-topology-audit.json"
 
+# R4 regression gate for the field report where the old grass-covered land
+# surface remained visible on the drowned ocean floor. Persisted NBT must have
+# no living topsoil or giant-mushroom remains under the Y=128 flood and must
+# expose a heterogeneous sediment/mineral substrate instead.
+python3 "${ROOT_DIR}/scripts/audit-never-overworld-drowned-surface.py" \
+  --world "${WORLD_DIR}" \
+  --max-chunks 1024 \
+  --flood-level 128 \
+  --min-scan-y -96 \
+  --output "${ROOT_DIR}/artifacts/NeverOverworld-drowned-surface-audit.json"
+
 echo '[NeverFolia][NeverOverworld CI] smoke test passed.'
 tail -n 100 "${LOG}"
