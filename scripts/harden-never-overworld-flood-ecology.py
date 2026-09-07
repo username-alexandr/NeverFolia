@@ -74,6 +74,7 @@ def self_test() -> None:
     ):
         if patched.count(marker) != 1:
             fail(f"SELF-TEST: cleanup marker count drifted for {marker}")
+    load_weather_module().self_test()
     print("[NeverFolia][NeverOverworld flood ecology] SELF-TEST OK")
 
 
@@ -100,7 +101,6 @@ def main() -> None:
     # new behaviour is applied by every existing build/QA workflow without a
     # second shell-level patch hook.
     weather = load_weather_module()
-    weather.self_test()
     text = weather.patch_source(text)
 
     path.write_text(text, encoding="utf-8")
