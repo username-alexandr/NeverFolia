@@ -8,13 +8,7 @@ from pathlib import Path
 FAST_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java')
 POLICY_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java')
 
-FAST_3X3 = '''        final int radius = sampleRadius(id);
-        final int centerX = chunkPos.getMiddleBlockX();
-        final int centerZ = chunkPos.getMiddleBlockZ();
-        if (preliminarySurfaceY(state, centerX, centerZ) < MIN_DRY_BASE_HEIGHT) {
-            return false;
-        }
-
+FAST_OPT_3X3 = '''        final int radius = sampleRadius(id);
         int drySamples = 1;
         final int[] offsets = {-radius, 0, radius};
         for (final int dx : offsets) {
@@ -30,19 +24,18 @@ FAST_3X3 = '''        final int radius = sampleRadius(id);
         return drySamples >= minDrySamples(id);
 '''
 
-FAST_DENSE = '''        final int radius = sampleRadius(id);
-        final int centerX = chunkPos.getMiddleBlockX();
-        final int centerZ = chunkPos.getMiddleBlockZ();
-
+FAST_OPT_DENSE = '''        final int radius = sampleRadius(id);
         if (id.startsWith("minecraft:village_")) {
-            // R7 flooded villages use a dense 5x5 predictive envelope instead
-            // of the old sparse 3x3 corners/centre check. The 25 probes span
-            // the full representative radius and reject narrow shore channels
-            // that can pass between sparse samples.
+            // The center was already proven dry above and reused for the biome
+            // check. Probe the remaining 24 points in a 5x5 envelope so fast
+            // locate and real generation reject the same shoreline gaps.
             final int halfRadius = Math.max(1, radius / 2);
             final int[] villageOffsets = {-radius, -halfRadius, 0, halfRadius, radius};
             for (final int dx : villageOffsets) {
                 for (final int dz : villageOffsets) {
+                    if (dx == 0 && dz == 0) {
+                        continue;
+                    }
                     if (preliminarySurfaceY(state, centerX + dx, centerZ + dz) < MIN_DRY_BASE_HEIGHT) {
                         return false;
                     }
@@ -51,9 +44,6 @@ FAST_DENSE = '''        final int radius = sampleRadius(id);
             return true;
         }
 
-        if (preliminarySurfaceY(state, centerX, centerZ) < MIN_DRY_BASE_HEIGHT) {
-            return false;
-        }
         int drySamples = 1;
         final int[] offsets = {-radius, 0, radius};
         for (final int dx : offsets) {
@@ -109,9 +99,8 @@ POLICY_DENSE = '''        final int radius = sampleRadius(id);
         final int centerZ = chunkPos.getMiddleBlockZ();
 
         if (id.startsWith("minecraft:village_")) {
-            // Keep generation policy byte-for-byte equivalent in semantics to
-            // predictive fast locate: every point in a 5x5 envelope must be
-            // above the Y=128 flood plane before a village start is accepted.
+            // Dense generation-side contract: all 25 points across the village
+            // representative footprint must remain above the Y=128 flood plane.
             final int halfRadius = Math.max(1, radius / 2);
             final int[] villageOffsets = {-radius, -halfRadius, 0, halfRadius, radius};
             for (final int dx : villageOffsets) {
@@ -167,55 +156,80 @@ def fail(message: str) -> None:
     raise SystemExit(f'[NeverFolia][R7 dense village envelope] {message}')
 
 
-def tune(text: str, *, fast: bool, label: str) -> str:
-    old = FAST_3X3 if fast else POLICY_3X3
-    new = FAST_DENSE if fast else POLICY_DENSE
-    if text.count(new) == 1 and text.count(old) == 0:
-        validate(text, fast=fast, label=label)
+def tune_fast(text: str) -> str:
+    if text.count(FAST_OPT_DENSE) == 1 and text.count(FAST_OPT_3X3) == 0:
+        validate_fast(text)
         return text
-    if text.count(old) != 1 or text.count(new) != 0:
-        fail(f'{label}: expected one sparse 3x3 footprint; old={text.count(old)} new={text.count(new)}')
-    text = text.replace(old, new, 1)
-    validate(text, fast=fast, label=label)
+    if text.count(FAST_OPT_3X3) != 1 or text.count(FAST_OPT_DENSE) != 0:
+        fail(
+            'fast-locate: expected the post-optimization sparse 3x3 footprint exactly once; '
+            f'sparse={text.count(FAST_OPT_3X3)} dense={text.count(FAST_OPT_DENSE)}'
+        )
+    text = text.replace(FAST_OPT_3X3, FAST_OPT_DENSE, 1)
+    validate_fast(text)
     return text
 
 
-def validate(text: str, *, fast: bool, label: str) -> None:
+def tune_policy(text: str) -> str:
+    if text.count(POLICY_DENSE) == 1 and text.count(POLICY_3X3) == 0:
+        validate_policy(text)
+        return text
+    if text.count(POLICY_3X3) != 1 or text.count(POLICY_DENSE) != 0:
+        fail(
+            'generation-policy: expected sparse 3x3 footprint exactly once; '
+            f'sparse={text.count(POLICY_3X3)} dense={text.count(POLICY_DENSE)}'
+        )
+    text = text.replace(POLICY_3X3, POLICY_DENSE, 1)
+    validate_policy(text)
+    return text
+
+
+def validate_fast(text: str) -> None:
     required = (
+        'final int centerSurfaceY = preliminarySurfaceY(state, centerX, centerZ);',
         'if (id.startsWith("minecraft:village_"))',
         'final int halfRadius = Math.max(1, radius / 2);',
         'final int[] villageOffsets = {-radius, -halfRadius, 0, halfRadius, radius};',
-        'for (final int dx : villageOffsets)',
-        'for (final int dz : villageOffsets)',
+        'preliminarySurfaceY(state, centerX + dx, centerZ + dz) < MIN_DRY_BASE_HEIGHT',
         'return drySamples >= minDrySamples(id);',
     )
     missing = [marker for marker in required if marker not in text]
     if missing:
-        fail(f'{label}: dense village markers missing: {missing}')
-    if fast:
-        if 'preliminarySurfaceY(state, centerX + dx, centerZ + dz) < MIN_DRY_BASE_HEIGHT' not in text:
-            fail(f'{label}: predictive 5x5 surface probe missing')
-    else:
-        if 'Heightmap.Types.WORLD_SURFACE_WG' not in text:
-            fail(f'{label}: generation 5x5 WORLD_SURFACE_WG probe missing')
-        if 'if (base < MIN_DRY_BASE_HEIGHT)' not in text:
-            fail(f'{label}: generation 5x5 rejection branch missing')
+        fail(f'fast-locate: dense markers missing: {missing}')
+    if text.count(FAST_OPT_DENSE) != 1:
+        fail('fast-locate: dense footprint block count mismatch')
+
+
+def validate_policy(text: str) -> None:
+    required = (
+        'if (id.startsWith("minecraft:village_"))',
+        'final int halfRadius = Math.max(1, radius / 2);',
+        'final int[] villageOffsets = {-radius, -halfRadius, 0, halfRadius, radius};',
+        'Heightmap.Types.WORLD_SURFACE_WG',
+        'if (base < MIN_DRY_BASE_HEIGHT)',
+        'return drySamples >= minDrySamples(id);',
+    )
+    missing = [marker for marker in required if marker not in text]
+    if missing:
+        fail(f'generation-policy: dense markers missing: {missing}')
+    if text.count(POLICY_DENSE) != 1:
+        fail('generation-policy: dense footprint block count mismatch')
 
 
 def apply(root: Path) -> None:
-    for label, rel, fast in (
-        ('fast-locate', FAST_REL, True),
-        ('generation-policy', POLICY_REL, False),
-    ):
-        path = root / rel
-        if not path.is_file():
-            fail(f'{label}: helper not found: {path}')
-        text = path.read_text(encoding='utf-8')
-        path.write_text(tune(text, fast=fast, label=label), encoding='utf-8')
+    fast = root / FAST_REL
+    policy = root / POLICY_REL
+    if not fast.is_file():
+        fail(f'fast-locate helper not found: {fast}')
+    if not policy.is_file():
+        fail(f'generation-policy helper not found: {policy}')
+    fast.write_text(tune_fast(fast.read_text(encoding='utf-8')), encoding='utf-8')
+    policy.write_text(tune_policy(policy.read_text(encoding='utf-8')), encoding='utf-8')
     print('[NeverFolia][R7 dense village envelope] DENSE 5x5 DRY VILLAGE PREFILTER APPLIED')
-    print('  village samples: 25/25 dry')
-    print('  village radius: inherited from sampleRadius (R7 candidate: 48)')
-    print('  non-village dry-land structures keep their existing 3x3 policy')
+    print('  fast locate: dry center reused + 24 additional probes')
+    print('  generation policy: 25/25 probes dry')
+    print('  representative radius: inherited from sampleRadius (R7: 48)')
+    print('  non-village structures retain existing 3x3 policy')
     print('  persisted Jigsaw bbox zero-water audit remains final authority')
 
 
@@ -223,7 +237,11 @@ def fast_fixture() -> str:
     return f'''final class NeverOverworldVanillaFastLocate {{
     private static final int MIN_DRY_BASE_HEIGHT = 129;
     boolean test(Object state, Object chunkPos, String id) {{
-{FAST_3X3.rstrip()}
+        final int centerX = chunkPos.getMiddleBlockX();
+        final int centerZ = chunkPos.getMiddleBlockZ();
+        final int centerSurfaceY = preliminarySurfaceY(state, centerX, centerZ);
+        if (centerSurfaceY < MIN_DRY_BASE_HEIGHT) return false;
+{FAST_OPT_3X3.rstrip()}
     }}
     private static int sampleRadius(String id) {{ return 48; }}
     private static int minDrySamples(String id) {{ return 9; }}
@@ -247,20 +265,20 @@ def policy_fixture() -> str:
 def self_test() -> None:
     with tempfile.TemporaryDirectory(prefix='nr-r7-dense-village-') as tmp:
         root = Path(tmp)
-        pairs = (
-            (FAST_REL, fast_fixture(), True, 'fast-locate'),
-            (POLICY_REL, policy_fixture(), False, 'generation-policy'),
-        )
-        for rel, fixture, _, _ in pairs:
-            path = root / rel
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(fixture, encoding='utf-8')
-        for rel, _, fast, label in pairs:
-            path = root / rel
-            tuned = tune(path.read_text(encoding='utf-8'), fast=fast, label=label)
-            validate(tuned, fast=fast, label=label)
-            if tune(tuned, fast=fast, label=label) != tuned:
-                fail(f'SELF-TEST {label}: reapply changed output')
+        fast = root / FAST_REL
+        policy = root / POLICY_REL
+        fast.parent.mkdir(parents=True, exist_ok=True)
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        fast.write_text(fast_fixture(), encoding='utf-8')
+        policy.write_text(policy_fixture(), encoding='utf-8')
+        fast_out = tune_fast(fast.read_text(encoding='utf-8'))
+        policy_out = tune_policy(policy.read_text(encoding='utf-8'))
+        validate_fast(fast_out)
+        validate_policy(policy_out)
+        if tune_fast(fast_out) != fast_out:
+            fail('SELF-TEST fast-locate: idempotent reapply changed output')
+        if tune_policy(policy_out) != policy_out:
+            fail('SELF-TEST generation-policy: idempotent reapply changed output')
     print('[NeverFolia][R7 dense village envelope] SELF-TEST OK')
 
 
