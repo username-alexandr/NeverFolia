@@ -60,6 +60,15 @@ jobs:
       - name: Self-test NeverOverworld bounded flooded vanilla locate policy
         run: python3 ./scripts/optimize-never-overworld-vanilla-fast-locate-policy.py --self-test
 
+      - name: Self-test NeverOverworld dense 5x5 village envelope
+        run: python3 ./scripts/apply-never-overworld-dense-village-dry-envelope.py --self-test
+
+      - name: Self-test NeverOverworld dense village radius32 candidate
+        run: python3 ./scripts/tune-never-overworld-dense-village-radius32.py --self-test
+
+      - name: Self-test NeverOverworld opt-in village locate diagnostics
+        run: python3 ./scripts/instrument-never-overworld-village-locate-debug.py --self-test
+
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
