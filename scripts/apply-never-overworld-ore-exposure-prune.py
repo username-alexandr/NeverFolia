@@ -14,6 +14,7 @@ HELPER = r'''package net.minecraft.world.level.chunk;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -184,6 +185,7 @@ def self_test() -> None:
     if "EXPOSED_RETAIN_PERCENT = 8" not in HELPER: fail("SELF-TEST: exposed retain chance drifted")
     if "section.maybeHas" not in HELPER: fail("SELF-TEST: ore-free section skip missing")
     if "Chunk-edge ores" not in HELPER: fail("SELF-TEST: neighbour-ownership guard missing")
+    if "import net.minecraft.world.level.ChunkPos;" not in HELPER: fail("SELF-TEST: ChunkPos import missing")
     print("[NeverFolia][NeverOverworld ore exposure r6] SELF-TEST OK")
 
 
