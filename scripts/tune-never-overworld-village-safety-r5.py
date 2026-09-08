@@ -9,7 +9,7 @@ from pathlib import Path
 FAST_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java')
 POLICY_REL = Path('folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java')
 
-R5_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
+R7_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
             return 48;
         }
 '''
@@ -21,33 +21,29 @@ RADIUS16 = '''        if (id.startsWith("minecraft:village_")) {
             return 16;
         }
 '''
-R6_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
+RADIUS8 = '''        if (id.startsWith("minecraft:village_")) {
             return 8;
         }
 '''
 
-# Keep the strict 9/9 dry contract. Runtime QA showed radius=32 was
-# pathologically sparse and radius=16 recovered desert/savanna/snowy villages,
-# but plains and taiga still had no candidate in the bounded predictive scan.
-# R6 radius8 therefore narrows only the cheap representative prefilter footprint
-# to +/-8 blocks. This is NOT the final flood-safety decision: persisted-
-# structure QA remains authoritative and rejects any generated village whose
-# real bbox contains water at Y=128.
+# R7 radius48 restores the earlier strict representative footprint now that
+# village variants no longer compete in one weighted structure set. Keep the
+# strict 9/9 dry gate and require persisted bbox zero-water QA as final authority.
 VILLAGE_DRY_9 = re.compile(
     r'if\s*\(id\.startsWith\("minecraft:village_"\)\)\s*\{[\s\S]{0,900}?return\s+9;\s*\}'
 )
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f'[NeverFolia][TEST1 R6 village safety] {message}')
+    raise SystemExit(f'[NeverFolia][TEST1 R7 radius48 village safety] {message}')
 
 
 def validate(text: str, label: str) -> None:
-    if text.count(R6_RADIUS) != 1:
-        fail(f'{label}: expected exactly one village radius=8 block, got {text.count(R6_RADIUS)}')
-    for obsolete_name, obsolete in (('48', R5_RADIUS), ('32', RADIUS32), ('16', RADIUS16)):
+    if text.count(R7_RADIUS) != 1:
+        fail(f'{label}: expected exactly one village radius=48 block, got {text.count(R7_RADIUS)}')
+    for obsolete_name, obsolete in (('32', RADIUS32), ('16', RADIUS16), ('8', RADIUS8)):
         if obsolete in text:
-            fail(f'{label}: obsolete village radius={obsolete_name} block survived radius8 tuning')
+            fail(f'{label}: obsolete village radius={obsolete_name} block survived radius48 tuning')
     if VILLAGE_DRY_9.search(text) is None:
         fail(f'{label}: village dry gate is not strict 9/9')
     required = (
@@ -60,20 +56,20 @@ def validate(text: str, label: str) -> None:
 
 
 def tune(text: str, label: str) -> str:
-    if text.count(R6_RADIUS) == 1 and all(source not in text for source in (R5_RADIUS, RADIUS32, RADIUS16)):
+    if text.count(R7_RADIUS) == 1 and all(source not in text for source in (RADIUS32, RADIUS16, RADIUS8)):
         validate(text, label)
         return text
 
-    sources = [source for source in (R5_RADIUS, RADIUS32, RADIUS16) if text.count(source) == 1]
-    if len(sources) != 1 or text.count(R6_RADIUS) != 0:
+    sources = [source for source in (RADIUS32, RADIUS16, RADIUS8) if text.count(source) == 1]
+    if len(sources) != 1 or text.count(R7_RADIUS) != 0:
         fail(
-            f'{label}: expected one radius=48/32/16 source or one already tuned radius=8 block; '
-            f'r48={text.count(R5_RADIUS)} r32={text.count(RADIUS32)} '
-            f'r16={text.count(RADIUS16)} r8={text.count(R6_RADIUS)}'
+            f'{label}: expected one radius=32/16/8 source or one already tuned radius=48 block; '
+            f'r48={text.count(R7_RADIUS)} r32={text.count(RADIUS32)} '
+            f'r16={text.count(RADIUS16)} r8={text.count(RADIUS8)}'
         )
     if VILLAGE_DRY_9.search(text) is None:
-        fail(f'{label}: refusing to narrow the footprint unless the strict 9/9 dry gate is present')
-    text = text.replace(sources[0], R6_RADIUS, 1)
+        fail(f'{label}: refusing radius48 tuning unless the strict 9/9 dry gate is present')
+    text = text.replace(sources[0], R7_RADIUS, 1)
     validate(text, label)
     return text
 
@@ -84,9 +80,10 @@ def apply(root: Path) -> None:
         if not path.is_file():
             fail(f'{label}: helper not found: {path}')
         path.write_text(tune(path.read_text(encoding='utf-8'), label), encoding='utf-8')
-    print('[NeverFolia][TEST1 R6 village safety] compact radius8 dry village contract applied/verified')
-    print('  village representative radius: 8 blocks')
+    print('[NeverFolia][TEST1 R7 radius48 village safety] strict radius48 dry village contract applied/verified')
+    print('  village representative radius: 48 blocks')
     print('  village dry gate: dry centre + 9/9 dry samples')
+    print('  independent village structure sets remove weighted-slot starvation')
     print('  actual persisted bbox must still pass zero-water QA at Y=128')
 
 
@@ -110,7 +107,6 @@ def fixture(class_name: str, radius: int) -> str:
 
     private static int minDrySamples(final String id) {{
         if (id.startsWith("minecraft:village_")) {{
-            // Strict flooded-world village safety.
             return 9;
         }}
         if ("minecraft:pillager_outpost".equals(id)) {{
@@ -123,7 +119,7 @@ def fixture(class_name: str, radius: int) -> str:
 
 
 def self_test() -> None:
-    with tempfile.TemporaryDirectory(prefix='nr-r6-village-safety-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='nr-r7-radius48-village-safety-') as tmp:
         root = Path(tmp)
         pairs = ((FAST_REL, 'NeverOverworldVanillaFastLocate'), (POLICY_REL, 'NeverOverworldVanillaStructurePolicy'))
         for rel, cls in pairs:
@@ -137,14 +133,13 @@ def self_test() -> None:
             if tune(text, label) != text:
                 fail(f'SELF-TEST {label}: idempotent reapply changed output')
 
-        # Regression coverage for rejected intermediate scarcity profiles.
-        for source_radius in (32, 16):
+        for source_radius in (32, 16, 8):
             for rel, cls in pairs:
                 path = root / rel
                 path.write_text(fixture(cls, source_radius), encoding='utf-8')
-                compacted = tune(path.read_text(encoding='utf-8'), rel.name)
-                validate(compacted, rel.name)
-    print('[NeverFolia][TEST1 R6 village safety] SELF-TEST OK')
+                tuned = tune(path.read_text(encoding='utf-8'), rel.name)
+                validate(tuned, rel.name)
+    print('[NeverFolia][TEST1 R7 radius48 village safety] SELF-TEST OK')
 
 
 def main() -> None:
