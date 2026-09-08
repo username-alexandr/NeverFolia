@@ -16,14 +16,18 @@ V3 = {
     "DIAMOND": "        DIAMOND(0x66F7011223344556L, 48, 0.48D, 0.25D, -496, -160, 18.0D, 44.0D, 0.90D, 1.50D, 0.42D, 0.64D, Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),",
 }
 
+# Calibrated from the 230-common-FULL-chunk R6 true-vanilla comparison at
+# 1867ce4. Cave-facing ores still retain only 8% after CARVERS; these buried
+# attempt frequencies restore total persisted density to ~0.95x vanilla for
+# every globally calibrated resource ore without re-exposing cave walls.
 R6 = {
-    "COAL": V3["COAL"].replace(", 0.70D, 0.12D,", ", 0.55D, 0.12D,"),
-    "IRON": V3["IRON"].replace(", 0.41D, 0.20D,", ", 0.32D, 0.20D,"),
-    "COPPER": V3["COPPER"].replace(", 0.63D, 0.20D,", ", 0.50D, 0.20D,"),
-    "GOLD": V3["GOLD"].replace(", 0.66D, 0.32D,", ", 0.52D, 0.32D,"),
-    "REDSTONE": V3["REDSTONE"].replace(", 0.47D, 0.26D,", ", 0.37D, 0.26D,"),
-    "LAPIS": V3["LAPIS"].replace(", 0.52D, 0.28D,", ", 0.41D, 0.28D,"),
-    "DIAMOND": V3["DIAMOND"].replace(", 0.48D, 0.25D,", ", 0.38D, 0.25D,"),
+    "COAL": V3["COAL"].replace(", 0.70D, 0.12D,", ", 0.71D, 0.12D,"),
+    "IRON": V3["IRON"].replace(", 0.41D, 0.20D,", ", 0.35D, 0.20D,"),
+    "COPPER": V3["COPPER"].replace(", 0.63D, 0.20D,", ", 0.58D, 0.20D,"),
+    "GOLD": V3["GOLD"].replace(", 0.66D, 0.32D,", ", 0.65D, 0.32D,"),
+    "REDSTONE": V3["REDSTONE"].replace(", 0.47D, 0.26D,", ", 0.44D, 0.26D,"),
+    "LAPIS": V3["LAPIS"].replace(", 0.52D, 0.28D,", ", 0.46D, 0.28D,"),
+    "DIAMOND": V3["DIAMOND"].replace(", 0.48D, 0.25D,", ", 0.39D, 0.25D,"),
 }
 
 
@@ -52,10 +56,18 @@ def self_test() -> None:
     for kind in R6:
         if R6[kind] not in out:
             fail(f"SELF-TEST: {kind} missing")
-    ratios = {"COAL":0.55/0.70,"IRON":0.32/0.41,"COPPER":0.50/0.63,"GOLD":0.52/0.66,"REDSTONE":0.37/0.47,"LAPIS":0.41/0.52,"DIAMOND":0.38/0.48}
-    if not all(0.77 <= r <= 0.80 for r in ratios.values()):
-        fail(f"SELF-TEST: frequency reduction drifted: {ratios}")
-    print("[NeverFolia][NeverOverworld ore field-r6] SELF-TEST OK", ratios)
+    scales = {
+        "COAL":0.71/0.70,
+        "IRON":0.35/0.41,
+        "COPPER":0.58/0.63,
+        "GOLD":0.65/0.66,
+        "REDSTONE":0.44/0.47,
+        "LAPIS":0.46/0.52,
+        "DIAMOND":0.39/0.48,
+    }
+    if not all(0.80 <= scale <= 1.02 for scale in scales.values()):
+        fail(f"SELF-TEST: calibrated frequency scale drifted: {scales}")
+    print("[NeverFolia][NeverOverworld ore field-r6] SELF-TEST OK", scales)
 
 
 def main() -> None:
@@ -72,7 +84,7 @@ def main() -> None:
     if not helper.is_file():
         fail(f"helper missing: {helper}")
     helper.write_text(patch(helper.read_text(encoding="utf-8")),encoding="utf-8")
-    print("[NeverFolia][NeverOverworld ore field-r6] buried deep ore frequency reduced")
+    print("[NeverFolia][NeverOverworld ore field-r6] buried deep ore frequency calibrated for ~0.95x vanilla total density")
 
 
 if __name__ == "__main__":
