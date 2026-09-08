@@ -36,6 +36,7 @@ public final class NeverOverworldOreExposurePruner {
         final int minZ = chunkPos.getMinBlockZ();
         final int maxZ = chunkPos.getMaxBlockZ();
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
 
         // Native deep ores are placed at SURFACE before CARVERS. At CARVERS we
         // finally know the cave faces. Skip whole 16-block sections whose palette
@@ -60,7 +61,7 @@ public final class NeverOverworldOreExposurePruner {
                         final Block host = hostFor(state.getBlock());
                         if (host == null) continue;
                         final int x = minX + localX;
-                        if (!isExposed(chunk, x, y, z, minX, maxX, minZ, maxZ)) continue;
+                        if (!isExposed(chunk, probe, x, y, z, minX, maxX, minZ, maxZ)) continue;
                         if (retain(level.getSeed(), x, y, z)) continue;
                         chunk.setBlockState(pos.set(x, y, z), host.defaultBlockState(), 0);
                     }
@@ -71,6 +72,7 @@ public final class NeverOverworldOreExposurePruner {
 
     private static boolean isExposed(
         final ChunkAccess chunk,
+        final BlockPos.MutableBlockPos probe,
         final int x,
         final int y,
         final int z,
@@ -79,13 +81,13 @@ public final class NeverOverworldOreExposurePruner {
         final int minZ,
         final int maxZ
     ) {
-        if (chunk.getBlockState(x, y - 1, z).isAir() || chunk.getBlockState(x, y + 1, z).isAir()) return true;
+        if (chunk.getBlockState(probe.set(x, y - 1, z)).isAir() || chunk.getBlockState(probe.set(x, y + 1, z)).isAir()) return true;
         // Never read mutable neighbour chunks during generation. Chunk-edge ores
         // are checked vertically and toward owned horizontal neighbours only.
-        if (x > minX && chunk.getBlockState(x - 1, y, z).isAir()) return true;
-        if (x < maxX && chunk.getBlockState(x + 1, y, z).isAir()) return true;
-        if (z > minZ && chunk.getBlockState(x, y, z - 1).isAir()) return true;
-        return z < maxZ && chunk.getBlockState(x, y, z + 1).isAir();
+        if (x > minX && chunk.getBlockState(probe.set(x - 1, y, z)).isAir()) return true;
+        if (x < maxX && chunk.getBlockState(probe.set(x + 1, y, z)).isAir()) return true;
+        if (z > minZ && chunk.getBlockState(probe.set(x, y, z - 1)).isAir()) return true;
+        return z < maxZ && chunk.getBlockState(probe.set(x, y, z + 1)).isAir();
     }
 
     private static Block hostFor(final Block block) {
@@ -186,6 +188,8 @@ def self_test() -> None:
     if "section.maybeHas" not in HELPER: fail("SELF-TEST: ore-free section skip missing")
     if "Chunk-edge ores" not in HELPER: fail("SELF-TEST: neighbour-ownership guard missing")
     if "import net.minecraft.world.level.ChunkPos;" not in HELPER: fail("SELF-TEST: ChunkPos import missing")
+    if "getBlockState(x," in HELPER: fail("SELF-TEST: unsupported coordinate getBlockState overload used")
+    if "getBlockState(probe.set(" not in HELPER: fail("SELF-TEST: BlockPos-based exposure probes missing")
     print("[NeverFolia][NeverOverworld ore exposure r6] SELF-TEST OK")
 
 
