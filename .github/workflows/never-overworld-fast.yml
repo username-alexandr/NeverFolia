@@ -72,6 +72,9 @@ jobs:
       - name: Self-test NeverOverworld opt-in village locate diagnostics
         run: python3 ./scripts/instrument-never-overworld-village-locate-debug.py --self-test
 
+      - name: Self-test NeverOverworld generated Jigsaw bbox village safety
+        run: python3 ./scripts/apply-never-overworld-village-layout-safety.py --self-test
+
       - name: Self-test NeverOverworld mineshaft depth policy
         run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
 
