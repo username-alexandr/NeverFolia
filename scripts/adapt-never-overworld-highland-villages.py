@@ -37,9 +37,9 @@ def transform(payload: bytes) -> bytes:
             fail(f"pack already overrides {path}; merge policy must be reviewed")
         entries[path] = dump({"replace": False, "values": values})
     manifest = json.loads(entries[MANIFEST])
-    manifest["village_surface_policy"] = "strict-dry-highland-r6-compact"
+    manifest["village_surface_policy"] = "strict-dry-highland-r6-radius8"
     manifest["village_dry_samples"] = 9
-    manifest["village_dry_radius"] = 16
+    manifest["village_dry_radius"] = 8
     manifest["village_spacing"] = 34
     manifest["village_highland_biomes"] = EXTRA
     entries[MANIFEST] = dump(manifest)
@@ -59,8 +59,8 @@ def apply_pack(path: Path) -> None:
         temp.replace(path)
     finally:
         temp.unlink(missing_ok=True)
-    print("[NeverFolia][NeverOverworld highland villages] STRICT COMPACT HIGHLAND POLICY APPLIED")
-    print("  dry prefilter: 9/9 samples, radius=16")
+    print("[NeverFolia][NeverOverworld highland villages] STRICT RADIUS8 HIGHLAND POLICY APPLIED")
+    print("  dry prefilter: 9/9 samples, radius=8")
     print("  persisted village bbox zero-water audit remains authoritative")
     print("  structure spacing: vanilla 34")
 
@@ -76,10 +76,10 @@ def self_test() -> None:
             tag = json.loads(z.read(f"data/minecraft/tags/worldgen/biome/has_structure/{name}.json"))
             if tag != {"replace": False, "values": values}:
                 fail(f"SELF-TEST: wrong biome tag for {name}: {tag}")
-    if manifest.get("village_surface_policy") != "strict-dry-highland-r6-compact":
+    if manifest.get("village_surface_policy") != "strict-dry-highland-r6-radius8":
         fail("SELF-TEST: manifest marker missing")
-    if manifest.get("village_dry_samples") != 9 or manifest.get("village_dry_radius") != 16:
-        fail(f"SELF-TEST: compact R6 dry contract mismatch: {manifest}")
+    if manifest.get("village_dry_samples") != 9 or manifest.get("village_dry_radius") != 8:
+        fail(f"SELF-TEST: radius8 R6 dry contract mismatch: {manifest}")
     print("[NeverFolia][NeverOverworld highland villages] SELF-TEST OK")
 
 
