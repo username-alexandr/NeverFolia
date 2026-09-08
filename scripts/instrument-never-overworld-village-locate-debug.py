@@ -70,8 +70,6 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
         final Holder<Structure> structureHolder,
         final String id
     ) {
-        // Swamp huts are flood-adapted at generation time, so they only need a
-        // cheap biome check at the new waterline. Do not evaluate surface density.
         if (SWAMP_HUT.equals(id)) {
             return passesBiomeAtY(generator, state, chunkPos, structureHolder, FLOOD_LEVEL + 1);
         }
@@ -94,8 +92,7 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
         final int radius = sampleRadius(id);
         if (id.startsWith("minecraft:village_")) {
             // Final candidate contract at this stage: dense 5x5, fixed radius32.
-            // Instrument each rejection class without changing behaviour when
-            // -Dneverfolia.debugVillageLocate is absent (the production default).
+            // Debugging is opt-in and does not alter the production decision.
             final int villageRadius = 32;
             final int halfRadius = 16;
             final int[] villageOffsets = {-villageRadius, -halfRadius, 0, halfRadius, villageRadius};
@@ -277,7 +274,7 @@ def validate(text: str) -> None:
     required = (
         DEBUG_MARKER,
         'Boolean.getBoolean("neverfolia.debugVillageLocate")',
-        'reason=",',
+        '+ " reason=" + reason',
         '"CENTER_DRY_REJECT"',
         '"BIOME_REJECT"',
         '"FOOTPRINT_DRY_REJECT"',
@@ -310,6 +307,7 @@ def apply(root: Path) -> None:
 
 def fixture() -> str:
     return r'''package net.minecraft.world.level.chunk;
+import java.util.List;
 import java.util.Set;
 final class NeverOverworldVanillaFastLocate {
     private static final int MAX_CANDIDATE_RINGS = 64;
@@ -319,13 +317,20 @@ final class NeverOverworldVanillaFastLocate {
     private static final Set<String> DRY_LAND_ONLY = Set.of("minecraft:village_plains");
 
     static Object find(Set<String> wantedIds) {
-        final java.util.List<String> sets = java.util.List.of("x");
+        final List<String> sets = List.of("x");
         if (sets.isEmpty()) {
             return null;
         }
         for (int radius = 0; radius <= 1; ++radius) {
         }
         return null;
+    }
+
+    private static List<SetRef> collectRelevantSets(
+        final ChunkGeneratorStructureState state,
+        final Set<String> wantedIds
+    ) {
+        return List.of();
     }
 
     private static boolean passesNeverOverworldPolicy(
@@ -360,6 +365,7 @@ final class NeverOverworldVanillaFastLocate {
     private static int sampleRadius(String id) { return 48; }
     private static int preliminarySurfaceY(Object state, int x, int z) { return 140; }
     private static boolean passesBiomeAtY(Object a, Object b, Object c, Object d, int y) { return true; }
+    private record SetRef() {}
 }
 '''
 
