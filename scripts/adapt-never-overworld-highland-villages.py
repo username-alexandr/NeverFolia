@@ -39,7 +39,7 @@ def transform(payload: bytes) -> bytes:
     manifest = json.loads(entries[MANIFEST])
     manifest["village_surface_policy"] = "strict-dry-highland-r6"
     manifest["village_dry_samples"] = 9
-    manifest["village_dry_radius"] = 48
+    manifest["village_dry_radius"] = 32
     manifest["village_spacing"] = 34
     manifest["village_highland_biomes"] = EXTRA
     entries[MANIFEST] = dump(manifest)
@@ -60,7 +60,7 @@ def apply_pack(path: Path) -> None:
     finally:
         temp.unlink(missing_ok=True)
     print("[NeverFolia][NeverOverworld highland villages] STRICT HIGHLAND POLICY APPLIED")
-    print("  dry prefilter: 9/9 samples, radius=48")
+    print("  dry prefilter: 9/9 samples, radius=32")
     print("  structure spacing: vanilla 34")
 
 
@@ -77,6 +77,8 @@ def self_test() -> None:
                 fail(f"SELF-TEST: wrong biome tag for {name}: {tag}")
     if manifest.get("village_surface_policy") != "strict-dry-highland-r6":
         fail("SELF-TEST: manifest marker missing")
+    if manifest.get("village_dry_samples") != 9 or manifest.get("village_dry_radius") != 32:
+        fail(f"SELF-TEST: strict R6 dry contract mismatch: {manifest}")
     print("[NeverFolia][NeverOverworld highland villages] SELF-TEST OK")
 
 
