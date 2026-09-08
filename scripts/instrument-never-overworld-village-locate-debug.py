@@ -12,6 +12,9 @@ HELPER_REL = Path(
 POLICY_SIG = '    private static boolean passesNeverOverworldPolicy('
 RING_MARKER = '    private static final int MAX_CANDIDATE_RINGS = 64;\n'
 DEBUG_MARKER = '    private static final boolean DEBUG_VILLAGE_LOCATE = Boolean.getBoolean("neverfolia.debugVillageLocate");'
+REACH_MARKER = '            final int villageReach = 96;\n'
+STEP_MARKER = '            final int villageStep = 16;\n'
+OFFSETS_MARKER = '            final int[] villageOffsets = {-96, 96, -80, 80, -64, 64, -48, 48, -32, 32, -16, 16, 0};\n'
 
 DEBUG_SUPPORT = r'''    private static final boolean DEBUG_VILLAGE_LOCATE = Boolean.getBoolean("neverfolia.debugVillageLocate");
     private static final int DEBUG_VILLAGE_LIMIT = 48;
@@ -91,11 +94,13 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
 
         final int radius = sampleRadius(id);
         if (id.startsWith("minecraft:village_")) {
-            // Final candidate contract at this stage: dense 5x5, fixed radius32.
-            // Debugging is opt-in and does not alter the production decision.
-            final int villageRadius = 32;
-            final int halfRadius = 16;
-            final int[] villageOffsets = {-villageRadius, -halfRadius, 0, halfRadius, villageRadius};
+            // Vanilla 26.2 village Jigsaw reach is 80 blocks. Persisted QA
+            // observed piece bboxes beyond that reach, so reserve one chunk
+            // of overhang and sample the full -96..96 envelope every 16 blocks.
+            // Outer probes come first so wet candidates reject as cheaply as possible.
+            final int villageReach = 96;
+            final int villageStep = 16;
+            final int[] villageOffsets = {-96, 96, -80, 80, -64, 64, -48, 48, -32, 32, -16, 16, 0};
             for (final int dx : villageOffsets) {
                 for (final int dz : villageOffsets) {
                     if (dx == 0 && dz == 0) {
@@ -114,7 +119,7 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
                     }
                 }
             }
-            debugVillage(id, "ACCEPT", chunkPos, centerSurfaceY, "dense5x5-radius32");
+            debugVillage(id, "ACCEPT", chunkPos, centerSurfaceY, "reach96-step16-13x13");
             return true;
         }
 
@@ -251,10 +256,10 @@ def patch(text: str) -> str:
         return text
     if text.count(RING_MARKER) != 1:
         fail(f'expected one bounded-ring marker, got {text.count(RING_MARKER)}')
-    if 'final int villageRadius = 32;' not in text:
-        fail('radius32 dense village contract is not present before instrumentation')
-    if 'final int[] villageOffsets = {-villageRadius, -halfRadius, 0, halfRadius, villageRadius};' not in text:
-        fail('dense village offset marker missing before instrumentation')
+    if REACH_MARKER not in text or STEP_MARKER not in text or OFFSETS_MARKER not in text:
+        fail('reach96 village contract is not present before instrumentation')
+    if 'final int villageRadius = 32;' in text:
+        fail('stale radius32 village contract survived before instrumentation')
 
     text = text.replace(RING_MARKER, RING_MARKER + DEBUG_SUPPORT, 1)
     text = replace_method(text, POLICY_SIG, NEW_POLICY)
@@ -281,13 +286,16 @@ def validate(text: str) -> None:
         '"ACCEPT"',
         'debugVillageSearch(wantedIds, "NO_RELEVANT_SET")',
         'debugVillageSearch(wantedIds, "EXHAUSTED")',
-        'final int villageRadius = 32;',
-        'final int halfRadius = 16;',
-        'final int[] villageOffsets = {-villageRadius, -halfRadius, 0, halfRadius, villageRadius};',
+        'final int villageReach = 96;',
+        'final int villageStep = 16;',
+        'final int[] villageOffsets = {-96, 96, -80, 80, -64, 64, -48, 48, -32, 32, -16, 16, 0};',
+        'reach96-step16-13x13',
     )
     missing = [marker for marker in required if marker not in text]
     if missing:
         fail(f'missing debug markers: {missing}')
+    if 'final int villageRadius = 32;' in text or 'dense5x5-radius32' in text:
+        fail('stale radius32 debug contract survived')
     if text.count(DEBUG_MARKER) != 1:
         fail('debug flag definition count mismatch')
     if text.count(POLICY_SIG) != 1:
@@ -302,6 +310,7 @@ def apply(root: Path) -> None:
     print('[NeverFolia][village locate debug] optional rejection diagnostics installed')
     print('  default: disabled')
     print('  QA enable: -Dneverfolia.debugVillageLocate=true')
+    print('  village geometry: reach96 / step16 / 13x13')
     print('  reasons: CENTER_DRY_REJECT, BIOME_REJECT, FOOTPRINT_DRY_REJECT, ACCEPT, EXHAUSTED')
 
 
@@ -350,9 +359,9 @@ final class NeverOverworldVanillaFastLocate {
         if (!passesBiomeAtY(generator, state, chunkPos, structureHolder, centerSurfaceY)) return false;
         final int radius = sampleRadius(id);
         if (id.startsWith("minecraft:village_")) {
-            final int villageRadius = 32;
-            final int halfRadius = 16;
-            final int[] villageOffsets = {-villageRadius, -halfRadius, 0, halfRadius, villageRadius};
+            final int villageReach = 96;
+            final int villageStep = 16;
+            final int[] villageOffsets = {-96, 96, -80, 80, -64, 64, -48, 48, -32, 32, -16, 16, 0};
             for (final int dx : villageOffsets) for (final int dz : villageOffsets) {
                 if (dx == 0 && dz == 0) continue;
                 if (preliminarySurfaceY(state, centerX + dx, centerZ + dz) < MIN_DRY_BASE_HEIGHT) return false;
