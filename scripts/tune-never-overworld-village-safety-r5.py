@@ -13,6 +13,14 @@ R5_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
             return 48;
         }
 '''
+RADIUS32 = '''        if (id.startsWith("minecraft:village_")) {
+            return 32;
+        }
+'''
+RADIUS16 = '''        if (id.startsWith("minecraft:village_")) {
+            return 16;
+        }
+'''
 R6_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
             return 8;
         }
@@ -37,11 +45,9 @@ def fail(message: str) -> None:
 def validate(text: str, label: str) -> None:
     if text.count(R6_RADIUS) != 1:
         fail(f'{label}: expected exactly one village radius=8 block, got {text.count(R6_RADIUS)}')
-    if R5_RADIUS in text:
-        fail(f'{label}: obsolete R5 village radius=48 survived R6 tuning')
-    for obsolete in ('return 32;', 'return 16;'):
+    for obsolete_name, obsolete in (('48', R5_RADIUS), ('32', RADIUS32), ('16', RADIUS16)):
         if obsolete in text:
-            fail(f'{label}: obsolete village scarcity profile survived radius8 tuning: {obsolete}')
+            fail(f'{label}: obsolete village radius={obsolete_name} block survived radius8 tuning')
     if VILLAGE_DRY_9.search(text) is None:
         fail(f'{label}: village dry gate is not strict 9/9')
     required = (
@@ -54,24 +60,16 @@ def validate(text: str, label: str) -> None:
 
 
 def tune(text: str, label: str) -> str:
-    radius32 = '''        if (id.startsWith("minecraft:village_")) {
-            return 32;
-        }
-'''
-    radius16 = '''        if (id.startsWith("minecraft:village_")) {
-            return 16;
-        }
-'''
-    if text.count(R6_RADIUS) == 1 and all(source not in text for source in (R5_RADIUS, radius32, radius16)):
+    if text.count(R6_RADIUS) == 1 and all(source not in text for source in (R5_RADIUS, RADIUS32, RADIUS16)):
         validate(text, label)
         return text
 
-    sources = [source for source in (R5_RADIUS, radius32, radius16) if text.count(source) == 1]
+    sources = [source for source in (R5_RADIUS, RADIUS32, RADIUS16) if text.count(source) == 1]
     if len(sources) != 1 or text.count(R6_RADIUS) != 0:
         fail(
             f'{label}: expected one radius=48/32/16 source or one already tuned radius=8 block; '
-            f'r48={text.count(R5_RADIUS)} r32={text.count(radius32)} '
-            f'r16={text.count(radius16)} r8={text.count(R6_RADIUS)}'
+            f'r48={text.count(R5_RADIUS)} r32={text.count(RADIUS32)} '
+            f'r16={text.count(RADIUS16)} r8={text.count(R6_RADIUS)}'
         )
     if VILLAGE_DRY_9.search(text) is None:
         fail(f'{label}: refusing to narrow the footprint unless the strict 9/9 dry gate is present')
@@ -104,7 +102,10 @@ def fixture(class_name: str, radius: int) -> str:
         if ("minecraft:pillager_outpost".equals(id)) {{
             return 24;
         }}
-        return 12;
+        if ("minecraft:desert_pyramid".equals(id) || "minecraft:jungle_pyramid".equals(id)) {{
+            return 16;
+        }}
+        return 16;
     }}
 
     private static int minDrySamples(final String id) {{
