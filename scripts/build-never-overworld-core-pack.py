@@ -48,7 +48,7 @@ def self_test() -> None:
     if output_arg(["--output", "a.zip"]) != Path("a.zip"): fail("SELF-TEST: spaced --output parsing failed")
     if output_arg(["--output=b.zip"]) != Path("b.zip"): fail("SELF-TEST: equals --output parsing failed")
     if path_arg(["--server-jar", "server.jar"], "--server-jar") != Path("server.jar"): fail("SELF-TEST: spaced --server-jar parsing failed")
-    print("[NeverFolia][NeverOverworld native core] REACH96 SPLIT-SET WRAPPER SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld native core] GENERATED-BBOX SPLIT-SET WRAPPER SELF-TEST OK")
 
 
 def main() -> None:
@@ -73,10 +73,11 @@ def main() -> None:
     print("  flooded ore sterile band: Y=65..135")
     print("  trial chambers: Y=-320..-96")
     print("  stronghold/end portal dungeon: disabled")
-    print("  village policy: reach96/step16, 13x13 strict dry envelope, independent sets, spacing=34")
-    print("  village geometry: vanilla Jigsaw reach=80 + one chunk bbox margin=16")
+    print("  village policy: centre-dry prefilter + actual generated StructureStart bbox all-column dry gate")
+    print("  village fast locate: same deterministic Structure#generate preview, references=0")
+    print("  village sets: independent variants, spacing=34")
     print("  village fallbacks: plains/savanna->non-snowy highlands; taiga->cold snowy highlands")
-    print("  persisted Jigsaw bbox zero-water audit: authoritative final village safety gate")
+    print("  persisted Jigsaw bbox all-block Y=128 zero-water audit: authoritative final village safety gate")
     print("  native ores: coal, iron, copper, gold, redstone, lapis, diamond, emerald")
 
 
