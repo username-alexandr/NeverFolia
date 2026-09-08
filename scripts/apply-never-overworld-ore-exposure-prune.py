@@ -28,34 +28,63 @@ public final class NeverOverworldOreExposurePruner {
 
     public static void apply(final ServerLevel level, final ChunkAccess chunk) {
         if (level.dimension() != Level.OVERWORLD || level.getMinY() != -512 || level.getHeight() != 1024) return;
+
         final ChunkPos chunkPos = chunk.getPos();
         final int minX = chunkPos.getMinBlockX();
         final int maxX = chunkPos.getMaxBlockX();
         final int minZ = chunkPos.getMinBlockZ();
         final int maxZ = chunkPos.getMaxBlockZ();
-        final BlockPos.MutableBlockPos air = new BlockPos.MutableBlockPos();
-        final BlockPos.MutableBlockPos ore = new BlockPos.MutableBlockPos();
-        for (int y = MIN_Y; y <= MAX_Y; ++y) {
-            for (int z = minZ; z <= maxZ; ++z) {
-                for (int x = minX; x <= maxX; ++x) {
-                    air.set(x, y, z);
-                    if (!chunk.getBlockState(air).isAir()) continue;
-                    prune(level, chunk, ore.set(x, y - 1, z));
-                    prune(level, chunk, ore.set(x, y + 1, z));
-                    if (x > minX) prune(level, chunk, ore.set(x - 1, y, z));
-                    if (x < maxX) prune(level, chunk, ore.set(x + 1, y, z));
-                    if (z > minZ) prune(level, chunk, ore.set(x, y, z - 1));
-                    if (z < maxZ) prune(level, chunk, ore.set(x, y, z + 1));
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        // Native deep ores are placed at SURFACE before CARVERS. At CARVERS we
+        // finally know the cave faces. Skip whole 16-block sections whose palette
+        // cannot contain an ore, then inspect only ore voxels in matching sections.
+        // This avoids scanning every cave-air voxel and keeps the field correction
+        // cheap even with the 1024-block NeverOverworld dimension.
+        final int minSectionY = MIN_Y >> 4;
+        final int maxSectionY = MAX_Y >> 4;
+        for (int sectionY = minSectionY; sectionY <= maxSectionY; ++sectionY) {
+            final LevelChunkSection section = chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY));
+            if (!section.maybeHas(state -> hostFor(state.getBlock()) != null)) continue;
+
+            final int sectionBaseY = sectionY << 4;
+            final int localMinY = Math.max(0, MIN_Y - sectionBaseY);
+            final int localMaxY = Math.min(15, MAX_Y - sectionBaseY);
+            for (int localY = localMinY; localY <= localMaxY; ++localY) {
+                final int y = sectionBaseY + localY;
+                for (int localZ = 0; localZ < 16; ++localZ) {
+                    final int z = minZ + localZ;
+                    for (int localX = 0; localX < 16; ++localX) {
+                        final BlockState state = section.getBlockState(localX, localY, localZ);
+                        final Block host = hostFor(state.getBlock());
+                        if (host == null) continue;
+                        final int x = minX + localX;
+                        if (!isExposed(chunk, x, y, z, minX, maxX, minZ, maxZ)) continue;
+                        if (retain(level.getSeed(), x, y, z)) continue;
+                        chunk.setBlockState(pos.set(x, y, z), host.defaultBlockState(), 0);
+                    }
                 }
             }
         }
     }
 
-    private static void prune(final ServerLevel level, final ChunkAccess chunk, final BlockPos pos) {
-        final BlockState state = chunk.getBlockState(pos);
-        final Block host = hostFor(state.getBlock());
-        if (host == null || retain(level.getSeed(), pos.getX(), pos.getY(), pos.getZ())) return;
-        chunk.setBlockState(pos, host.defaultBlockState(), 0);
+    private static boolean isExposed(
+        final ChunkAccess chunk,
+        final int x,
+        final int y,
+        final int z,
+        final int minX,
+        final int maxX,
+        final int minZ,
+        final int maxZ
+    ) {
+        if (chunk.getBlockState(x, y - 1, z).isAir() || chunk.getBlockState(x, y + 1, z).isAir()) return true;
+        // Never read mutable neighbour chunks during generation. Chunk-edge ores
+        // are checked vertically and toward owned horizontal neighbours only.
+        if (x > minX && chunk.getBlockState(x - 1, y, z).isAir()) return true;
+        if (x < maxX && chunk.getBlockState(x + 1, y, z).isAir()) return true;
+        if (z > minZ && chunk.getBlockState(x, y, z - 1).isAir()) return true;
+        return z < maxZ && chunk.getBlockState(x, y, z + 1).isAir();
     }
 
     private static Block hostFor(final Block block) {
@@ -153,6 +182,8 @@ def self_test() -> None:
     out=inject(fixture)
     if "NeverOverworldOreExposurePruner.apply(ctx.level(), center);" not in out: fail("SELF-TEST: call not injected")
     if "EXPOSED_RETAIN_PERCENT = 8" not in HELPER: fail("SELF-TEST: exposed retain chance drifted")
+    if "section.maybeHas" not in HELPER: fail("SELF-TEST: ore-free section skip missing")
+    if "Chunk-edge ores" not in HELPER: fail("SELF-TEST: neighbour-ownership guard missing")
     print("[NeverFolia][NeverOverworld ore exposure r6] SELF-TEST OK")
 
 
@@ -170,6 +201,7 @@ def main() -> None:
     tasks.write_text(inject(tasks.read_text(encoding="utf-8")),encoding="utf-8")
     print("[NeverFolia][NeverOverworld ore exposure r6] post-CARVERS exposure pruning applied")
     print("  exposed ore retain chance: 8%")
+    print("  ore-free sections: skipped by palette predicate")
 
 
 if __name__ == "__main__":
