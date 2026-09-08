@@ -10,11 +10,8 @@ from pathlib import Path
 
 MANIFEST = "neveroverworld-test1-manifest.json"
 VILLAGE_JIGSAW_REACH = 80
-VILLAGE_BBOX_MARGIN = 16
-VILLAGE_DRY_REACH = VILLAGE_JIGSAW_REACH + VILLAGE_BBOX_MARGIN
-VILLAGE_DRY_STEP = 16
-VILLAGE_DRY_AXIS_SAMPLES = (VILLAGE_DRY_REACH * 2) // VILLAGE_DRY_STEP + 1
-VILLAGE_DRY_SAMPLES = VILLAGE_DRY_AXIS_SAMPLES * VILLAGE_DRY_AXIS_SAMPLES
+VILLAGE_MAX_GENERATED_BBOX_SPAN = 256
+VILLAGE_MAX_GENERATED_BBOX_AREA = 65536
 
 # NeverOverworld leaves only high terrain above the Y=128 flood plane. Runtime
 # matrix QA proved that meadow/cherry and old-growth taiga families do not offer
@@ -29,8 +26,13 @@ VILLAGE_DRY_SAMPLES = VILLAGE_DRY_AXIS_SAMPLES * VILLAGE_DRY_AXIS_SAMPLES
 # make the architectural variant cross into visibly incompatible cold terrain.
 # R6 splits village variants into independent structure sets with distinct salts,
 # so these biome overlaps do not steal weighted slots from another variant.
-# Runtime safety is now sized from vanilla 26.2 Jigsaw max_distance_from_center
-# (80) plus one 16-block bbox-overhang margin: reach96, step16, 13x13/169 probes.
+#
+# Runtime safety is no longer inferred from a fixed radius. The cheap prefilter
+# checks only the candidate centre above the flood plane. Structure#generate then
+# builds the deterministic Jigsaw layout and the actual StructureStart bounding
+# box is checked column-by-column before the start is persisted. Fast locate uses
+# the same read-only generated layout preview. Persisted NBT bbox water=0 remains
+# the independent final arbiter.
 EXTRA = {
     "village_plains": [
         "minecraft:meadow",
@@ -74,12 +76,21 @@ def transform(payload: bytes) -> bytes:
             fail(f"pack already overrides {path}; merge policy must be reviewed")
         entries[path] = dump({"replace": False, "values": values})
     manifest = json.loads(entries[MANIFEST])
-    manifest["village_surface_policy"] = "bbox-sized-dry-highland-reach96-step16-stony-fallback"
+    for stale in (
+        "village_bbox_overhang_margin",
+        "village_dry_samples",
+        "village_dry_radius",
+        "village_dry_step",
+    ):
+        manifest.pop(stale, None)
+    manifest["village_surface_policy"] = "generated-jigsaw-bbox-all-columns-dry-highland"
+    manifest["village_prefilter"] = "candidate-center-world-surface-wg-gte129"
+    manifest["village_layout_safety"] = "structure-start-bbox-all-xz-world-surface-wg-gte129"
+    manifest["village_fast_locate_layout"] = "same-structure-generate-preview-references0"
     manifest["village_jigsaw_max_distance_from_center"] = VILLAGE_JIGSAW_REACH
-    manifest["village_bbox_overhang_margin"] = VILLAGE_BBOX_MARGIN
-    manifest["village_dry_samples"] = VILLAGE_DRY_SAMPLES
-    manifest["village_dry_radius"] = VILLAGE_DRY_REACH
-    manifest["village_dry_step"] = VILLAGE_DRY_STEP
+    manifest["village_generated_bbox_max_span"] = VILLAGE_MAX_GENERATED_BBOX_SPAN
+    manifest["village_generated_bbox_max_area"] = VILLAGE_MAX_GENERATED_BBOX_AREA
+    manifest["village_persisted_bbox_gate"] = "all-blocks-zero-water-y128"
     manifest["village_spacing"] = 34
     manifest["village_highland_biomes"] = EXTRA
     manifest["village_highland_fallbacks"] = {
@@ -108,23 +119,34 @@ def apply_pack(path: Path) -> None:
         temp.replace(path)
     finally:
         temp.unlink(missing_ok=True)
-    print("[NeverFolia][NeverOverworld highland villages] REACH96 HIGHLAND POLICY METADATA APPLIED")
-    print("  final dry safety: 13x13 / 169 samples, reach=96, step=16 in runtime policy")
-    print("  geometry basis: vanilla Jigsaw reach=80 + bbox margin=16")
+    print("[NeverFolia][NeverOverworld highland villages] GENERATED-BBOX HIGHLAND POLICY METADATA APPLIED")
+    print("  prefilter: candidate centre WORLD_SURFACE_WG >= 129")
+    print("  final runtime safety: actual generated StructureStart bbox, every X/Z column")
+    print("  fast locate: same Structure#generate preview with references=0")
+    print("  vanilla village Jigsaw max_distance_from_center: 80 (reference only)")
+    print("  accepted generated bbox limit: 256x256 / 65536 columns")
     print("  plains fallback: savanna plateau / windswept savanna / stony peaks")
     print("  savanna fallback: savanna plateau / windswept savanna / stony peaks")
     print("  taiga fallback: grove / snowy slopes")
     print("  cold peaks are not added to plains/savanna")
-    print("  persisted village bbox zero-water audit remains authoritative")
+    print("  persisted village bbox all-block Y=128 water=0 audit remains authoritative")
     print("  structure spacing: vanilla 34")
 
 
 def self_test() -> None:
-    if VILLAGE_DRY_REACH != 96 or VILLAGE_DRY_STEP != 16 or VILLAGE_DRY_SAMPLES != 169:
-        fail("SELF-TEST: reach96 geometry constants drifted")
+    if VILLAGE_JIGSAW_REACH != 80:
+        fail("SELF-TEST: vanilla Jigsaw reach reference drifted")
+    if VILLAGE_MAX_GENERATED_BBOX_SPAN != 256 or VILLAGE_MAX_GENERATED_BBOX_AREA != 65536:
+        fail("SELF-TEST: generated bbox safety cap drifted")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(MANIFEST, dump({"schema": 1}))
+        z.writestr(MANIFEST, dump({
+            "schema": 1,
+            "village_bbox_overhang_margin": 16,
+            "village_dry_samples": 169,
+            "village_dry_radius": 96,
+            "village_dry_step": 16,
+        }))
     result = transform(buf.getvalue())
     with zipfile.ZipFile(io.BytesIO(result)) as z:
         manifest = json.loads(z.read(MANIFEST))
@@ -132,18 +154,23 @@ def self_test() -> None:
             tag = json.loads(z.read(f"data/minecraft/tags/worldgen/biome/has_structure/{name}.json"))
             if tag != {"replace": False, "values": values}:
                 fail(f"SELF-TEST: wrong biome tag for {name}: {tag}")
-    if manifest.get("village_surface_policy") != "bbox-sized-dry-highland-reach96-step16-stony-fallback":
-        fail("SELF-TEST: manifest marker missing")
-    expected_geometry = {
+    if manifest.get("village_surface_policy") != "generated-jigsaw-bbox-all-columns-dry-highland":
+        fail("SELF-TEST: generated-bbox policy marker missing")
+    expected = {
+        "village_prefilter": "candidate-center-world-surface-wg-gte129",
+        "village_layout_safety": "structure-start-bbox-all-xz-world-surface-wg-gte129",
+        "village_fast_locate_layout": "same-structure-generate-preview-references0",
         "village_jigsaw_max_distance_from_center": 80,
-        "village_bbox_overhang_margin": 16,
-        "village_dry_samples": 169,
-        "village_dry_radius": 96,
-        "village_dry_step": 16,
+        "village_generated_bbox_max_span": 256,
+        "village_generated_bbox_max_area": 65536,
+        "village_persisted_bbox_gate": "all-blocks-zero-water-y128",
     }
-    for key, expected in expected_geometry.items():
-        if manifest.get(key) != expected:
-            fail(f"SELF-TEST: {key} mismatch: {manifest.get(key)} != {expected}")
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            fail(f"SELF-TEST: {key} mismatch: {manifest.get(key)} != {value}")
+    for stale in ("village_bbox_overhang_margin", "village_dry_samples", "village_dry_radius", "village_dry_step"):
+        if stale in manifest:
+            fail(f"SELF-TEST: stale reach96 manifest key survived: {stale}")
     fallbacks = manifest.get("village_highland_fallbacks", {})
     if fallbacks.get("village_plains") != [
         "minecraft:savanna_plateau", "minecraft:windswept_savanna", "minecraft:stony_peaks"
