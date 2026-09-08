@@ -9,9 +9,28 @@ import zipfile
 from pathlib import Path
 
 MANIFEST = "neveroverworld-test1-manifest.json"
+
+# NeverOverworld leaves only high terrain above the Y=128 flood plane. Runtime
+# matrix QA proved that meadow/cherry and old-growth taiga families do not offer
+# reliable strict 9/9 dry village starts on the deterministic TEST1 seed. Keep
+# those natural families, but add proven dry thematic fallbacks:
+#   plains -> elevated savanna grasslands
+#   taiga  -> cold grove / snowy slopes
+# These overlaps are safe because R6 splits village variants into independent
+# structure sets with distinct salts, so they no longer steal weighted slots.
 EXTRA = {
-    "village_plains": ["minecraft:meadow", "minecraft:cherry_grove"],
-    "village_taiga": ["minecraft:old_growth_pine_taiga", "minecraft:old_growth_spruce_taiga"],
+    "village_plains": [
+        "minecraft:meadow",
+        "minecraft:cherry_grove",
+        "minecraft:savanna_plateau",
+        "minecraft:windswept_savanna",
+    ],
+    "village_taiga": [
+        "minecraft:old_growth_pine_taiga",
+        "minecraft:old_growth_spruce_taiga",
+        "minecraft:grove",
+        "minecraft:snowy_slopes",
+    ],
     "village_snowy": ["minecraft:grove", "minecraft:snowy_slopes"],
     "village_savanna": ["minecraft:savanna_plateau", "minecraft:windswept_savanna"],
     "village_desert": ["minecraft:badlands", "minecraft:wooded_badlands", "minecraft:eroded_badlands"],
@@ -37,11 +56,15 @@ def transform(payload: bytes) -> bytes:
             fail(f"pack already overrides {path}; merge policy must be reviewed")
         entries[path] = dump({"replace": False, "values": values})
     manifest = json.loads(entries[MANIFEST])
-    manifest["village_surface_policy"] = "strict-dry-highland-r6-radius8"
+    manifest["village_surface_policy"] = "strict-dry-highland-r6-splitsets-radius8"
     manifest["village_dry_samples"] = 9
     manifest["village_dry_radius"] = 8
     manifest["village_spacing"] = 34
     manifest["village_highland_biomes"] = EXTRA
+    manifest["village_highland_fallbacks"] = {
+        "village_plains": ["minecraft:savanna_plateau", "minecraft:windswept_savanna"],
+        "village_taiga": ["minecraft:grove", "minecraft:snowy_slopes"],
+    }
     entries[MANIFEST] = dump(manifest)
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as target:
@@ -59,8 +82,10 @@ def apply_pack(path: Path) -> None:
         temp.replace(path)
     finally:
         temp.unlink(missing_ok=True)
-    print("[NeverFolia][NeverOverworld highland villages] STRICT RADIUS8 HIGHLAND POLICY APPLIED")
+    print("[NeverFolia][NeverOverworld highland villages] STRICT RADIUS8 SPLIT-SET HIGHLAND POLICY APPLIED")
     print("  dry prefilter: 9/9 samples, radius=8")
+    print("  plains fallback: savanna plateau / windswept savanna")
+    print("  taiga fallback: grove / snowy slopes")
     print("  persisted village bbox zero-water audit remains authoritative")
     print("  structure spacing: vanilla 34")
 
@@ -76,10 +101,18 @@ def self_test() -> None:
             tag = json.loads(z.read(f"data/minecraft/tags/worldgen/biome/has_structure/{name}.json"))
             if tag != {"replace": False, "values": values}:
                 fail(f"SELF-TEST: wrong biome tag for {name}: {tag}")
-    if manifest.get("village_surface_policy") != "strict-dry-highland-r6-radius8":
+    if manifest.get("village_surface_policy") != "strict-dry-highland-r6-splitsets-radius8":
         fail("SELF-TEST: manifest marker missing")
     if manifest.get("village_dry_samples") != 9 or manifest.get("village_dry_radius") != 8:
         fail(f"SELF-TEST: radius8 R6 dry contract mismatch: {manifest}")
+    if manifest.get("village_highland_fallbacks", {}).get("village_plains") != [
+        "minecraft:savanna_plateau", "minecraft:windswept_savanna"
+    ]:
+        fail("SELF-TEST: plains fallback contract missing")
+    if manifest.get("village_highland_fallbacks", {}).get("village_taiga") != [
+        "minecraft:grove", "minecraft:snowy_slopes"
+    ]:
+        fail("SELF-TEST: taiga fallback contract missing")
     print("[NeverFolia][NeverOverworld highland villages] SELF-TEST OK")
 
 
