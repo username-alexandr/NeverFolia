@@ -41,6 +41,8 @@ echo "[NeverFolia] Replacing final sparse village dry sampling with dense R7 5x5
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-dense-village-dry-envelope.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Tuning dense village envelope to fixed radius32"
 python3 "${ROOT_DIR}/scripts/tune-never-overworld-dense-village-radius32.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Installing opt-in village locate rejection diagnostics"
+python3 "${ROOT_DIR}/scripts/instrument-never-overworld-village-locate-debug.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Forcing vanilla mineshafts into the NeverOverworld deep range"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-mineshaft-depth-policy.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Re-anchoring swamp huts to the flooded waterline"
