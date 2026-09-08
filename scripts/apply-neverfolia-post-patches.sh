@@ -45,6 +45,8 @@ echo "[NeverFolia] Sizing final village envelope to vanilla Jigsaw reach plus on
 python3 "${ROOT_DIR}/scripts/tune-never-overworld-village-reach96.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Installing opt-in village locate rejection diagnostics"
 python3 "${ROOT_DIR}/scripts/instrument-never-overworld-village-locate-debug.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Replacing reach96 village prediction with exact generated-Jigsaw bbox safety"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-village-layout-safety.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Forcing vanilla mineshafts into the NeverOverworld deep range"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-mineshaft-depth-policy.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Re-anchoring swamp huts to the flooded waterline"
