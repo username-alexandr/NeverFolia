@@ -14,14 +14,17 @@ R5_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
         }
 '''
 R6_RADIUS = '''        if (id.startsWith("minecraft:village_")) {
-            return 32;
+            return 16;
         }
 '''
 
-# Keep R5's strict 9/9 dry contract. R6 only narrows the representative
-# footprint so highland village candidates remain practically available.
-# The persisted-structure QA is authoritative and rejects any generated village
-# whose real bbox still contains water at Y=128.
+# Keep R5's strict 9/9 dry contract. Runtime QA on radius=32 proved that the
+# candidate acceptance rate was still pathological: four village variants were
+# absent inside the bounded locate scan and the only variant found was ~32 km
+# away. R6 therefore narrows only the representative prefilter footprint to
+# +/-16 blocks. This is NOT the final flood-safety decision: persisted-structure
+# QA remains authoritative and rejects any generated village whose real bbox
+# contains water at Y=128.
 VILLAGE_DRY_9 = re.compile(
     r'if\s*\(id\.startsWith\("minecraft:village_"\)\)\s*\{[\s\S]{0,900}?return\s+9;\s*\}'
 )
@@ -33,9 +36,11 @@ def fail(message: str) -> None:
 
 def validate(text: str, label: str) -> None:
     if text.count(R6_RADIUS) != 1:
-        fail(f'{label}: expected exactly one village radius=32 block, got {text.count(R6_RADIUS)}')
+        fail(f'{label}: expected exactly one village radius=16 block, got {text.count(R6_RADIUS)}')
     if R5_RADIUS in text:
         fail(f'{label}: obsolete R5 village radius=48 survived R6 tuning')
+    if 'return 32;' in text:
+        fail(f'{label}: obsolete radius=32 scarcity profile survived compact R6 tuning')
     if VILLAGE_DRY_9.search(text) is None:
         fail(f'{label}: village dry gate is not strict 9/9')
     required = (
@@ -48,17 +53,29 @@ def validate(text: str, label: str) -> None:
 
 
 def tune(text: str, label: str) -> str:
-    if text.count(R6_RADIUS) == 1 and R5_RADIUS not in text:
+    # The immediately preceding legacy R3 transformer emits radius=48 + 9/9 in
+    # the current pipeline. Accept radius=32 too so the transformer is safe to
+    # reapply to a partially transformed developer worktree.
+    radius32 = '''        if (id.startsWith("minecraft:village_")) {
+            return 32;
+        }
+'''
+    if text.count(R6_RADIUS) == 1 and R5_RADIUS not in text and radius32 not in text:
         validate(text, label)
         return text
-    if text.count(R5_RADIUS) != 1 or R6_RADIUS in text:
+    source = None
+    if text.count(R5_RADIUS) == 1 and radius32 not in text:
+        source = R5_RADIUS
+    elif text.count(radius32) == 1 and R5_RADIUS not in text:
+        source = radius32
+    else:
         fail(
-            f'{label}: expected one strict R5 radius=48 block or one already tuned radius=32 block; '
-            f'r48={text.count(R5_RADIUS)} r32={text.count(R6_RADIUS)}'
+            f'{label}: expected one radius=48/32 source or one already tuned radius=16 block; '
+            f'r48={text.count(R5_RADIUS)} r32={text.count(radius32)} r16={text.count(R6_RADIUS)}'
         )
     if VILLAGE_DRY_9.search(text) is None:
         fail(f'{label}: refusing to narrow the footprint unless the strict 9/9 dry gate is present')
-    text = text.replace(R5_RADIUS, R6_RADIUS, 1)
+    text = text.replace(source, R6_RADIUS, 1)
     validate(text, label)
     return text
 
@@ -69,8 +86,8 @@ def apply(root: Path) -> None:
         if not path.is_file():
             fail(f'{label}: helper not found: {path}')
         path.write_text(tune(path.read_text(encoding='utf-8'), label), encoding='utf-8')
-    print('[NeverFolia][TEST1 R6 village safety] dry village contract applied/verified')
-    print('  village representative radius: 32 blocks')
+    print('[NeverFolia][TEST1 R6 village safety] compact dry village contract applied/verified')
+    print('  village representative radius: 16 blocks')
     print('  village dry gate: dry centre + 9/9 dry samples')
     print('  actual persisted bbox must still pass zero-water QA at Y=128')
 
@@ -87,7 +104,7 @@ def fixture(class_name: str, radius: int) -> str:
         if ("minecraft:pillager_outpost".equals(id)) {{
             return 24;
         }}
-        return 16;
+        return 12;
     }}
 
     private static int minDrySamples(final String id) {{
@@ -117,6 +134,14 @@ def self_test() -> None:
             validate(text, label)
             if tune(text, label) != text:
                 fail(f'SELF-TEST {label}: idempotent reapply changed output')
+
+        # Regression: a developer worktree may already contain the rejected
+        # radius=32 experiment. Compacting it to radius=16 must be deterministic.
+        for rel, cls in ((FAST_REL, 'NeverOverworldVanillaFastLocate'), (POLICY_REL, 'NeverOverworldVanillaStructurePolicy')):
+            path = root / rel
+            path.write_text(fixture(cls, 32), encoding='utf-8')
+            compacted = tune(path.read_text(encoding='utf-8'), rel.name)
+            validate(compacted, rel.name)
     print('[NeverFolia][TEST1 R6 village safety] SELF-TEST OK')
 
 
