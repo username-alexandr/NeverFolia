@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import tempfile
 from pathlib import Path
 
@@ -33,19 +34,31 @@ NEW_DRY = '''        if (id.startsWith("minecraft:village_")) {
         }
 '''
 
+# The historical tune-never-overworld-village-availability-r3.py was promoted in
+# place to the R5 strict 9/9 policy. Its comments differ from NEW_DRY even though
+# the generated Java contract is identical. Match the contract semantically so
+# this hardening pass can safely re-validate either representation.
+VILLAGE_DRY_9 = re.compile(
+    r'if\s*\(id\.startsWith\("minecraft:village_"\)\)\s*\{[\s\S]{0,900}?return\s+9;\s*\}'
+)
+
 
 def fail(message: str) -> None:
     raise SystemExit(f'[NeverFolia][TEST1 R5 village safety] {message}')
 
 
+def has_strict_village_contract(text: str) -> bool:
+    return text.count(NEW_RADIUS) == 1 and VILLAGE_DRY_9.search(text) is not None
+
+
 def tune(text: str, label: str) -> str:
-    if NEW_RADIUS in text and NEW_DRY in text and OLD_RADIUS not in text and OLD_DRY not in text:
+    if has_strict_village_contract(text) and OLD_RADIUS not in text and OLD_DRY not in text:
         validate(text, label)
         return text
     if text.count(OLD_RADIUS) != 1:
-        fail(f'{label}: expected one R3 village radius block, got {text.count(OLD_RADIUS)}')
+        fail(f'{label}: expected one R3 village radius block or an existing strict radius=48 block; old={text.count(OLD_RADIUS)} new={text.count(NEW_RADIUS)}')
     if text.count(OLD_DRY) != 1:
-        fail(f'{label}: expected one R3 village dry gate, got {text.count(OLD_DRY)}')
+        fail(f'{label}: expected one R3 village dry gate or an existing strict 9/9 gate; old={text.count(OLD_DRY)} strict={int(VILLAGE_DRY_9.search(text) is not None)}')
     text = text.replace(OLD_RADIUS, NEW_RADIUS, 1)
     text = text.replace(OLD_DRY, NEW_DRY, 1)
     validate(text, label)
@@ -53,9 +66,11 @@ def tune(text: str, label: str) -> str:
 
 
 def validate(text: str, label: str) -> None:
+    if text.count(NEW_RADIUS) != 1:
+        fail(f'{label}: expected exactly one strict village radius=48 block, got {text.count(NEW_RADIUS)}')
+    if VILLAGE_DRY_9.search(text) is None:
+        fail(f'{label}: village dry gate is not strict 9/9')
     required = (
-        NEW_RADIUS,
-        NEW_DRY,
         'if ("minecraft:pillager_outpost".equals(id))',
         'return 7;',
     )
@@ -72,10 +87,10 @@ def apply(root: Path) -> None:
         if not path.is_file():
             fail(f'{label}: helper not found: {path}')
         path.write_text(tune(path.read_text(encoding='utf-8'), label), encoding='utf-8')
-    print('[NeverFolia][TEST1 R5 village safety] dry village contract applied')
+    print('[NeverFolia][TEST1 R5 village safety] dry village contract applied/verified')
     print('  village sample radius: 48 blocks')
     print('  village dry gate: dry centre + 9/9 dry samples')
-    print('  availability must be restored by structure placement density, not wet starts')
+    print('  availability restored by highland biome placement, not wet starts')
 
 
 def fixture(class_name: str) -> str:
@@ -109,6 +124,32 @@ def fixture(class_name: str) -> str:
 '''
 
 
+def already_strict_fixture(class_name: str) -> str:
+    return f'''final class {class_name} {{
+    private static int sampleRadius(final String id) {{
+        if (id.startsWith("minecraft:village_")) {{
+            return 48;
+        }}
+        if ("minecraft:pillager_outpost".equals(id)) {{
+            return 24;
+        }}
+        return 16;
+    }}
+
+    private static int minDrySamples(final String id) {{
+        if (id.startsWith("minecraft:village_")) {{
+            // Alternate strict-policy wording from the promoted legacy tuner.
+            return 9;
+        }}
+        if ("minecraft:pillager_outpost".equals(id)) {{
+            return 7;
+        }}
+        return 9;
+    }}
+}}
+'''
+
+
 def self_test() -> None:
     with tempfile.TemporaryDirectory(prefix='nr-r5-village-safety-') as tmp:
         root = Path(tmp)
@@ -122,6 +163,16 @@ def self_test() -> None:
             validate(text, label)
             if tune(text, label) != text:
                 fail(f'SELF-TEST {label}: idempotent reapply changed output')
+
+        # Regression: the promoted legacy tuner already emits radius=48 + 9/9,
+        # but with different comments. Re-applying the dedicated safety pass must
+        # validate and no-op instead of rejecting that equivalent source text.
+        for rel, cls in ((FAST_REL, 'NeverOverworldVanillaFastLocate'), (POLICY_REL, 'NeverOverworldVanillaStructurePolicy')):
+            path = root / rel
+            strict = already_strict_fixture(cls)
+            path.write_text(strict, encoding='utf-8')
+            if tune(strict, rel.name) != strict:
+                fail(f'SELF-TEST {rel.name}: semantic strict reapply changed output')
     print('[NeverFolia][TEST1 R5 village safety] SELF-TEST OK')
 
 
