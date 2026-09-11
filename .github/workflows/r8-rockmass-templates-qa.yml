@@ -45,6 +45,27 @@ jobs:
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
+      - name: Align structure smoke harness to R8 sizes and markers
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/smoke-test-never-overworld-native-structures.sh')
+          s = p.read_text()
+          replacements = {
+              'prepare_site 0   17 17 BURIED': 'prepare_site 0   25 25 BURIED',
+              'prepare_site 448 9  9 CACHE': 'prepare_site 448 17 17 CACHE',
+              '("buried_sanctum", 8,   303, 8, "minecraft:lodestone")': '("buried_sanctum", 12,  307, 12, "minecraft:lodestone")',
+              '("sealed_cache", 452,  303, 4, "minecraft:gold_block")': '("sealed_cache", 456,  306, 8, "minecraft:gold_block")',
+          }
+          for old, new in replacements.items():
+              if s.count(old) != 1:
+                  raise SystemExit(f'R8 harness anchor missing/ambiguous: {old!r} count={s.count(old)}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          print('[NeverFolia][R8 QA] structure smoke harness aligned to R8 footprints/markers')
+          PY
+
       - name: Force-decode/place all R8 native structures
         run: |
           chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
