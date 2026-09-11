@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -24,6 +25,7 @@ def load_builder():
     if spec is None or spec.loader is None:
         fail(f"cannot import structure builder: {BUILDER_PATH}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -55,7 +57,6 @@ def sealed_cache(builder):
     v = builder.Voxel((17, 14, 17))
     fill_ellipsoid(v, 8.0, 6.5, 8.0, 8.0, 6.4, 8.0)
 
-    # Original 9x8x9 cache, now centred inside a 3-4 block natural host jacket.
     ox, oy, oz = 4, 3, 4
     v.shell(ox, oy, oz, ox + 8, oy + 7, oz + 8, builder.TILES)
     v.box(ox + 1, oy + 1, oz + 1, ox + 7, oy + 6, oz + 7, builder.AIR)
@@ -64,9 +65,6 @@ def sealed_cache(builder):
     v.set(ox + 4, oy + 3, oz + 4, "minecraft:gold_block")
     for x, z in ((ox + 1, oz + 1), (ox + 7, oz + 1), (ox + 1, oz + 7), (ox + 7, oz + 7)):
         v.pillar(x, z, oy + 1, oy + 5, "minecraft:chiseled_deepslate")
-
-    # Deliberately no exposed doorway: this is a sealed cache and should be
-    # discovered by mining, not appear as a floating open room in a carver.
     return v
 
 
@@ -74,7 +72,6 @@ def buried_sanctum(builder):
     v = builder.Voxel((25, 17, 25))
     fill_ellipsoid(v, 12.0, 8.0, 12.0, 12.0, 7.8, 12.0)
 
-    # Original 17x9x17 sanctum shifted into the host shell.
     ox, oy, oz = 4, 4, 4
     v.shell(ox, oy, oz, ox + 16, oy + 8, oz + 16, builder.STONE)
     v.box(ox + 1, oy + 1, oz + 1, ox + 15, oy + 7, oz + 15, builder.AIR)
@@ -91,9 +88,11 @@ def buried_sanctum(builder):
 
 def replacements() -> dict[str, bytes]:
     builder = load_builder()
+    cache = sealed_cache(builder)
+    sanctum = buried_sanctum(builder)
     return {
-        TARGETS["sealed_cache"]: builder.structure_nbt(sealed_cache(builder).size, sealed_cache(builder).blocks),
-        TARGETS["buried_sanctum"]: builder.structure_nbt(buried_sanctum(builder).size, buried_sanctum(builder).blocks),
+        TARGETS["sealed_cache"]: builder.structure_nbt(cache.size, cache.blocks),
+        TARGETS["buried_sanctum"]: builder.structure_nbt(sanctum.size, sanctum.blocks),
     }
 
 
