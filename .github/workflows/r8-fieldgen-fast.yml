@@ -1,0 +1,105 @@
+name: Validate R8 Fieldgen
+
+on:
+  push:
+    branches:
+      - wip/neverfolia-test1-fieldgen-r8-candidate
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r8:
+    name: R8 fieldgen compile + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Self-test R8 rock-mass structure envelopes
+        run: python3 ./scripts/harden-never-overworld-rock-mass-structures-r8.py --self-test
+
+      - name: Self-test R8 flood connectivity fallback
+        run: python3 ./scripts/harden-never-overworld-flood-connectivity-r8.py --self-test
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply established NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Apply R8 large-cavern flood connectivity
+        run: python3 ./scripts/harden-never-overworld-flood-connectivity-r8.py ./.work/Folia
+
+      - name: Build R8 Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect R8 JAR
+        run: |
+          set -euo pipefail
+          mkdir -p r8-artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" r8-artifacts/NeverFolia-R8.jar
+
+      - name: Build R8 NeverOverworld pack
+        run: |
+          set -euo pipefail
+          JAR="r8-artifacts/NeverFolia-R8.jar"
+          PACK="r8-artifacts/NeverOverworld-Core-R8.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar "${JAR}" --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/harden-never-overworld-rock-mass-structures-r8.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Smoke test R8 NeverOverworld runtime
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh r8-artifacts/NeverFolia-R8.jar r8-artifacts/NeverOverworld-Core-R8.zip
+
+      - name: Force-decode/place R8 native structures
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
+          ./scripts/smoke-test-never-overworld-native-structures.sh r8-artifacts/NeverFolia-R8.jar r8-artifacts/NeverOverworld-Core-R8.zip
+
+      - name: Upload R8 fast artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R8-fast-${{ github.sha }}
+          path: |
+            r8-artifacts/*
+            overworld-smoke-test/server.log
+            overworld-structure-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
