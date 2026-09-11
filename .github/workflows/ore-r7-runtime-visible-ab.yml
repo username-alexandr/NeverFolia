@@ -9,11 +9,15 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: ore-r7-visible-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   visible-ore:
     name: visible ore ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +47,6 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --name "${{ matrix.artifact }}" \
             --dir input
-          find input -maxdepth 2 -type f -printf '%P\n' | sort
           JAR="$(find input -type f -name 'NeverFolia-*.jar' | head -n 1)"
           PACK="$(find input -type f -name 'NeverOverworld-Core-*.zip' | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
@@ -64,7 +67,7 @@ jobs:
         run: |
           python3 scripts/audit-never-overworld-visible-ores.py \
             --world overworld-smoke-test/world \
-            --max-chunks 256 \
+            --max-chunks 128 \
             --min-y -64 \
             --max-y 319 \
             --output "visible-upper-${{ matrix.label }}.json"
@@ -73,7 +76,7 @@ jobs:
         run: |
           python3 scripts/audit-never-overworld-visible-ores.py \
             --world overworld-smoke-test/world \
-            --max-chunks 256 \
+            --max-chunks 128 \
             --min-y -512 \
             --max-y -97 \
             --output "visible-deep-${{ matrix.label }}.json"
