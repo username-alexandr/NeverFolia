@@ -1,0 +1,19 @@
+name: QA visible ore audit tool
+
+on:
+  push:
+    branches:
+      - 'qa/ore-r7-visible-audit-tool'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Self-test visible ore persisted audit
+        run: python3 ./scripts/audit-never-overworld-visible-ores.py --self-test
