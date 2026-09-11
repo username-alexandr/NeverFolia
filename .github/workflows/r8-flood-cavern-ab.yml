@@ -38,7 +38,7 @@ jobs:
           java-version: '25'
 
       - name: Self-test dry cavern auditor
-        run: python3 ./scripts/audit-never-overworld-large-dry-caverns-r8.py --self-test
+        run: python3 ./scripts/audit-never-overworld-large-dry-caverns-r8-fixed.py --self-test
 
       - name: Download exact build artifact
         env:
@@ -129,7 +129,7 @@ jobs:
 
       - name: Audit persisted large dry caverns
         run: |
-          python3 ./scripts/audit-never-overworld-large-dry-caverns-r8.py \
+          python3 ./scripts/audit-never-overworld-large-dry-caverns-r8-fixed.py \
             --world "cavern-${{ matrix.label }}/world" \
             --max-chunks 256 \
             --output "cavern-${{ matrix.label }}.json"
