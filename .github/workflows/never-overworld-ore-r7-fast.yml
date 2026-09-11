@@ -1,0 +1,40 @@
+name: Validate NeverOverworld Ore R7
+
+on:
+  push:
+    branches:
+      - 'wip/neverfolia-test1-ore-scarcity-r7-candidate'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Ore scarcity R7 static validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Self-test field-R6 input calibration
+        run: python3 ./scripts/tune-never-overworld-ore-field-r6.py --self-test
+
+      - name: Self-test field-R7 buried scarcity
+        run: python3 ./scripts/tune-never-overworld-ore-field-r7.py --self-test
+
+      - name: Self-test two-stage exposure and water pruning
+        run: python3 ./scripts/apply-never-overworld-ore-exposure-prune.py --self-test
+
+      - name: Self-test ore cost preflight
+        run: python3 ./scripts/preflight-never-overworld-ore-cost.py --self-test
+
+      - name: Self-test native ore geometry preflight
+        run: python3 ./scripts/preflight-never-overworld-native-ore-geometry.py --self-test
+
+      - name: Self-test runtime ore audit
+        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test vanilla ore density gate
+        run: python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
