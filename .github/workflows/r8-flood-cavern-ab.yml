@@ -1,0 +1,146 @@
+name: QA R8 flood cavern A/B
+
+on:
+  push:
+    branches:
+      - qa/r8-flood-cavern-audit
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  cavern:
+    name: dry cavern ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: R7
+            source_run: 34567089030
+            artifact: NeverFolia-90a5b3a0d48ee173de22c178b3dd2916867835da
+            jar_glob: NeverFolia-*.jar
+            pack_glob: NeverOverworld-Core-*.zip
+          - label: R8
+            source_run: 34639195821
+            artifact: NeverFolia-R8-fast-10fec0d072a5c70d640c1903060c04671f4e6147
+            jar_glob: NeverFolia-R8.jar
+            pack_glob: NeverOverworld-Core-R8.zip
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Self-test dry cavern auditor
+        run: python3 ./scripts/audit-never-overworld-large-dry-caverns-r8.py --self-test
+
+      - name: Download exact build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          for i in $(seq 1 90); do
+            rm -rf input/*
+            if gh run download "${{ matrix.source_run }}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --name "${{ matrix.artifact }}" \
+                --dir input 2>/dev/null; then
+              break
+            fi
+            if [ "$i" -eq 90 ]; then
+              echo "Timed out waiting for artifact ${{ matrix.artifact }}" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          JAR="$(find input -type f -name '${{ matrix.jar_glob }}' | sort | head -n 1)"
+          PACK="$(find input -type f -name '${{ matrix.pack_glob }}' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          test -n "${PACK}" && test -f "${PACK}"
+          echo "JAR=$(realpath "${JAR}")" >> "$GITHUB_ENV"
+          echo "PACK=$(realpath "${PACK}")" >> "$GITHUB_ENV"
+
+      - name: Generate contiguous persisted NeverOverworld sample
+        run: |
+          set -euo pipefail
+          TEST="cavern-${{ matrix.label }}"
+          WORLD="${TEST}/world"
+          rm -rf "${TEST}"
+          mkdir -p "${WORLD}/datapacks"
+          cp "${PACK}" "${WORLD}/datapacks/NeverOverworld-Core.zip"
+          printf 'eula=true\n' > "${TEST}/eula.txt"
+          cat > "${TEST}/server.properties" <<'EOF'
+          level-name=world
+          level-seed=NeverOverworld-R8-Cavern-Audit-1
+          level-type=minecraft:normal
+          initial-enabled-packs=vanilla,file/NeverOverworld-Core.zip
+          initial-disabled-packs=
+          online-mode=false
+          enforce-secure-profile=false
+          server-port=25591
+          view-distance=2
+          simulation-distance=2
+          spawn-protection=0
+          max-tick-time=-1
+          enable-status=false
+          EOF
+          cd "${TEST}"
+          mkfifo console.pipe
+          tail -f /dev/null > console.pipe & KEEPER=$!
+          java -Xms1G -Xmx3G -jar "${JAR}" nogui < console.pipe > server.log 2>&1 & SERVER=$!
+          send() { printf '%s\n' "$1" > console.pipe; }
+          ready=0
+          for _ in $(seq 1 240); do
+            if grep -q 'Done (' server.log 2>/dev/null; then ready=1; break; fi
+            if ! kill -0 "$SERVER" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then cat server.log; exit 1; fi
+          send 'execute in minecraft:overworld run forceload add -96 -96 96 96'
+          for token in '-96 -96 A' '0 -96 B' '96 -96 C' '-96 0 D' '0 0 E' '96 0 F' '-96 96 G' '0 96 H' '96 96 I'; do
+            set -- $token; x=$1; z=$2; t=$3
+            found=0
+            for _ in $(seq 1 180); do
+              send "execute in minecraft:overworld if loaded ${x} 0 ${z} run say R8_CAVERN_${t}"
+              sleep 1
+              if grep -Fq "R8_CAVERN_${t}" server.log; then found=1; break; fi
+            done
+            if [ "$found" -ne 1 ]; then echo "chunk barrier failed ${x},${z}"; cat server.log; exit 1; fi
+          done
+          sleep 5
+          send 'execute in minecraft:overworld run forceload remove all'
+          sleep 2
+          send 'stop'
+          for _ in $(seq 1 120); do
+            if ! kill -0 "$SERVER" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          kill "$KEEPER" 2>/dev/null || true
+          wait "$KEEPER" 2>/dev/null || true
+          wait "$SERVER" 2>/dev/null || true
+          cd ..
+
+      - name: Audit persisted large dry caverns
+        run: |
+          python3 ./scripts/audit-never-overworld-large-dry-caverns-r8.py \
+            --world "cavern-${{ matrix.label }}/world" \
+            --max-chunks 256 \
+            --output "cavern-${{ matrix.label }}.json"
+
+      - name: Upload cavern evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R8-cavern-${{ matrix.label }}-${{ github.sha }}
+          path: |
+            cavern-${{ matrix.label }}.json
+            cavern-${{ matrix.label }}/server.log
+          if-no-files-found: warn
+          retention-days: 14
