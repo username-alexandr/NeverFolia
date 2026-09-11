@@ -66,8 +66,6 @@ wait_literal() {
 wait_chunk_loaded() {
   local x="$1" z="$2" token="$3"
   for _ in $(seq 1 150); do
-    # `if loaded` is intentionally the only runtime world-read used by this harness.
-    # It is the same Folia-safe FULL barrier used by the base NR runtime smoke.
     send_console "execute in minecraft:overworld if loaded ${x} 300 ${z} run say ${token}"
     sleep 1
     if grep -Fq -- "${token}" "${TEST_DIR}/server.log" 2>/dev/null; then return 0; fi
@@ -91,8 +89,6 @@ prepare_site() {
       wait_chunk_loaded "${bx}" "${bz}" "NR_STRUCT_FULL_${label}_${index}_${bx}_${bz}"
     done
   done
-  # When a dimension is exactly crossed by the final block, the loop above already
-  # hits that chunk. For non-aligned endings, explicitly probe the far corner too.
   wait_chunk_loaded "${max_x}" "${max_z}" "NR_STRUCT_FULL_${label}_FAR_${max_x}_${max_z}"
 }
 
@@ -107,18 +103,16 @@ if ! grep -q 'Done (' "${TEST_DIR}/server.log" 2>/dev/null; then
   exit 1
 fi
 
-# Each one-piece template spans up to 21x19 blocks. Force-load its complete block
-# footprint and wait for every touched chunk to be FULL before invoking /place.
-# This avoids the previous race where all commands were sent three seconds after
-# forceload and Folia correctly answered "That position is not loaded".
-prepare_site 0   17 17 BURIED
+# R8 rock-mass envelopes enlarge buried_sanctum and sealed_cache so carvers
+# cannot leave their authored room shells visibly floating in a giant cavern.
+prepare_site 0   25 25 BURIED
 prepare_site 64  15 19 ARCHIVE
 prepare_site 128 17 17 CISTERN
 prepare_site 192 19 13 MINE
 prepare_site 256 15 15 GEODE
 prepare_site 320 21 15 RUINS
 prepare_site 384 15 15 CAMP
-prepare_site 448 9  9 CACHE
+prepare_site 448 17 17 CACHE
 
 send_console 'execute in minecraft:overworld run place template neverfolia:never_overworld/structures/buried_sanctum 0 300 0'
 send_console 'execute in minecraft:overworld run place template neverfolia:never_overworld/structures/abyssal_archive 64 300 0'
@@ -129,10 +123,6 @@ send_console 'execute in minecraft:overworld run place template neverfolia:never
 send_console 'execute in minecraft:overworld run place template neverfolia:never_overworld/structures/prospector_camp 384 300 0'
 send_console 'execute in minecraft:overworld run place template neverfolia:never_overworld/structures/sealed_cache 448 300 0'
 
-# Give region-owned placement work a deterministic completion/IO window while all
-# touched chunks remain force-loaded. Block verification itself is deliberately
-# performed offline after shutdown; global-console `execute if block` is not a safe
-# Folia region read and caused Level.getCurrentWorldData() NPEs in the old harness.
 sleep 8
 send_console 'execute in minecraft:overworld run forceload remove all'
 sleep 2
@@ -150,9 +140,6 @@ if grep -Eqi "Failed to parse|Couldn't parse|Unknown registry|Errors in currentl
   exit 1
 fi
 
-# Verify final blocks from persisted Anvil NBT instead of querying blocks from the
-# Folia global console thread. This proves StructureTemplateManager decoded each
-# gzip NBT and that /place persisted the expected one-piece template geometry.
 python3 - "${ROOT_DIR}" "${WORLD_DIR}" <<'PY'
 import importlib.util
 import sys
@@ -178,14 +165,14 @@ region = over.find_region_dir(world)
 print("NeverOverworld structure region directory:", region)
 
 checks = [
-    ("buried_sanctum", 8,   303, 8, "minecraft:lodestone"),
+    ("buried_sanctum", 12,  307, 12, "minecraft:lodestone"),
     ("abyssal_archive", 71, 302, 9, "minecraft:lapis_block"),
     ("ancient_cistern", 132,302, 4, "minecraft:water"),
     ("collapsed_mine", 196,301, 4, "minecraft:crafting_table"),
     ("geode_vault", 263,   302, 7, "minecraft:budding_amethyst"),
     ("flooded_ruins", 330, 301, 7, "minecraft:sea_lantern"),
     ("prospector_camp",394,301, 9, "minecraft:campfire"),
-    ("sealed_cache", 452,  303, 4, "minecraft:gold_block"),
+    ("sealed_cache", 456,  306, 8, "minecraft:gold_block"),
 ]
 
 loaded = {}
@@ -205,8 +192,8 @@ for name, x, y, z, expected in checks:
         )
     print(f"NR structure NBT OK: {name} {x},{y},{z} -> {actual}")
 
-print("[NeverFolia][NeverOverworld structures] ALL 8 PERSISTED NBT MARKERS OK")
+print("[NeverFolia][NeverOverworld structures] ALL 8 R8 PERSISTED NBT MARKERS OK")
 PY
 
-echo '[NeverFolia][NeverOverworld structures] all 8 native NBT templates loaded, placed, and persisted.'
+echo '[NeverFolia][NeverOverworld structures] all 8 R8 native NBT templates loaded, placed, and persisted.'
 tail -n 100 "${LOG}"
