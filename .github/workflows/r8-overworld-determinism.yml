@@ -1,0 +1,57 @@
+name: QA R8 NeverOverworld determinism
+
+on:
+  push:
+    branches:
+      - qa/r8-overworld-determinism
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download exact R8 fast artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          gh run download 34639195821 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name NeverFolia-R8-fast-10fec0d072a5c70d640c1903060c04671f4e6147 \
+            --dir input
+          JAR="$(find input -type f -name 'NeverFolia-R8.jar' | head -n 1)"
+          PACK="$(find input -type f -name 'NeverOverworld-Core-R8.zip' | head -n 1)"
+          test -f "${JAR}" && test -f "${PACK}"
+          echo "JAR=$(realpath "${JAR}")" >> "$GITHUB_ENV"
+          echo "PACK=$(realpath "${PACK}")" >> "$GITHUB_ENV"
+
+      - name: Verify R8 strict NeverOverworld chunk-order determinism
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh "${JAR}" "${PACK}"
+
+      - name: Upload R8 determinism evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R8-overworld-determinism-${{ github.sha }}
+          path: |
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/component-diff.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
