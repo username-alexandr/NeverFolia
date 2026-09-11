@@ -1,0 +1,91 @@
+name: QA ore R7 visible A/B
+
+on:
+  push:
+    branches:
+      - qa/ore-r7-runtime-visible
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  visible-ore:
+    name: visible ore ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: TEST1-R6
+            run_id: 34252324254
+            artifact: NeverFolia-c1f5e1810a6fa4347ff39420fe12134228ac3010
+          - label: ORE-R7
+            run_id: 34567089030
+            artifact: NeverFolia-90a5b3a0d48ee173de22c178b3dd2916867835da
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download exact build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          gh run download "${{ matrix.run_id }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${{ matrix.artifact }}" \
+            --dir input
+          find input -maxdepth 2 -type f -printf '%P\n' | sort
+          JAR="$(find input -type f -name 'NeverFolia-*.jar' | head -n 1)"
+          PACK="$(find input -type f -name 'NeverOverworld-Core-*.zip' | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          test -n "${PACK}" && test -f "${PACK}"
+          echo "JAR=${JAR}" >> "$GITHUB_ENV"
+          echo "PACK=${PACK}" >> "$GITHUB_ENV"
+
+      - name: Self-test visible ore auditor
+        run: python3 scripts/audit-never-overworld-visible-ores.py --self-test
+
+      - name: Generate persisted NeverOverworld sample
+        run: |
+          set -euo pipefail
+          chmod +x scripts/smoke-test-never-overworld-runtime.sh
+          scripts/smoke-test-never-overworld-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Audit upper visible ores
+        run: |
+          python3 scripts/audit-never-overworld-visible-ores.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 256 \
+            --min-y -64 \
+            --max-y 319 \
+            --output "visible-upper-${{ matrix.label }}.json"
+
+      - name: Audit deep visible ores
+        run: |
+          python3 scripts/audit-never-overworld-visible-ores.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 256 \
+            --min-y -512 \
+            --max-y -97 \
+            --output "visible-deep-${{ matrix.label }}.json"
+
+      - name: Upload visible ore evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visible-ore-${{ matrix.label }}-${{ github.sha }}
+          path: |
+            visible-upper-${{ matrix.label }}.json
+            visible-deep-${{ matrix.label }}.json
+            overworld-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
