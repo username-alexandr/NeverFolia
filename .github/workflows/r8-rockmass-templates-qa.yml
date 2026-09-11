@@ -1,0 +1,62 @@
+name: QA R8 rock-mass templates
+
+on:
+  push:
+    branches:
+      - qa/r8-rockmass-templates
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  templates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download exact R7 build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          gh run download 34567089030 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name NeverFolia-90a5b3a0d48ee173de22c178b3dd2916867835da \
+            --dir input
+          JAR="$(find input -type f -name 'NeverFolia-*.jar' | head -n 1)"
+          PACK="$(find input -type f -name 'NeverOverworld-Core-*.zip' | head -n 1)"
+          test -f "${JAR}" && test -f "${PACK}"
+          echo "JAR=${JAR}" >> "$GITHUB_ENV"
+          echo "PACK=${PACK}" >> "$GITHUB_ENV"
+
+      - name: Apply R8 rock-mass envelopes
+        run: python3 ./scripts/harden-never-overworld-rock-mass-structures-r8.py --input "${PACK}"
+
+      - name: Re-fingerprint modified R8 pack
+        run: |
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Force-decode/place all R8 native structures
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
+          ./scripts/smoke-test-never-overworld-native-structures.sh "${JAR}" "${PACK}"
+
+      - name: Upload R8 structure pack evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R8-rockmass-templates-${{ github.sha }}
+          path: |
+            input/*NeverOverworld-Core-*.zip
+            overworld-structure-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
