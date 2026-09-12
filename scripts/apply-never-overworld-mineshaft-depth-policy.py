@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 NAME = "MineshaftStructure.java"
 ANCHOR = "int seaLevel = chunkGenerator.getSeaLevel();"
 MARKER = "// NeverFolia: VANILLA_FLOODED mineshafts are deep-only."
+R9_VILLAGE_LOCATE = Path(__file__).with_name("harden-never-overworld-village-locate-r9.py")
 INJECTION = '''int seaLevel = chunkGenerator.getSeaLevel();
         // NeverFolia: VANILLA_FLOODED mineshafts are deep-only.
         // Keep the complete bounding box inside Y=-448..-112 so rails never
@@ -63,6 +66,9 @@ def self_test() -> None:
     patched = patch_source(fixture)
     if patched.count(MARKER) != 1:
         fail("SELF-TEST marker count drifted")
+    if not R9_VILLAGE_LOCATE.is_file():
+        fail(f"R9 village locate transformer missing: {R9_VILLAGE_LOCATE}")
+    subprocess.run([sys.executable, str(R9_VILLAGE_LOCATE), "--self-test"], check=True)
     print("[NeverFolia][mineshaft depth] SELF-TEST OK")
 
 
@@ -77,11 +83,18 @@ def main() -> None:
     if args.folia is None:
         parser.error("folia worktree is required unless --self-test is used")
     self_test()
-    path = find_source(args.folia.resolve())
+    folia = args.folia.resolve()
+    path = find_source(folia)
     path.write_text(patch_source(path.read_text(encoding="utf-8")), encoding="utf-8")
     print("[NeverFolia][mineshaft depth] deep-only mineshaft placement applied")
-    print(f"  range: Y=-448..-112")
+    print("  range: Y=-448..-112")
     print(f"  source: {path}")
+
+    # R9 must run after apply-never-overworld-village-layout-safety.py, because
+    # R8 layout safety rewrites passesNeverOverworldPolicy() back to the expensive
+    # Structure.generate()/bbox preview path. This script is the next production
+    # patch-chain stage, so apply the bounded locate policy here deterministically.
+    subprocess.run([sys.executable, str(R9_VILLAGE_LOCATE), str(folia)], check=True)
 
 
 if __name__ == "__main__":
