@@ -1,0 +1,117 @@
+name: R9 Upper Ore LIGHT Cleanup Runtime
+
+on:
+  push:
+    branches:
+      - qa/r9-upper-ore-light-cleanup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-upper-ore-light-cleanup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: Persisted upper lapis diamond zero at LIGHT
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Self-test R9 upper ore cleanup and auditor
+        run: |
+          python3 ./scripts/finalize-never-overworld-upper-ores-r9.py --self-test
+          python3 ./scripts/audit-never-overworld-r9-upper-ores.py --self-test
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Apply final upper ore cleanup at LIGHT
+        run: python3 ./scripts/finalize-never-overworld-upper-ores-r9.py ./.work/Folia
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect JAR and build NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-r9-upper-light-cleanup.jar
+          PACK="artifacts/NeverOverworld-Core-r9-upper-light-cleanup.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-r9-upper-light-cleanup.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Generate persisted R9 candidate sample
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-r9-upper-light-cleanup.jar \
+            artifacts/NeverOverworld-Core-r9-upper-light-cleanup.zip
+
+      - name: Generate matching vanilla 26.2 sample
+        run: |
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh artifacts/NeverFolia-r9-upper-light-cleanup.jar
+
+      - name: Enforce persisted upper lapis diamond zero
+        run: |
+          python3 ./scripts/audit-never-overworld-r9-upper-ores.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --output artifacts/R9-upper-ore-light-cleanup-proof.json
+
+      - name: Upload upper-ore cleanup proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-upper-ore-light-cleanup-${{ github.sha }}
+          path: |
+            artifacts/R9-upper-ore-light-cleanup-proof.json
+            overworld-smoke-test/server.log
+            vanilla-ore-reference-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
