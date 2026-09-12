@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -11,6 +13,8 @@ from pathlib import Path
 BAD = "minecraft:jigusaw"
 GOOD = "minecraft:jigsaw"
 PREFIX = "data/neverfolia/worldgen/structure/"
+ROOT = Path(__file__).resolve().parent
+R8_HARDENER = ROOT / "harden-never-overworld-rock-mass-structures-r8.py"
 
 
 def fail(message: str) -> None:
@@ -67,6 +71,16 @@ def normalize(path: Path) -> None:
     print(f"  pack: {path}")
 
 
+def apply_r8_hardening(path: Path) -> None:
+    if not R8_HARDENER.is_file():
+        fail(f"R8 rock-mass hardener missing: {R8_HARDENER}")
+    subprocess.run(
+        [sys.executable, str(R8_HARDENER), "--input", str(path)],
+        check=True,
+    )
+    print("[NeverFolia][NeverOverworld structures type] R8 rock-mass hardening applied before normalization")
+
+
 def self_test() -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -84,11 +98,14 @@ def self_test() -> None:
             value = json.loads(zf.read(f"{PREFIX}test_{i}.json"))
             if value.get("type") != GOOD:
                 fail(f"SELF-TEST: test_{i} not normalized")
+    if not R8_HARDENER.is_file():
+        fail("SELF-TEST: R8 hardener script is missing")
     print("[NeverFolia][NeverOverworld structures type] SELF-TEST OK")
+    print("  production pack chain: R8 rock-mass hardening -> jigsaw type normalization")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Normalize legacy NeverOverworld jigsaw structure type typo")
+    parser = argparse.ArgumentParser(description="Apply R8 rock-mass hardening and normalize legacy NeverOverworld jigsaw structure type typo")
     parser.add_argument("--input", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -99,7 +116,8 @@ def main() -> None:
         parser.error("--input is required unless --self-test is used")
     if not args.input.is_file():
         fail(f"pack not found: {args.input}")
-    normalize(args.input)
+    apply_r8_hardening(args.input.resolve())
+    normalize(args.input.resolve())
 
 
 if __name__ == "__main__":
