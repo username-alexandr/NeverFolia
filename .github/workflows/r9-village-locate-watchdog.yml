@@ -1,5 +1,6 @@
 name: R9 Village Locate Watchdog
 
+# Isolated R9 release-blocker gate; kept off the candidate branch until proven green.
 on:
   push:
     branches:
