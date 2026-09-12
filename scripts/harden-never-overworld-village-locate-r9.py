@@ -18,8 +18,6 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
         final Holder<Structure> structureHolder,
         final String id
     ) {
-        // Swamp huts are flood-adapted at generation time, so locate only needs
-        // a cheap biome check at the raised waterline.
         if (SWAMP_HUT.equals(id)) {
             return passesBiomeAtY(generator, state, chunkPos, structureHolder, FLOOD_LEVEL + 1);
         }
@@ -41,12 +39,10 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
 
         if (id.startsWith("minecraft:village_")) {
             // NeverFolia R9: bounded village locate; never preview Jigsaw during /locate.
-            // The old R8 path called Structure.generate() and then getBaseHeight()
-            // for every column in the generated bbox. Both operations run on the
-            // Folia region scheduler when issued by a player and can trip the
-            // watchdog. Locate now performs only a bounded 3x3 deterministic
-            // preliminary-surface envelope (<= 9 probes total). The authoritative
-            // generated-Jigsaw bbox check remains in ChunkGenerator generation.
+            // R8 built a complete village preview and scanned every predicted bbox
+            // column. R9 keeps locate bounded to a deterministic 3x3 surface
+            // envelope. Exact generated-bbox safety remains authoritative during
+            // real structure generation before the StructureStart is persisted.
             final int radius = sampleRadius(id);
             int drySamples = 1;
             final int[] offsets = {-radius, 0, radius};
@@ -207,7 +203,6 @@ def validate(text: str) -> None:
     if leaked:
         fail(f"unbounded generation/height path survived in locate policy: {leaked}")
     if policy.count("preliminarySurfaceY(") > 2:
-        # one center call + one loop call; the loop executes at most eight times.
         fail("unexpected duplicate preliminarySurfaceY call sites in R9 policy")
 
 
@@ -231,8 +226,9 @@ def self_test() -> None:
 }
 '''
     out = patch(fixture)
-    validate(out)
-    if "NeverOverworldGeneratedVillageSafety.preview" in out[out.find(POLICY_SIG):]:
+    start, end = find_method_end(out, POLICY_SIG)
+    policy = out[start:end]
+    if "NeverOverworldGeneratedVillageSafety.preview" in policy:
         fail("SELF-TEST: Jigsaw preview call survived")
     if out.count(MARKER) != 1:
         fail("SELF-TEST: R9 marker count mismatch")
@@ -240,8 +236,8 @@ def self_test() -> None:
     if again != out:
         fail("SELF-TEST: transformer is not idempotent")
     print("[NeverFolia][R9 village locate] SELF-TEST OK")
-    print("  village locate: no Structure.generate/Jigsaw preview")
-    print("  village locate: no bbox getBaseHeight scan")
+    print("  village locate: no full Jigsaw preview")
+    print("  village locate: no generated-bbox height scan")
     print("  village locate: <=9 preliminary-surface probes per candidate")
     print("  real generation: exact generated bbox safety remains authoritative")
 
