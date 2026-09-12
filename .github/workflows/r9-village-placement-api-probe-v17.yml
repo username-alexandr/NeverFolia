@@ -1,0 +1,69 @@
+name: R9 Village Placement API Probe V17
+
+on:
+  push:
+    branches:
+      - qa/r9-village-placement-api-probe-v17
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Print StructureStart placement API and registry examples
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('.work/Folia/folia-server/src/minecraft/java')
+          targets=[
+            root/'net/minecraft/world/level/levelgen/structure/StructureStart.java',
+            root/'net/minecraft/world/level/chunk/ChunkGenerator.java',
+          ]
+          for p in targets:
+            print(f'===== {p} =====')
+            text=p.read_text(errors='replace')
+            for needle in ('placeInChunk(', 'tryGenerateStructure(', 'getAllReferences(', 'getStartForStructure(', 'Registries.STRUCTURE', 'BuiltinStructures'):
+              pos=text.find(needle)
+              if pos>=0:
+                lo=max(0,pos-1800); hi=min(len(text),pos+5000)
+                print(f'--- {needle} ---')
+                print(text[lo:hi])
+          print('===== registry API matches =====')
+          count=0
+          for p in root.rglob('*.java'):
+            text=p.read_text(errors='replace')
+            if 'Registries.STRUCTURE' in text and ('getOrThrow' in text or 'getKey(' in text or 'lookupOrThrow' in text):
+              print(f'--- {p} ---')
+              for line in text.splitlines():
+                if 'Registries.STRUCTURE' in line or ('getOrThrow' in line and 'structure' in line.lower()):
+                  print(line)
+              count+=1
+              if count>=12: break
+          PY
