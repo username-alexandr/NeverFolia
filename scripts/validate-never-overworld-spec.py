@@ -33,6 +33,10 @@ def main() -> None:
     builder = text("scripts/build-never-overworld-core-pack-legacy.py")
     native_wrapper = text("scripts/build-never-overworld-core-pack.py")
     flood = text("scripts/apply-never-overworld-flood-hook.py")
+    flood_r8 = text("scripts/harden-never-overworld-flood-connectivity-r8.py")
+    frozen_r8c = text("scripts/harden-never-overworld-frozen-surface-r8c.py")
+    rock_mass_r8 = text("scripts/harden-never-overworld-rock-mass-structures-r8.py")
+    structure_normalizer = text("scripts/normalize-never-overworld-structure-type.py")
     native_fluid = text("scripts/apply-never-overworld-fluid-picker.py")
     geology = text("scripts/apply-never-overworld-ore-geology.py")
     geology_extension = text("scripts/extend-never-overworld-ore-geology.py")
@@ -98,6 +102,49 @@ def main() -> None:
         "NeverOverworld flood hook",
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
+
+    for marker in (
+        "floodLargeBoundaryConnectedCaverns",
+        "scanMinY = Math.max(minY, -384)",
+        "scanMaxY = Math.min(maxY, 96)",
+        "tail < 768",
+        "boundaryCells < 48",
+        "verticalSpan < 24",
+        "chunk.getAllStarts().values()",
+        "box.minX() - 2",
+        "localX < 0 || localX > 15",
+        "neighbour chunk reads/writes: none",
+    ):
+        require(flood_r8, marker, "NeverOverworld R8 large-cavern connectivity")
+    forbid(flood_r8, "level.getChunk(", "NeverOverworld R8 large-cavern connectivity")
+    forbid(flood_r8, "chunk.getLevel()", "NeverOverworld R8 large-cavern connectivity")
+
+    for marker in (
+        "isDrownedFrozenOverlay",
+        "Blocks.SNOW",
+        "Blocks.SNOW_BLOCK",
+        "Blocks.POWDER_SNOW",
+        "Blocks.ICE",
+        "Blocks.PACKED_ICE",
+        "Blocks.BLUE_ICE",
+        "chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0)",
+        "transformer is not idempotent",
+    ):
+        require(frozen_r8c, marker, "NeverOverworld R8-C frozen-surface cleanup")
+
+    for marker in (
+        "buried_sanctum",
+        "sealed_cache",
+        "[NeverFolia][NeverOverworld rock-mass R8] SELF-TEST OK",
+    ):
+        require(rock_mass_r8, marker, "NeverOverworld R8 rock-mass hardening")
+
+    for marker in (
+        'R8_HARDENER = ROOT / "harden-never-overworld-rock-mass-structures-r8.py"',
+        "apply_r8_hardening(args.input.resolve())",
+        "R8 rock-mass hardening applied before normalization",
+    ):
+        require(structure_normalizer, marker, "NeverOverworld production structure pack chain")
 
     for marker in (
         'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java")',
@@ -169,6 +216,8 @@ def main() -> None:
         'extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"',
         'tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"',
         'relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"',
+        'harden-never-overworld-flood-connectivity-r8.py" "${FOLIA_DIR}"',
+        'harden-never-overworld-frozen-surface-r8c.py" "${FOLIA_DIR}"',
     ):
         require(post_patches, marker, "NeverFolia post-patch pipeline")
 
@@ -202,7 +251,14 @@ def main() -> None:
         "Minimum build/generation Y: `-512`",
         "Maximum build/generation Y: `511`",
         "Flood plane: `Y=128`",
-        "Sealed caves",
+        "large boundary-connected cavern fallback",
+        "`>=768` floodable",
+        "`>=48` horizontal chunk-boundary cells",
+        "`>=24` blocks of vertical",
+        "Valid generated structure starts are",
+        "SNOW_BLOCK",
+        "PACKED_ICE",
+        "BLUE_ICE",
         "Diamond | `-496..-160`",
         "Emerald | `-384..-96`",
         "minecraft:deepslate_diamond_ore",
@@ -227,8 +283,9 @@ def main() -> None:
     print("  upper: vanilla 26.2 from Y>=-64")
     print("  aquifer: native lava branch disabled")
     print("  ores: native chunk-owned geology + diamond/emerald balance v2 + persisted NBT gate")
-    print("  flood: surface-connected to Y=128 at LIGHT barrier")
-    print("  structures: native structures-v1 + predictive no-generation locate")
+    print("  flood: primary surface-connected Y=128 + R8 giant boundary-cavern fallback")
+    print("  frozen surface: R8-C snow/ice remnants melt during drowned-column weathering")
+    print("  structures: native structures-v1 + R8 rock-mass hardening + predictive no-generation locate")
     print("  fingerprint: independent NR-DEV-1 lock")
 
 
