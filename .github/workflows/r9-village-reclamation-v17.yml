@@ -60,20 +60,18 @@ jobs:
         run: python3 ./scripts/tune-never-overworld-village-strict-search-v12.py ./.work/Folia
       - name: Apply V17 actual-bbox reclamation
         run: python3 ./scripts/apply-never-overworld-village-reclamation-v17.py ./.work/Folia
-      - name: Assert no generated-bbox rejection gate is present
+      - name: Assert no executable generated-bbox rejection gate is present
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java')
           text=p.read_text()
-          if 'validate the actual generated village bbox before persisting the start' in text:
-              raise SystemExit('V14 generated-bbox rejection leaked into V17')
           if 'NeverOverworldGeneratedVillageSafety.allowsGenerated(' in text:
               raise SystemExit('V14 allowsGenerated gate leaked into V17')
           s=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureStart.java').read_text()
           if s.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1:
               raise SystemExit('V17 reclamation call missing/drifted')
-          print('[NeverFolia][R9 V17] source ordering/assertions OK')
+          print('[NeverFolia][R9 V17] executable source ordering/assertions OK')
           PY
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
