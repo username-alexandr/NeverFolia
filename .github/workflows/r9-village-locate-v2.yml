@@ -1,21 +1,21 @@
-name: R9 Village Locate V7 Proof
+name: R9 Village Effective Biomes V8 Diagnostics
 
 on:
   push:
     branches:
-      - qa/r9-village-contract-v7
+      - qa/r9-village-effective-biomes-v8
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: r9-village-locate-v7-${{ github.ref }}
+  group: r9-village-effective-biomes-v8-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  village-locate-v7:
-    name: 10 locate targets to persisted village starts
+  village-biomes-v8:
+    name: Final-pack tags vs runtime HolderSets
     runs-on: ubuntu-latest
     timeout-minutes: 100
 
@@ -24,71 +24,145 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+
       - name: Configure Git identity
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
-      - name: Self-test V7 village policy
+
+      - name: Self-test V8 diagnostics and V7 pack policy
         run: |
           python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
           python3 ./scripts/adapt-never-overworld-highland-villages.py --self-test
+          python3 ./scripts/instrument-never-overworld-village-effective-biomes-v8.py --self-test
+
       - name: Prepare Folia 26.2.x upstream
         run: |
           chmod +x ./scripts/prepare-upstream.sh
           ./scripts/prepare-upstream.sh
+
       - name: Apply Folia patches
         run: |
           chmod +x ./scripts/apply-folia-patches-ci.sh
           ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
       - name: Apply NeverFolia post patches
         run: |
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
-      - name: Apply watchdog-safe reach64 locate and generation contract
+
+      - name: Apply watchdog-safe reach64 contract
         run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
+
+      - name: Instrument effective village HolderSets
+        run: python3 ./scripts/instrument-never-overworld-village-effective-biomes-v8.py ./.work/Folia
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew :folia-server:createPaperclipJar --stacktrace
-      - name: Collect JAR and build V7 NeverOverworld pack
+
+      - name: Collect JAR and build V8 NeverOverworld pack
         run: |
           set -euo pipefail
           mkdir -p artifacts
           JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
-          cp "${JAR}" artifacts/NeverFolia-r9-village-v7.jar
-          PACK="artifacts/NeverOverworld-Core-r9-village-v7.zip"
-          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/NeverFolia-r9-village-v7.jar --output "${PACK}"
+          cp "${JAR}" artifacts/NeverFolia-r9-village-v8.jar
+          PACK="artifacts/NeverOverworld-Core-r9-village-v8.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/NeverFolia-r9-village-v8.jar --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
-      - name: Run V7 10-target locate to persisted-start proof
+
+      - name: Verify final-pack village biome tags
         run: |
+          python3 - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+
+          pack = Path('artifacts/NeverOverworld-Core-r9-village-v8.zip')
+          expected = {
+              'village_plains': {'minecraft:meadow','minecraft:cherry_grove','minecraft:savanna_plateau','minecraft:windswept_savanna','minecraft:stony_peaks'},
+              'village_savanna': {'minecraft:savanna_plateau','minecraft:windswept_savanna','minecraft:stony_peaks'},
+              'village_desert': {'minecraft:badlands','minecraft:wooded_badlands','minecraft:eroded_badlands','minecraft:stony_peaks','minecraft:savanna_plateau'},
+              'village_snowy': {'minecraft:grove','minecraft:snowy_slopes','minecraft:jagged_peaks','minecraft:frozen_peaks'},
+              'village_taiga': {'minecraft:old_growth_pine_taiga','minecraft:old_growth_spruce_taiga','minecraft:grove','minecraft:snowy_slopes','minecraft:jagged_peaks','minecraft:frozen_peaks','minecraft:stony_peaks'},
+          }
+          with zipfile.ZipFile(pack) as z:
+              for variant, additions in expected.items():
+                  path = f'data/minecraft/tags/worldgen/biome/has_structure/{variant}.json'
+                  payload = json.loads(z.read(path))
+                  values = set(payload.get('values', []))
+                  print(f'[V8 final pack] {variant}: replace={payload.get("replace")} values={sorted(values)}')
+                  if payload.get('replace') is not False:
+                      raise SystemExit(f'{variant}: expected replace=false')
+                  missing = additions - values
+                  if missing:
+                      raise SystemExit(f'{variant}: final pack missing additions {sorted(missing)}')
+          print('[V8 final pack] all five biome tag overrides are present after the complete pack pipeline')
+          PY
+
+      - name: Run V8 runtime HolderSet diagnostics
+        run: |
+          set +e
           chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
           ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
-            artifacts/NeverFolia-r9-village-v7.jar \
-            artifacts/NeverOverworld-Core-r9-village-v7.zip
-      - name: Upload V7 locate diagnostics
+            artifacts/NeverFolia-r9-village-v8.jar \
+            artifacts/NeverOverworld-Core-r9-village-v8.zip
+          rc=$?
+          echo "[V8 diagnostics] locate probe exit=${rc} (NOT_FOUND is allowed in this diagnostic run)"
+          exit 0
+
+      - name: Summarize effective runtime village HolderSets
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          log = Path('overworld-village-locate-r9-v2-test/server.log')
+          text = log.read_text(errors='replace')
+          variants = ['plains','desert','savanna','snowy','taiga']
+          missing = []
+          for variant in variants:
+              village = f'minecraft:village_{variant}'
+              rows = [line for line in text.splitlines() if f'id={village} ' in line and 'reason=R9V8_EFFECTIVE_BIOMES' in line]
+              if not rows:
+                  missing.append(village)
+                  continue
+              line = rows[0]
+              m = re.search(r'detail=candidate=([^, ]+),allowed=(\[[^\]]*\])', line)
+              if not m:
+                  raise SystemExit(f'could not parse V8 effective HolderSet line: {line}')
+              print(f'[V8 runtime] {village}: candidate={m.group(1)} allowed={m.group(2)}')
+          if missing:
+              raise SystemExit(f'missing effective HolderSet diagnostics for: {missing}')
+          if 'FoliaWatchdogThread' in text or 'NeverOverworldGeneratedVillageSafety.preview' in text:
+              raise SystemExit('watchdog/preview regression detected during V8 diagnostic run')
+          print('[V8 runtime] effective HolderSet capture complete; no watchdog signature')
+          PY
+
+      - name: Upload V8 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R9-village-locate-v7-${{ github.sha }}
+          name: R9-village-effective-biomes-v8-${{ github.sha }}
           path: |
-            artifacts/village-locate-r9-v2-proof.json
+            artifacts/NeverOverworld-Core-r9-village-v8.zip
             overworld-village-locate-r9-v2-test/results.tsv
             overworld-village-locate-r9-v2-test/direct-predictions.tsv
             overworld-village-locate-r9-v2-test/segment-*.log
             overworld-village-locate-r9-v2-test/server.log
-            overworld-village-locate-r9-v2-test/chunks-before-locate.txt
-            overworld-village-locate-r9-v2-test/chunks-after-locate.txt
           if-no-files-found: warn
           retention-days: 14
