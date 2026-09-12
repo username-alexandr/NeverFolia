@@ -1,5 +1,6 @@
 name: R9 Village BBox V4 Runtime
 
+# Full persisted-world proof: locate -> starts -> actual bbox -> water=0.
 on:
   push:
     branches:
