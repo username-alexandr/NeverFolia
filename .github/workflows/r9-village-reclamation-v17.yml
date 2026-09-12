@@ -60,18 +60,20 @@ jobs:
         run: python3 ./scripts/tune-never-overworld-village-strict-search-v12.py ./.work/Folia
       - name: Apply V17 actual-bbox reclamation
         run: python3 ./scripts/apply-never-overworld-village-reclamation-v17.py ./.work/Folia
-      - name: Assert no executable generated-bbox rejection gate is present
+      - name: Assert R9-v4 generated safety is no-op and V17 is installed
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java')
-          text=p.read_text()
-          if 'NeverOverworldGeneratedVillageSafety.allowsGenerated(' in text:
-              raise SystemExit('V14 allowsGenerated gate leaked into V17')
-          s=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureStart.java').read_text()
-          if s.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1:
+          safety=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java').read_text()
+          if 'return start.isValid();' not in safety:
+              raise SystemExit('R9-v4 no-op generated safety contract missing')
+          for forbidden in ('inspectBoundingBox(', '.dry()', 'getBaseHeight('):
+              if forbidden in safety:
+                  raise SystemExit(f'generated-bbox rejection primitive leaked into V17: {forbidden}')
+          start=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureStart.java').read_text()
+          if start.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1:
               raise SystemExit('V17 reclamation call missing/drifted')
-          print('[NeverFolia][R9 V17] executable source ordering/assertions OK')
+          print('[NeverFolia][R9 V17] R9-v4 no-op safety + V17 source ordering OK')
           PY
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
