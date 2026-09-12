@@ -8,9 +8,11 @@ HELPER_REL = Path(
     "folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java"
 )
 POLICY_SIG = "    private static boolean passesNeverOverworldPolicy("
-MARKER = "// NeverFolia R9-v2: village locate matches generation prefilter; exact bbox remains generation-only."
+MARKER = "// NeverFolia R9-v3: cheap center+biome first; exact generated-bbox preview only for finalists."
 CENTER_PROBE = "final int centerSurfaceY = preliminarySurfaceY(state, centerX, centerZ);"
 ENVELOPE_PROBE = "preliminarySurfaceY(state, centerX + dx, centerZ + dz)"
+PREVIEW_CALL = "NeverOverworldGeneratedVillageSafety.preview(generator, level, state, chunkPos, structureHolder)"
+BIOME_CALL = "passesBiomeAtY(generator, state, chunkPos, structureHolder, centerSurfaceY)"
 
 NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
         final ChunkGenerator generator,
@@ -27,27 +29,44 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
             return false;
         }
 
+        // Stage 1 is deliberately cheap and matches the generation prefilter.
+        // Most flooded candidates die on one preliminary surface sample and never
+        // execute a biome lookup, Jigsaw preview or generated-bbox height scan.
         final int centerX = chunkPos.getMiddleBlockX();
         final int centerZ = chunkPos.getMiddleBlockZ();
         final int centerSurfaceY = preliminarySurfaceY(state, centerX, centerZ);
         if (centerSurfaceY < MIN_DRY_BASE_HEIGHT) {
-            debugVillage(id, "R9V2_CENTER_DRY_REJECT", chunkPos, centerSurfaceY, "min=" + MIN_DRY_BASE_HEIGHT);
+            debugVillage(id, "R9V3_CENTER_DRY_REJECT", chunkPos, centerSurfaceY, "min=" + MIN_DRY_BASE_HEIGHT);
             return false;
         }
         if (!passesBiomeAtY(generator, state, chunkPos, structureHolder, centerSurfaceY)) {
-            debugVillage(id, "R9V2_BIOME_REJECT", chunkPos, centerSurfaceY, "generation-prefilter");
+            debugVillage(id, "R9V3_BIOME_REJECT", chunkPos, centerSurfaceY, "generation-prefilter");
             return false;
         }
 
         if (id.startsWith("minecraft:village_")) {
-            // NeverFolia R9-v2: village locate matches generation prefilter; exact bbox remains generation-only.
-            // Real village generation uses the same dry-centre + biome eligibility before
-            // Structure#generate. The generated StructureStart bbox is then checked exactly
-            // before persistence. /locate must not add an older 7/9 radius-48 envelope,
-            // because that rejects candidates which real generation is allowed to evaluate.
-            // A dedicated runtime gate verifies every predicted direct village by generating
-            // its predicted chunk and requiring the corresponding persisted StructureStart.
-            debugVillage(id, "R9V2_ACCEPT_PREFILTER", chunkPos, centerSurfaceY, "center+biome;exact-bbox-on-generation");
+            // NeverFolia R9-v3: cheap center+biome first; exact generated-bbox preview only for finalists.
+            // R8 previewed full Jigsaw layouts for every dry candidate before a
+            // variant-specific biome rejection could eliminate them, which could
+            // monopolise the Folia global region thread. R9-v2 removed preview
+            // entirely, but then /locate returned candidates which real generation
+            // rejected at the authoritative generated-bbox safety gate.
+            //
+            // V3 performs the expensive exact preview only after BOTH cheap gates
+            // have passed. The global search is still bounded by MAX_CANDIDATE_RINGS,
+            // and the returned candidate now uses the same generated-bbox decision
+            // as persistence.
+            final NeverOverworldGeneratedVillageSafety.Preview preview =
+                NeverOverworldGeneratedVillageSafety.preview(generator, level, state, chunkPos, structureHolder);
+            if (!preview.valid()) {
+                debugVillage(id, "R9V3_LAYOUT_INVALID_REJECT", chunkPos, centerSurfaceY, preview.detail());
+                return false;
+            }
+            if (!preview.dry()) {
+                debugVillage(id, "R9V3_LAYOUT_DRY_REJECT", chunkPos, centerSurfaceY, preview.detail());
+                return false;
+            }
+            debugVillage(id, "R9V3_ACCEPT", chunkPos, centerSurfaceY, preview.detail());
             return true;
         }
 
@@ -71,7 +90,7 @@ NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f"[NeverFolia][R9 village locate v2] {message}")
+    raise SystemExit(f"[NeverFolia][R9 village locate v3] {message}")
 
 
 def find_method_end(text: str, signature: str) -> tuple[int, int]:
@@ -137,36 +156,48 @@ def validate(text: str) -> None:
     required = (
         MARKER,
         'id.startsWith("minecraft:village_")',
-        'debugVillage(id, "R9V2_ACCEPT_PREFILTER"',
+        PREVIEW_CALL,
+        'debugVillage(id, "R9V3_ACCEPT"',
         "final int[] offsets = {-radius, 0, radius};",
         "drySamples >= minDrySamples(id)",
     )
     missing = [needle for needle in required if needle not in policy]
     if missing:
         fail(f"patched policy missing markers: {missing}")
+
+    # The policy may call the dedicated preview helper, but it must not recreate
+    # the old heavy primitives inline.
     forbidden = (
-        "NeverOverworldGeneratedVillageSafety.preview",
-        ".preview(",
         "Structure.generate(",
         ".generate(",
         "getBaseHeight(",
         "inspectBoundingBox(",
+        "R9V2_ACCEPT_PREFILTER",
         "R9_ENVELOPE_REJECT",
     )
     leaked = [needle for needle in forbidden if needle in policy]
     if leaked:
-        fail(f"unbounded/legacy village locate path survived: {leaked}")
+        fail(f"inline/unbounded village locate path survived: {leaked}")
     if policy.count(CENTER_PROBE) != 1:
         fail(f"expected exactly one center preliminary-surface probe, got {policy.count(CENTER_PROBE)}")
     if policy.count(ENVELOPE_PROBE) != 1:
         fail(f"expected only non-village bounded envelope probe, got {policy.count(ENVELOPE_PROBE)}")
+    if policy.count(PREVIEW_CALL) != 1:
+        fail(f"expected exactly one finalist preview call, got {policy.count(PREVIEW_CALL)}")
+
+    center_reject = policy.find("centerSurfaceY < MIN_DRY_BASE_HEIGHT")
+    biome_check = policy.find(BIOME_CALL)
+    preview_call = policy.find(PREVIEW_CALL)
+    if min(center_reject, biome_check, preview_call) < 0 or not (center_reject < biome_check < preview_call):
+        fail("expensive village preview is not ordered after center+biome cheap gates")
+
     village_start = policy.find('if (id.startsWith("minecraft:village_"))')
     non_village_envelope = policy.find("final int radius = sampleRadius(id);", village_start)
     village_block = policy[village_start:non_village_envelope]
     if "drySamples" in village_block or ENVELOPE_PROBE in village_block:
-        fail("village branch still contains legacy dry-envelope rejection")
-    if "return true;" not in village_block:
-        fail("village generation-prefilter acceptance missing")
+        fail("village branch still contains legacy fixed dry-envelope rejection")
+    if PREVIEW_CALL not in village_block or "preview.dry()" not in village_block:
+        fail("village branch is not tied to exact generated-bbox preview")
 
 
 def self_test() -> None:
@@ -180,9 +211,7 @@ def self_test() -> None:
         final String id
     ) {
         if (id.startsWith("minecraft:village_")) {
-            final NeverOverworldGeneratedVillageSafety.Preview preview =
-                NeverOverworldGeneratedVillageSafety.preview(generator, level, state, chunkPos, structureHolder);
-            return preview.dry();
+            return true;
         }
         return true;
     }
@@ -191,21 +220,22 @@ def self_test() -> None:
     out = patch(fixture)
     start, end = find_method_end(out, POLICY_SIG)
     policy = out[start:end]
-    if "NeverOverworldGeneratedVillageSafety.preview" in policy:
-        fail("SELF-TEST: Jigsaw preview call survived")
     if out.count(MARKER) != 1:
-        fail("SELF-TEST: R9-v2 marker count mismatch")
+        fail("SELF-TEST: R9-v3 marker count mismatch")
     if policy.count(CENTER_PROBE) != 1 or policy.count(ENVELOPE_PROBE) != 1:
         fail("SELF-TEST: probe topology drifted")
-    if "R9V2_ACCEPT_PREFILTER" not in policy:
-        fail("SELF-TEST: village generation-prefilter acceptance missing")
+    if policy.count(PREVIEW_CALL) != 1:
+        fail("SELF-TEST: finalist preview count mismatch")
+    if not (policy.find("centerSurfaceY < MIN_DRY_BASE_HEIGHT") < policy.find(BIOME_CALL) < policy.find(PREVIEW_CALL)):
+        fail("SELF-TEST: finalist preview ordering drifted")
     again = patch(out)
     if again != out:
         fail("SELF-TEST: transformer is not idempotent")
-    print("[NeverFolia][R9 village locate v2] SELF-TEST OK")
-    print("  village locate: dry-center + biome only, matching generation prefilter")
-    print("  village locate: no Jigsaw preview / no bbox scan / no legacy 7-of-9 envelope")
-    print("  real generation: exact generated bbox safety remains authoritative")
+    print("[NeverFolia][R9 village locate v3] SELF-TEST OK")
+    print("  stage 1: one preliminary dry-center probe + biome rejection")
+    print("  stage 2: exact generated-Jigsaw bbox preview only for surviving village finalists")
+    print("  search remains bounded by MAX_CANDIDATE_RINGS; no chunk loads during locate")
+    print("  returned village must pass the same exact bbox safety used before persistence")
 
 
 def main() -> None:
@@ -220,7 +250,7 @@ def main() -> None:
     helper = args.folia.resolve() / HELPER_REL
     if not helper.is_file(): fail(f"NeverOverworldVanillaFastLocate helper missing: {helper}")
     helper.write_text(patch(helper.read_text(encoding="utf-8")), encoding="utf-8")
-    print("[NeverFolia][R9 village locate v2] generation-aligned village locate applied")
+    print("[NeverFolia][R9 village locate v3] finalist-only exact village locate applied")
     print(f"  helper: {helper}")
 
 if __name__ == "__main__": main()
