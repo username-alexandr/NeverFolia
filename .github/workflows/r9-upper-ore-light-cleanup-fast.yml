@@ -1,0 +1,23 @@
+name: R9 Upper Ore LIGHT Cleanup Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-upper-ore-light-cleanup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    name: Final upper ore LIGHT cleanup transformer
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Self-test final upper ore cleanup
+        run: python3 ./scripts/finalize-never-overworld-upper-ores-r9.py --self-test
+      - name: Self-test diagnostic auditor
+        run: python3 ./scripts/audit-never-overworld-r9-upper-ores.py --self-test

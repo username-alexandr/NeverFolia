@@ -1,0 +1,102 @@
+name: R9 Upper Ore Runtime Diagnostics
+
+on:
+  push:
+    branches:
+      - qa/r9-upper-ore-runtime-diagnostics
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: Reuse Build 370 JAR and count upper lapis/diamond
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Self-test diagnostic auditor
+        run: python3 ./scripts/audit-never-overworld-r9-upper-ores.py --self-test
+
+      - name: Download compiled JAR from Build 370
+        uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-compiled-7adcd0619307bf624e094e2a928ab79fe27540be
+          path: build370-jar
+          github-token: ${{ github.token }}
+          run-id: 34705665063
+
+      - name: Resolve Build 370 JAR and build candidate pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find build370-jar -type f -name '*.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-build370.jar
+          PACK="artifacts/NeverOverworld-Core-build370.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-build370.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Generate persisted R9 candidate sample
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-build370.jar \
+            artifacts/NeverOverworld-Core-build370.zip
+
+      - name: Generate matching vanilla 26.2 sample
+        run: |
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh artifacts/NeverFolia-build370.jar
+
+      - name: Count upper lapis and diamond
+        id: upper
+        continue-on-error: true
+        run: |
+          python3 ./scripts/audit-never-overworld-r9-upper-ores.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --output artifacts/R9-upper-ore-runtime-diagnostics.json
+
+      - name: Require diagnostic report and print contract result
+        run: |
+          test -s artifacts/R9-upper-ore-runtime-diagnostics.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('artifacts/R9-upper-ore-runtime-diagnostics.json')
+          d=json.loads(p.read_text())
+          print('candidate forbidden:', d['candidate_forbidden_ore_blocks'])
+          print('vanilla coverage:', d['vanilla_reference_forbidden_ore_blocks'])
+          print('candidate upper all ores:', d['candidate_upper_ore_blocks'])
+          print('chunks scanned:', d['full_chunks_scanned'])
+          PY
+
+      - name: Upload upper-ore diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-upper-ore-runtime-diagnostics-${{ github.sha }}
+          path: |
+            artifacts/R9-upper-ore-runtime-diagnostics.json
+            overworld-smoke-test/server.log
+            vanilla-ore-reference-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
