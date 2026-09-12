@@ -1,0 +1,149 @@
+name: R9 Village Direct Biomes V9 Runtime
+
+on:
+  push:
+    branches:
+      - qa/r9-village-direct-biomes-v9
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-direct-biomes-v9-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: 10 locates + 5 starts + 5 persisted bboxes
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Validate V9 contracts
+        run: |
+          python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
+          python3 ./scripts/materialize-never-overworld-village-biomes-r9.py --self-test
+          python3 ./scripts/build-never-overworld-core-pack.py --self-test
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Apply watchdog-safe reach64 locate and generation contract
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect JAR and build V9 NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/village-v9-bbox
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-r9-village-v9.jar
+          PACK="artifacts/NeverOverworld-Core-r9-village-v9.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-r9-village-v9.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Verify final direct village biome HolderSets
+        run: |
+          python3 - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+          expected = {
+              'village_plains': ['minecraft:plains','minecraft:meadow','minecraft:cherry_grove','minecraft:savanna_plateau','minecraft:windswept_savanna','minecraft:stony_peaks'],
+              'village_desert': ['minecraft:desert','minecraft:badlands','minecraft:wooded_badlands','minecraft:eroded_badlands','minecraft:stony_peaks','minecraft:savanna_plateau'],
+              'village_savanna': ['minecraft:savanna','minecraft:savanna_plateau','minecraft:windswept_savanna','minecraft:stony_peaks'],
+              'village_snowy': ['minecraft:snowy_plains','minecraft:grove','minecraft:snowy_slopes','minecraft:jagged_peaks','minecraft:frozen_peaks'],
+              'village_taiga': ['minecraft:taiga','minecraft:old_growth_pine_taiga','minecraft:old_growth_spruce_taiga','minecraft:grove','minecraft:snowy_slopes','minecraft:jagged_peaks','minecraft:frozen_peaks','minecraft:stony_peaks'],
+          }
+          pack=Path('artifacts/NeverOverworld-Core-r9-village-v9.zip')
+          with zipfile.ZipFile(pack) as z:
+              for variant, values in expected.items():
+                  path=f'data/minecraft/worldgen/structure/{variant}.json'
+                  data=json.loads(z.read(path))
+                  if data.get('biomes') != values:
+                      raise SystemExit(f'{variant}: direct HolderSet mismatch: {data.get("biomes")}')
+                  if data.get('type') != 'minecraft:jigsaw' or data.get('max_distance_from_center') != 80:
+                      raise SystemExit(f'{variant}: vanilla Jigsaw geometry drifted')
+                  print(f'[V9 pack] {variant}: {data["biomes"]}')
+          print('[V9 pack] all five exact-server village structures use direct biome HolderSets')
+          PY
+
+      - name: Run V9 10-target locate to persisted-start proof
+        run: |
+          chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
+            artifacts/NeverFolia-r9-village-v9.jar \
+            artifacts/NeverOverworld-Core-r9-village-v9.zip
+
+      - name: Run V9 five-village full persisted bbox proof
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/NeverFolia-r9-village-v9.jar \
+            artifacts/NeverOverworld-Core-r9-village-v9.zip \
+            artifacts/village-v9-bbox \
+            "${GITHUB_SHA}"
+
+      - name: Upload V9 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-direct-biomes-v9-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-Core-r9-village-v9.zip
+            artifacts/village-locate-r9-v2-proof.json
+            artifacts/village-v9-bbox/*.json
+            artifacts/village-v9-bbox/*.tsv
+            artifacts/village-v9-bbox/server.log
+            overworld-village-locate-r9-v2-test/results.tsv
+            overworld-village-locate-r9-v2-test/direct-predictions.tsv
+            overworld-village-locate-r9-v2-test/segment-*.log
+            overworld-village-locate-r9-v2-test/server.log
+            village-v4-bbox-test/locate-*.log
+          if-no-files-found: warn
+          retention-days: 14
