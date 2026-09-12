@@ -135,7 +135,7 @@ def main() -> None:
     for marker in (
         "buried_sanctum",
         "sealed_cache",
-        "ROCK MASS R8 SELF-TEST OK",
+        "[NeverFolia][NeverOverworld rock-mass R8] SELF-TEST OK",
     ):
         require(rock_mass_r8, marker, "NeverOverworld R8 rock-mass hardening")
 
