@@ -1,0 +1,23 @@
+name: Validate R8-C Frozen Surface
+
+on:
+  push:
+    branches:
+      - qa/r8c-frozen-surface
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: R8-C frozen surface static validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Self-test existing drowned surface weathering
+        run: python3 ./scripts/weather-never-overworld-flooded-surface.py --self-test
+      - name: Self-test existing flood ecology integration
+        run: python3 ./scripts/harden-never-overworld-flood-ecology.py --self-test
+      - name: Self-test R8-C frozen surface cleanup
+        run: python3 ./scripts/harden-never-overworld-frozen-surface-r8c.py --self-test
