@@ -10,8 +10,7 @@ FLUID_STRIP_CALL = "        removeGeneratedFluids(chunk, minY, FLOOD_LEVEL, air)
 POWDER_CALL = "        removeDeepPowderSnow(chunk, minY, FLOOD_LEVEL - 1, air);\n"
 LOG_LINE = "            || state.is(net.minecraft.tags.BlockTags.LOGS)\n"
 LEAVES_LINE = "            || state.is(net.minecraft.tags.BlockTags.LEAVES)\n"
-FLOODABLE_RETURN = "        return state.isAir()\n"
-FLOODABLE_RETURN_R9 = "        return state.isAir()\n            || state.is(Blocks.WATER)\n"
+IS_FLOODABLE_SIG = "    private static boolean isFloodable(final BlockState state)"
 POWDER_ANCHOR = "    private static void floodSurfaceConnectedVolume(\n"
 SURFACE_SIG = "    private static BlockState drownedSurfaceState(\n"
 
@@ -135,58 +134,125 @@ def fail(message: str) -> None:
 
 def method_bounds(text: str, signature: str) -> tuple[int, int]:
     start = text.find(signature)
-    if start < 0: fail(f"method signature not found: {signature.strip()}")
+    if start < 0:
+        fail(f"method signature not found: {signature.strip()}")
     opening = text.find("{", start)
-    if opening < 0: fail(f"method opening brace not found: {signature.strip()}")
-    depth = 0; in_string = False; in_char = False; escaped = False; i = opening
+    if opening < 0:
+        fail(f"method opening brace not found: {signature.strip()}")
+    depth = 0
+    in_string = False
+    in_char = False
+    escaped = False
+    i = opening
     while i < len(text):
         ch = text[i]
         if in_string:
-            if escaped: escaped = False
-            elif ch == "\\": escaped = True
-            elif ch == '"': in_string = False
-            i += 1; continue
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
         if in_char:
-            if escaped: escaped = False
-            elif ch == "\\": escaped = True
-            elif ch == "'": in_char = False
-            i += 1; continue
-        if ch == '"': in_string = True
-        elif ch == "'": in_char = True
-        elif ch == "{": depth += 1
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "'":
+            in_char = True
+        elif ch == "{":
+            depth += 1
         elif ch == "}":
             depth -= 1
-            if depth == 0: return start, i + 1
+            if depth == 0:
+                return start, i + 1
         i += 1
     fail(f"unterminated method: {signature.strip()}")
 
 
+def add_water_to_floodable(text: str) -> str:
+    start, end = method_bounds(text, IS_FLOODABLE_SIG)
+    method = text[start:end]
+    if "state.is(Blocks.WATER)" in method:
+        return text
+    anchor = "return state.isAir()"
+    if method.count(anchor) != 1:
+        fail(f"isFloodable air-return anchor count mismatch: {method.count(anchor)}")
+    method = method.replace(anchor, anchor + "\n            || state.is(Blocks.WATER)", 1)
+    return text[:start] + method + text[end:]
+
+
 def patch(text: str) -> str:
     if "// NeverFolia R9: interpolated drowned sediment" in text:
-        validate(text); return text
-    for marker in (R8_FALLBACK_CALL.strip(), "BlockTags.LOGS", "BlockTags.LEAVES", "Math.floorDiv(blockX, 3)", "isDrownedFrozenOverlay"):
-        if marker not in text: fail(f"expected R8 marker missing before R9 override: {marker}")
-    if text.count(FLUID_STRIP_CALL) != 1: fail("generated-fluid strip call count mismatch")
+        validate(text)
+        return text
+
+    for marker in (
+        R8_FALLBACK_CALL.strip(),
+        "BlockTags.LOGS",
+        "BlockTags.LEAVES",
+        "Math.floorDiv(blockX, 3)",
+        "isDrownedFrozenOverlay",
+    ):
+        if marker not in text:
+            fail(f"expected R8 marker missing before R9 override: {marker}")
+
+    if text.count(FLUID_STRIP_CALL) != 1:
+        fail("generated-fluid strip call count mismatch")
     text = text.replace(FLUID_STRIP_CALL, POWDER_CALL, 1)
-    if text.count(R8_FALLBACK_CALL) != 1: fail("R8 boundary fallback call count mismatch")
+
+    if text.count(R8_FALLBACK_CALL) != 1:
+        fail("R8 boundary fallback call count mismatch")
     text = text.replace(R8_FALLBACK_CALL, "", 1)
-    if text.count(LOG_LINE) != 1 or text.count(LEAVES_LINE) != 1: fail("LOGS/LEAVES floodability count mismatch")
+
+    if text.count(LOG_LINE) != 1 or text.count(LEAVES_LINE) != 1:
+        fail("LOGS/LEAVES floodability count mismatch")
     text = text.replace(LOG_LINE, "", 1).replace(LEAVES_LINE, "", 1)
-    if text.count(FLOODABLE_RETURN) != 1: fail("isFloodable return anchor missing")
-    text = text.replace(FLOODABLE_RETURN, FLOODABLE_RETURN_R9, 1)
-    if text.count(POWDER_ANCHOR) != 1: fail("floodSurfaceConnectedVolume insertion anchor missing")
+    text = add_water_to_floodable(text)
+
+    if text.count(POWDER_ANCHOR) != 1:
+        fail("floodSurfaceConnectedVolume insertion anchor missing")
     text = text.replace(POWDER_ANCHOR, POWDER_METHOD + POWDER_ANCHOR, 1)
+
     start, end = method_bounds(text, SURFACE_SIG)
     text = text[:start] + "    // NeverFolia R9: interpolated drowned sediment\n" + SURFACE_METHODS + text[end:]
-    validate(text); return text
+    validate(text)
+    return text
 
 
 def validate(text: str) -> None:
-    required = ("// NeverFolia R9: interpolated drowned sediment", POWDER_CALL.strip(), "state.is(Blocks.WATER)", "sedimentNoise(blockX, blockZ, 24", "section.maybeHas(state -> state.is(Blocks.POWDER_SNOW))")
-    missing = [m for m in required if m not in text]
-    if missing: fail(f"R9 output missing markers: {missing}")
-    for forbidden in (R8_FALLBACK_CALL.strip(), "BlockTags.LOGS", "BlockTags.LEAVES", "Math.floorDiv(blockX, 3)", FLUID_STRIP_CALL.strip()):
-        if forbidden in text: fail(f"obsolete R8 behavior survived R9: {forbidden}")
+    required = (
+        "// NeverFolia R9: interpolated drowned sediment",
+        POWDER_CALL.strip(),
+        "sedimentNoise(blockX, blockZ, 24",
+        "section.maybeHas(state -> state.is(Blocks.POWDER_SNOW))",
+    )
+    missing = [marker for marker in required if marker not in text]
+    if missing:
+        fail(f"R9 output missing markers: {missing}")
+
+    flood_start, flood_end = method_bounds(text, IS_FLOODABLE_SIG)
+    flood_method = text[flood_start:flood_end]
+    if flood_method.count("state.is(Blocks.WATER)") != 1:
+        fail("R9 isFloodable must preserve/traverse existing water exactly once")
+    if "BlockTags.LOGS" in flood_method or "BlockTags.LEAVES" in flood_method:
+        fail("R9 isFloodable must preserve partially flooded trees")
+
+    for forbidden in (
+        R8_FALLBACK_CALL.strip(),
+        "Math.floorDiv(blockX, 3)",
+        FLUID_STRIP_CALL.strip(),
+    ):
+        if forbidden in text:
+            fail(f"obsolete R8 behavior survived R9: {forbidden}")
 
 
 def self_test() -> None:
@@ -207,6 +273,9 @@ def self_test() -> None:
         final int cellZ = Math.floorDiv(blockZ, 3);
         return Blocks.DIRT.defaultBlockState();
     }
+    private static boolean otherAirCheck(final BlockState state) {
+        return state.isAir();
+    }
     private static boolean isDrownedFrozenOverlay(Object state) { return true; }
     private static boolean isDrownedSurfaceOverlay(Object state) { return true; }
     private static boolean isFloodable(final BlockState state) {
@@ -218,18 +287,32 @@ def self_test() -> None:
     }
 }
 '''
-    out = patch(fixture); validate(out)
-    if patch(out) != out: fail("SELF-TEST: transformer is not idempotent")
+    out = patch(fixture)
+    validate(out)
+    if "otherAirCheck" not in out or "return state.isAir();" not in out:
+        fail("SELF-TEST: non-isFloodable air predicate was modified")
+    if patch(out) != out:
+        fail("SELF-TEST: transformer is not idempotent")
     print("[NeverFolia][R9 flood stabilization] SELF-TEST OK")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("folia", nargs="?", type=Path); parser.add_argument("--self-test", action="store_true"); args = parser.parse_args()
-    if args.self_test: self_test(); return
-    if args.folia is None: parser.error("folia worktree path is required")
-    self_test(); helper = args.folia.resolve() / HELPER_REL
-    if not helper.is_file(): fail(f"NeverOverworldFlood helper missing: {helper}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("folia", nargs="?", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        return
+    if args.folia is None:
+        parser.error("folia worktree path is required")
+    self_test()
+    helper = args.folia.resolve() / HELPER_REL
+    if not helper.is_file():
+        fail(f"NeverOverworldFlood helper missing: {helper}")
     helper.write_text(patch(helper.read_text(encoding="utf-8")), encoding="utf-8")
     print("[NeverFolia][R9 flood stabilization] field fixes applied")
 
-if __name__ == "__main__": main()
+
+if __name__ == "__main__":
+    main()
