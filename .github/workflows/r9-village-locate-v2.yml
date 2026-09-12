@@ -1,20 +1,20 @@
-name: R9 Village Locate V3 Proof
+name: R9 Village Locate V4 Proof
 
 on:
   push:
     branches:
-      - qa/r9-village-locate-contract-v3
+      - qa/r9-village-locate-contract-v4
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: r9-village-locate-v3-${{ github.ref }}
+  group: r9-village-locate-v4-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  village-locate-v3:
+  village-locate-v4:
     name: Locate to persisted village starts
     runs-on: ubuntu-latest
     timeout-minutes: 100
@@ -66,28 +66,28 @@ jobs:
           mkdir -p artifacts
           JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
-          cp "${JAR}" artifacts/NeverFolia-r9-village-locate-v3.jar
+          cp "${JAR}" artifacts/NeverFolia-r9-village-locate-v4.jar
           PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
           python3 ./scripts/build-never-overworld-core-pack.py \
-            --server-jar artifacts/NeverFolia-r9-village-locate-v3.jar \
+            --server-jar artifacts/NeverFolia-r9-village-locate-v4.jar \
             --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
-      - name: Run R9-v3 village locate to persisted-start proof
+      - name: Run R9-v4 village locate to persisted-start proof
         run: |
           chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
           ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
-            artifacts/NeverFolia-r9-village-locate-v3.jar \
+            artifacts/NeverFolia-r9-village-locate-v4.jar \
             artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip
 
-      - name: Upload R9-v3 village locate diagnostics
+      - name: Upload R9-v4 village locate diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R9-village-locate-v3-${{ github.sha }}
+          name: R9-village-locate-v4-${{ github.sha }}
           path: |
             artifacts/village-locate-r9-v2-proof.json
             overworld-village-locate-r9-v2-test/results.tsv
