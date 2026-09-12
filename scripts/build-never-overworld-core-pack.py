@@ -12,6 +12,7 @@ PROMOTER = ROOT / "promote-never-overworld-native-geology-pack.py"
 FIELD_R1 = ROOT / "refine-never-overworld-field-r1-pack.py"
 FIELD_R2 = ROOT / "refine-never-overworld-field-r2-pack.py"
 HIGHLAND_VILLAGES = ROOT / "adapt-never-overworld-highland-villages.py"
+DIRECT_VILLAGE_BIOMES = ROOT / "materialize-never-overworld-village-biomes-r9.py"
 VILLAGE_SPLIT_SETS = ROOT / "split-never-overworld-village-structure-sets.py"
 
 
@@ -23,9 +24,11 @@ def path_arg(argv: list[str], name: str) -> Path | None:
     prefix = name + "="
     for index, value in enumerate(argv):
         if value == name:
-            if index + 1 >= len(argv): fail(f"{name} requires a path")
+            if index + 1 >= len(argv):
+                fail(f"{name} requires a path")
             return Path(argv[index + 1])
-        if value.startswith(prefix): return Path(value.split("=", 1)[1])
+        if value.startswith(prefix):
+            return Path(value.split("=", 1)[1])
     return None
 
 
@@ -44,40 +47,50 @@ def self_test() -> None:
     run(str(FIELD_R1), "--self-test")
     run(str(FIELD_R2), "--self-test")
     run(str(HIGHLAND_VILLAGES), "--self-test")
+    run(str(DIRECT_VILLAGE_BIOMES), "--self-test")
     run(str(VILLAGE_SPLIT_SETS), "--self-test")
-    if output_arg(["--output", "a.zip"]) != Path("a.zip"): fail("SELF-TEST: spaced --output parsing failed")
-    if output_arg(["--output=b.zip"]) != Path("b.zip"): fail("SELF-TEST: equals --output parsing failed")
-    if path_arg(["--server-jar", "server.jar"], "--server-jar") != Path("server.jar"): fail("SELF-TEST: spaced --server-jar parsing failed")
-    print("[NeverFolia][NeverOverworld native core] GENERATED-BBOX SPLIT-SET WRAPPER SELF-TEST OK")
+    if output_arg(["--output", "a.zip"]) != Path("a.zip"):
+        fail("SELF-TEST: spaced --output parsing failed")
+    if output_arg(["--output=b.zip"]) != Path("b.zip"):
+        fail("SELF-TEST: equals --output parsing failed")
+    if path_arg(["--server-jar", "server.jar"], "--server-jar") != Path("server.jar"):
+        fail("SELF-TEST: spaced --server-jar parsing failed")
+    print("[NeverFolia][NeverOverworld native core] R9 DIRECT-BIOME SPLIT-SET WRAPPER SELF-TEST OK")
 
 
 def main() -> None:
     argv = sys.argv[1:]
     if "--self-test" in argv:
-        self_test(); return
+        self_test()
+        return
     output = output_arg(argv)
     server_jar = path_arg(argv, "--server-jar")
-    if output is None: fail("--output is required for native Core promotion")
-    if server_jar is None: fail("--server-jar is required for vanilla ore anchor normalization")
+    if output is None:
+        fail("--output is required for native Core promotion")
+    if server_jar is None:
+        fail("--server-jar is required for vanilla ore and village structure materialization")
+
     run(str(LEGACY), *argv)
-    if not output.is_file(): fail(f"legacy Core builder did not create output: {output}")
+    if not output.is_file():
+        fail(f"legacy Core builder did not create output: {output}")
     run(str(ORE_ANCHORS), "--input", str(output), "--server-jar", str(server_jar))
     run(str(PROMOTER), "--input", str(output))
     run(str(FIELD_R1), "--input", str(output), "--server-jar", str(server_jar))
     run(str(FIELD_R2), "--input", str(output))
     run(str(HIGHLAND_VILLAGES), "--input", str(output))
+    run(str(DIRECT_VILLAGE_BIOMES), "--input", str(output), "--server-jar", str(server_jar))
     run(str(VILLAGE_SPLIT_SETS), "--input", str(output))
+
     print("[NeverFolia][NeverOverworld native core] NATIVE-ONLY CORE READY")
     print("  field profile: field-r2 / R6 continuous deep caves")
     print(f"  output: {output}")
     print("  flooded ore sterile band: Y=65..135")
     print("  trial chambers: Y=-320..-96")
     print("  stronghold/end portal dungeon: disabled")
-    print("  village policy: centre-dry prefilter + actual generated StructureStart bbox all-column dry gate")
-    print("  village fast locate: same deterministic Structure#generate preview, references=0")
+    print("  village locate/generation: shared watchdog-safe 5x5 preliminary reach64 contract")
+    print("  village biome HolderSets: direct lists materialized from exact Folia 26.2 structure JSON")
     print("  village sets: independent variants, spacing=34")
-    print("  village fallbacks: plains/savanna->non-snowy highlands; taiga->cold snowy highlands")
-    print("  persisted Jigsaw bbox all-block Y=128 zero-water audit: authoritative final village safety gate")
+    print("  persisted Jigsaw bbox all-block Y=128 zero-water audit remains authoritative")
     print("  native ores: coal, iron, copper, gold, redstone, lapis, diamond, emerald")
 
 
