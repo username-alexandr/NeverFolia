@@ -133,8 +133,8 @@ def validate(fast: str, policy: str) -> None:
 
 
 def self_test() -> None:
-    fast_fixture = '''class F {\n    private static boolean passesNeverOverworldPolicy(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n            int[] exactXs;\n        return true;\n    }\n}\n'''
-    policy_fixture = '''class P {\n    static boolean allows(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n            int[] exactXs;\n        // Unrelated dry-land structures retain their established exact 3x3 generation-side surface contract.\n        return true;\n    }\n}\n'''
+    fast_fixture = '''class F {\n    private static boolean passesNeverOverworldPolicy(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n        for (final int[] probe : preliminaryProbes) { int y = probe[0]; }\n            int[] exactXs;\n        return true;\n    }\n}\n'''
+    policy_fixture = '''class P {\n    static boolean allows(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n        for (final int[] probe : preliminaryProbes) { int y = probe[0]; }\n            int[] exactXs;\n        // Unrelated dry-land structures retain their established exact 3x3 generation-side surface contract.\n        return true;\n    }\n}\n'''
     fast = patch_method(fast_fixture, FAST_SIG, "fast")
     policy = patch_method(policy_fixture, POLICY_SIG, "generation")
     validate(fast, policy)
