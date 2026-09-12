@@ -1,0 +1,75 @@
+name: R9 Village V11 Stripe BBox Proof
+
+on:
+  push:
+    branches:
+      - qa/r9-village-bbox-stripes-v11
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: r9-village-bbox-stripes-v11-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bbox:
+    name: ${{ matrix.profile }} / persisted bbox water=0
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - score10
+          - score9
+          - score8
+    env:
+      JAVA_TOOL_OPTIONS: -Dneverfolia.villageDryScoreProfile=${{ matrix.profile }}
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Validate stripe bbox harness
+        run: |
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+      - name: Download proven V11 runtime inputs
+        uses: actions/download-artifact@v5
+        with:
+          name: r9-village-v11-runtime-inputs-b03ebbe8d8088cb9b02bc5ad80bc3ddfeea5a718
+          path: artifacts/v11-build
+          repository: username-alexandr/NeverFolia
+          run-id: 34714213733
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify selected JVM profile
+        run: |
+          echo "JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}"
+          test "${JAVA_TOOL_OPTIONS}" = "-Dneverfolia.villageDryScoreProfile=${{ matrix.profile }}"
+          test -f artifacts/v11-build/NeverFolia-r9-village-v11.jar
+          test -f artifacts/v11-build/NeverOverworld-Core-r9-village-v11.zip
+      - name: Run persisted Jigsaw bbox water=0 proof
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/v11-build/NeverFolia-r9-village-v11.jar \
+            artifacts/v11-build/NeverOverworld-Core-r9-village-v11.zip \
+            "artifacts/v11-stripe-${{ matrix.profile }}/bbox" \
+            "b03ebbe8d8088cb9b02bc5ad80bc3ddfeea5a718-${{ matrix.profile }}-stripe"
+      - name: Upload bbox proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-v11-stripe-${{ matrix.profile }}-${{ github.sha }}
+          path: |
+            artifacts/v11-stripe-${{ matrix.profile }}/**/*
+            village-v4-bbox-test/*.tsv
+            village-v4-bbox-test/locate-*.log
+          if-no-files-found: warn
+          retention-days: 14
