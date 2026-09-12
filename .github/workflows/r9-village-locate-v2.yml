@@ -1,0 +1,100 @@
+name: R9 Village Locate V2 Proof
+
+on:
+  push:
+    branches:
+      - qa/r9-village-locate-contract-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-locate-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  village-locate-v2:
+    name: Locate to persisted village starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect JAR and build NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-r9-village-locate-v2.jar
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-r9-village-locate-v2.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Run R9-v2 village locate to persisted-start proof
+        run: |
+          chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
+            artifacts/NeverFolia-r9-village-locate-v2.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip
+
+      - name: Upload R9-v2 village locate diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-locate-v2-${{ github.sha }}
+          path: |
+            artifacts/village-locate-r9-v2-proof.json
+            overworld-village-locate-r9-v2-test/results.tsv
+            overworld-village-locate-r9-v2-test/direct-predictions.tsv
+            overworld-village-locate-r9-v2-test/segment-*.log
+            overworld-village-locate-r9-v2-test/server.log
+            overworld-village-locate-r9-v2-test/chunks-before-locate.txt
+            overworld-village-locate-r9-v2-test/chunks-after-locate.txt
+          if-no-files-found: warn
+          retention-days: 14
