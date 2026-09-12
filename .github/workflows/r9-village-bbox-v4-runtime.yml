@@ -1,0 +1,105 @@
+name: R9 Village BBox V4 Runtime
+
+on:
+  push:
+    branches:
+      - qa/r9-village-bbox-v4
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-bbox-v4-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: V4 locate + persisted starts + full bbox water=0
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Validate V4 bbox QA scripts
+        run: |
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          python3 ./scripts/harden-never-overworld-village-locate-r9.py --self-test
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect JAR and build NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/village-v4-bbox
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-r9-village-bbox-v4.jar
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-r9-village-bbox-v4.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Run V4 persisted village bbox proof
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/NeverFolia-r9-village-bbox-v4.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip \
+            artifacts/village-v4-bbox \
+            "${GITHUB_SHA}"
+
+      - name: Upload V4 bbox diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-bbox-v4-${{ github.sha }}
+          path: |
+            artifacts/village-v4-bbox/*.json
+            artifacts/village-v4-bbox/*.tsv
+            artifacts/village-v4-bbox/server.log
+            village-v4-bbox-test/locate-*.log
+          if-no-files-found: warn
+          retention-days: 14
