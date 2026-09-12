@@ -1,0 +1,23 @@
+name: R9 Village V16 Finalizer Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-village-finalizer-v16
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Validate V16 production finalizer
+        run: python3 ./scripts/finalize-never-overworld-village-variant-mask-v16.py --self-test
+      - name: Validate authoritative bbox gate
+        run: python3 ./scripts/restore-never-overworld-village-authoritative-solid-v14.py --self-test
