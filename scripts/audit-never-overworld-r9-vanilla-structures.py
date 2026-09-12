@@ -64,6 +64,49 @@ class Box:
             raise ValueError(f"structure BB must have 6 ints, got {raw}")
         return cls(*raw)
 
+    @classmethod
+    def union(cls, boxes: list["Box"]) -> "Box":
+        if not boxes:
+            raise ValueError("cannot union empty bbox list")
+        return cls(
+            min(box.min_x for box in boxes),
+            min(box.min_y for box in boxes),
+            min(box.min_z for box in boxes),
+            max(box.max_x for box in boxes),
+            max(box.max_y for box in boxes),
+            max(box.max_z for box in boxes),
+        )
+
+
+def start_box(start: dict) -> tuple[Box, str, int]:
+    """Resolve a persisted StructureStart bbox across Minecraft NBT layouts.
+
+    Vanilla 26.2 starts do not necessarily persist a top-level BB. Their
+    StructurePieces are stored under Children and each child owns a BB. In that
+    layout the exact start bbox is the union of all valid child-piece boxes.
+    """
+    top = start.get("BB", start.get("bb"))
+    if top is not None:
+        return Box.from_nbt(top), "start.BB", 1
+
+    children = start.get("Children", start.get("children", []))
+    if not isinstance(children, list):
+        raise ValueError(f"StructureStart Children is not a list: {type(children).__name__}")
+    boxes: list[Box] = []
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        raw = child.get("BB", child.get("bb"))
+        if raw is None:
+            continue
+        boxes.append(Box.from_nbt(raw))
+    if not boxes:
+        raise ValueError(
+            "StructureStart has neither a top-level BB nor child-piece BB values "
+            f"(children={len(children)})"
+        )
+    return Box.union(boxes), "union(Children[*].BB)", len(boxes)
+
 
 class WorldReader:
     def __init__(self, world: Path) -> None:
@@ -209,19 +252,22 @@ def audit(world: Path, manifest: dict) -> dict:
             fail(f"manifest coordinates invalid for {structure_id}: {exc}")
 
         cx, cz, start = find_start(reader, structure_id, block_x, block_z)
-        if "BB" not in start:
-            fail(f"{structure_id} start at {cx},{cz} has no BB")
-        box = Box.from_nbt(start["BB"])
+        try:
+            box, box_source, piece_boxes = start_box(start)
+        except ValueError as exc:
+            fail(f"{structure_id} start at {cx},{cz} bbox unresolved: {exc}")
         result = checker(box, reader.block)
         results[structure_id] = {
             "located_block": [block_x, block_z],
             "start_chunk": [cx, cz],
             "bbox": [box.min_x, box.min_y, box.min_z, box.max_x, box.max_y, box.max_z],
+            "bbox_source": box_source,
+            "piece_bbox_count": piece_boxes,
             **result,
         }
 
     return {
-        "schema": 1,
+        "schema": 2,
         "contract": "R9 naturally generated vanilla structure flood integrity",
         "structures": results,
         "passed": True,
@@ -233,6 +279,20 @@ def self_test() -> None:
         fail("SELF-TEST: NBT int-array decoding failed")
     if Box.from_nbt({"$int_array": [1, 2, 3, 4, 5, 6]}).min_y != 2:
         fail("SELF-TEST: bbox parsing failed")
+
+    top_box, source, pieces = start_box({"BB": {"$int_array": [1, 2, 3, 4, 5, 6]}})
+    if top_box != Box(1, 2, 3, 4, 5, 6) or source != "start.BB" or pieces != 1:
+        fail("SELF-TEST: top-level StructureStart BB resolution failed")
+    child_box, source, pieces = start_box(
+        {
+            "Children": [
+                {"BB": {"$int_array": [10, 20, 30, 15, 25, 35]}},
+                {"BB": {"$int_array": [4, 18, 28, 12, 27, 40]}},
+            ]
+        }
+    )
+    if child_box != Box(4, 18, 28, 15, 27, 40) or source != "union(Children[*].BB)" or pieces != 2:
+        fail("SELF-TEST: child-piece StructureStart BB union failed")
 
     # Synthetic hut: four supports descend through waterline and terminate on stone.
     blocks: dict[tuple[int, int, int], str] = {}
@@ -276,6 +336,7 @@ def self_test() -> None:
         fail("SELF-TEST: powder snow inside trial chamber was accepted")
 
     print("[NeverFolia][R9 vanilla structure integrity] SELF-TEST OK")
+    print("  bbox: direct start.BB or exact union of persisted Children[*].BB")
     print("  swamp hut: >=4 oak supports must terminate on solid bottom")
     print("  ruined portal: obsidian/crying_obsidian frame must survive")
     print("  trial chambers: powder_snow inside generated bbox is forbidden")
