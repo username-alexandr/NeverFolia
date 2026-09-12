@@ -9,6 +9,7 @@ on:
       - qa/r9-village-locate-contract-v2
       - qa/r9-village-locate-contract-v3
       - qa/r9-village-locate-contract-v4
+      - qa/r9-village-locate-contract-v5
   pull_request:
     branches:
       - develop
@@ -26,5 +27,8 @@ jobs:
       - name: Checkout NeverFolia
         uses: actions/checkout@v6
 
-      - name: Self-test R9 village locate generation contract
+      - name: Self-test R9 base village locate contract
         run: python3 ./scripts/harden-never-overworld-village-locate-r9.py --self-test
+
+      - name: Self-test R9-v5 reach64 calibration overlay
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
