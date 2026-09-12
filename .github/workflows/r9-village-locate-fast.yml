@@ -8,6 +8,7 @@ on:
       - 'wip/**'
       - qa/r9-village-locate-contract-v2
       - qa/r9-village-locate-contract-v3
+      - qa/r9-village-locate-contract-v4
   pull_request:
     branches:
       - develop
