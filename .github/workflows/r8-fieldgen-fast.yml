@@ -24,6 +24,9 @@ jobs:
       - name: Self-test R8 flood connectivity fallback
         run: python3 ./scripts/harden-never-overworld-flood-connectivity-r8.py --self-test
 
+      - name: Self-test R8-C drowned frozen surface cleanup
+        run: python3 ./scripts/harden-never-overworld-frozen-surface-r8c.py --self-test
+
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
@@ -48,13 +51,10 @@ jobs:
           chmod +x ./scripts/apply-folia-patches-ci.sh
           ./scripts/apply-folia-patches-ci.sh ./.work/Folia
 
-      - name: Apply established NeverFolia post patches
+      - name: Apply NeverFolia production post patches
         run: |
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
-
-      - name: Apply R8 large-cavern flood connectivity
-        run: python3 ./scripts/harden-never-overworld-flood-connectivity-r8.py ./.work/Folia
 
       - name: Build R8 Paperclip JAR
         working-directory: .work/Folia
@@ -70,14 +70,13 @@ jobs:
           test -n "${JAR}" && test -f "${JAR}"
           cp "${JAR}" r8-artifacts/NeverFolia-R8.jar
 
-      - name: Build R8 NeverOverworld pack
+      - name: Build R8 NeverOverworld pack through production chain
         run: |
           set -euo pipefail
           JAR="r8-artifacts/NeverFolia-R8.jar"
           PACK="r8-artifacts/NeverOverworld-Core-R8.zip"
           python3 ./scripts/build-never-overworld-core-pack.py --server-jar "${JAR}" --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
-          python3 ./scripts/harden-never-overworld-rock-mass-structures-r8.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
