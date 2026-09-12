@@ -1,0 +1,20 @@
+name: R9 Village Direct Biomes V9 Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-village-direct-biomes-v9
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    name: Exact-server village structure materializer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Self-test direct HolderSet materializer
+        run: python3 ./scripts/materialize-never-overworld-village-biomes-r9.py --self-test
