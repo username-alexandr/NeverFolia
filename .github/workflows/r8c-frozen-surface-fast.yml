@@ -11,13 +11,91 @@ permissions:
 
 jobs:
   validate:
-    name: R8-C frozen surface static validation
+    name: R8-C frozen surface compile + smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
     steps:
       - uses: actions/checkout@v6
+
       - name: Self-test existing drowned surface weathering
         run: python3 ./scripts/weather-never-overworld-flooded-surface.py --self-test
+
       - name: Self-test existing flood ecology integration
         run: python3 ./scripts/harden-never-overworld-flood-ecology.py --self-test
+
       - name: Self-test R8-C frozen surface cleanup
         run: python3 ./scripts/harden-never-overworld-frozen-surface-r8c.py --self-test
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply established R8 NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Apply R8-C drowned frozen surface cleanup
+        run: python3 ./scripts/harden-never-overworld-frozen-surface-r8c.py ./.work/Folia
+
+      - name: Build R8-C Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect R8-C JAR
+        run: |
+          set -euo pipefail
+          mkdir -p r8c-artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" r8c-artifacts/NeverFolia-R8C.jar
+
+      - name: Build R8-C NeverOverworld pack
+        run: |
+          set -euo pipefail
+          JAR="r8c-artifacts/NeverFolia-R8C.jar"
+          PACK="r8c-artifacts/NeverOverworld-Core-R8C.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar "${JAR}" --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Smoke test R8-C NeverOverworld runtime
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh r8c-artifacts/NeverFolia-R8C.jar r8c-artifacts/NeverOverworld-Core-R8C.zip
+
+      - name: Upload R8-C evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R8C-${{ github.sha }}
+          path: |
+            r8c-artifacts/*
+            overworld-smoke-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
