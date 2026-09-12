@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 FLOOD = ROOT / "harden-never-overworld-flood-r9.py"
 ORE = ROOT / "tune-never-overworld-ore-field-r9.py"
+UPPER_FINALIZER = ROOT / "finalize-never-overworld-upper-ores-r9.py"
 
 
 def fail(message: str) -> None:
@@ -24,6 +25,7 @@ def run(script: Path, *args: str) -> None:
 def self_test() -> None:
     run(FLOOD, "--self-test")
     run(ORE, "--self-test")
+    run(UPPER_FINALIZER, "--self-test")
     print("[NeverFolia][R9 field overrides] SELF-TEST OK")
 
 
@@ -41,7 +43,11 @@ def main() -> None:
     folia = str(args.folia.resolve())
     run(FLOOD, folia)
     run(ORE, folia)
-    print("[NeverFolia][R9 field overrides] final R9 stabilization applied")
+    # This wrapper is invoked at the end of flood-debug instrumentation. Apply
+    # the authoritative LIGHT cleanup only after the final R9 flood/ore
+    # overrides, so no later field transformer can erase it.
+    run(UPPER_FINALIZER, folia)
+    print("[NeverFolia][R9 field overrides] final R9 stabilization + upper ore LIGHT cleanup applied")
 
 
 if __name__ == "__main__":
