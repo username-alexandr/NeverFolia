@@ -1,0 +1,165 @@
+name: R9 Village Reclamation V17
+
+on:
+  push:
+    branches:
+      - qa/r9-village-reclamation-v17-actual
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-reclamation-v17-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build V17 reclaimed-village JAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Validate V17 contracts
+        run: |
+          python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
+          python3 ./scripts/tune-never-overworld-village-strict-search-v12.py --self-test
+          python3 ./scripts/apply-never-overworld-village-reclamation-v17.py --self-test
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Apply corrected V5 baseline
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
+      - name: Apply V12 strict 12-of-12 contract with rings128 selector
+        run: python3 ./scripts/tune-never-overworld-village-strict-search-v12.py ./.work/Folia
+      - name: Apply V17 actual-bbox reclamation
+        run: python3 ./scripts/apply-never-overworld-village-reclamation-v17.py ./.work/Folia
+      - name: Assert no generated-bbox rejection gate is present
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java')
+          text=p.read_text()
+          if 'validate the actual generated village bbox before persisting the start' in text:
+              raise SystemExit('V14 generated-bbox rejection leaked into V17')
+          if 'NeverOverworldGeneratedVillageSafety.allowsGenerated(' in text:
+              raise SystemExit('V14 allowsGenerated gate leaked into V17')
+          s=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureStart.java').read_text()
+          if s.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1:
+              raise SystemExit('V17 reclamation call missing/drifted')
+          print('[NeverFolia][R9 V17] source ordering/assertions OK')
+          PY
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+      - name: Collect JAR and build V17 NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/v17-build
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/v17-build/NeverFolia-r9-village-v17.jar
+          PACK="artifacts/v17-build/NeverOverworld-Core-r9-village-v17.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/v17-build/NeverFolia-r9-village-v17.jar --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+      - name: Upload V17 runtime inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: r9-village-v17-runtime-inputs-${{ github.sha }}
+          path: artifacts/v17-build/*
+          retention-days: 7
+
+  runtime:
+    name: rings128 / 10 locates + 5 starts + reclaimed bbox water=0
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      JAVA_TOOL_OPTIONS: -Dneverfolia.villageLocateRings=128 -Dneverfolia.debugVillageReclamation=true
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download V17 runtime inputs
+        uses: actions/download-artifact@v5
+        with:
+          name: r9-village-v17-runtime-inputs-${{ github.sha }}
+          path: artifacts/v17-build
+      - name: Verify fixed V12/V17 runtime policy
+        run: |
+          echo "JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}"
+          test "${JAVA_TOOL_OPTIONS}" = "-Dneverfolia.villageLocateRings=128 -Dneverfolia.debugVillageReclamation=true"
+      - name: Run all 10 locate targets to persisted starts
+        run: |
+          chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
+            artifacts/v17-build/NeverFolia-r9-village-v17.jar \
+            artifacts/v17-build/NeverOverworld-Core-r9-village-v17.zip
+      - name: Preserve locate proof
+        if: always()
+        run: |
+          mkdir -p artifacts/v17-proof/locate
+          cp -f artifacts/village-locate-r9-v2-proof.json artifacts/v17-proof/locate/ 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.tsv artifacts/v17-proof/locate/ 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.log artifacts/v17-proof/locate/ 2>/dev/null || true
+      - name: Require runtime reclamation evidence
+        run: |
+          grep -F '[NeverFolia][R9V17_RECLAIM]' overworld-village-locate-r9-v2-test/server.log
+          if grep -Eqi 'FoliaWatchdogThread|has not responded in [0-9]' overworld-village-locate-r9-v2-test/server.log; then
+            echo 'watchdog signature detected during V17 locate/materialization' >&2
+            exit 1
+          fi
+      - name: Run full persisted Jigsaw bbox water=0 proof
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/v17-build/NeverFolia-r9-village-v17.jar \
+            artifacts/v17-build/NeverOverworld-Core-r9-village-v17.zip \
+            artifacts/v17-proof/bbox \
+            "${GITHUB_SHA}-v17-rings128"
+      - name: Upload V17 proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-v17-rings128-${{ github.sha }}
+          path: |
+            artifacts/v17-proof/**/*
+            village-v4-bbox-test/*.tsv
+            village-v4-bbox-test/locate-*.log
+          if-no-files-found: warn
+          retention-days: 14
