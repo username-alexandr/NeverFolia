@@ -1,0 +1,28 @@
+name: R9 Village Locate Contract Fast
+
+on:
+  push:
+    branches:
+      - develop
+      - feature/never-overworld-worldgen
+      - 'wip/**'
+      - qa/r9-village-locate-contract-v2
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Village locate generation-alignment contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+
+      - name: Self-test R9 village locate generation contract
+        run: python3 ./scripts/harden-never-overworld-village-locate-r9.py --self-test
