@@ -31,13 +31,13 @@ jobs:
       - name: Self-test persisted bbox auditor
         run: python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
 
-      - name: Download exact R8 candidate JAR
+      - name: Download exact final TEST1 candidate JAR
         uses: actions/download-artifact@v5
         with:
-          name: NeverFolia-compiled-5a189854cc0550d21be757a55050bace8fee97e2
+          name: NeverFolia-compiled-2272967835a9e417e7c735736bd51b7e0a2d69ca
           path: compiled
           github-token: ${{ github.token }}
-          run-id: 34689958608
+          run-id: 34691163503
           repository: username-alexandr/NeverFolia
 
       - name: Build exact current NeverOverworld pack
@@ -64,7 +64,7 @@ jobs:
             "$PACK" \
             "${{ matrix.variant }}" \
             "$PWD/evidence/${{ matrix.variant }}" \
-            "5a189854cc0550d21be757a55050bace8fee97e2"
+            "2272967835a9e417e7c735736bd51b7e0a2d69ca"
 
       - name: Upload village evidence
         if: always()
