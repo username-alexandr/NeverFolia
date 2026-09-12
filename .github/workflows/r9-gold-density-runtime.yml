@@ -1,0 +1,120 @@
+name: R9 Gold Density Runtime Proof
+
+on:
+  push:
+    branches:
+      - qa/r9-upper-ore-integrity
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-gold-density-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gold-density:
+    name: True vanilla gold density proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect JAR and build NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-r9-gold-density.jar
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-r9-gold-density.jar \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Generate R9 candidate FULL chunks
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-r9-gold-density.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip
+
+      - name: Generate true vanilla 26.2 reference
+        run: |
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh artifacts/NeverFolia-r9-gold-density.jar
+
+      - name: Compare R9 with true vanilla FULL chunks
+        run: |
+          python3 ./scripts/audit-never-overworld-ore-balance.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --output artifacts/NeverOverworld-r9-gold-ore-balance.json
+
+      - name: Enforce hard density and upper lapis diamond contracts
+        run: |
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --min-ratio 0.65 \
+            --max-ratio 1.35 \
+            --output artifacts/NeverOverworld-r9-gold-density-gate.json
+
+      - name: Upload density proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-gold-density-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-r9-gold-ore-balance.json
+            artifacts/NeverOverworld-r9-gold-density-gate.json
+            overworld-smoke-test/server.log
+            vanilla-ore-reference-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
