@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
+R9_FIELD_OVERRIDES = Path(__file__).with_name("apply-neverfolia-r9-field-overrides.py")
 MARKER = "[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128"
 PROBE_MARKER = "[NeverFolia][NeverOverworld] LIGHT flood probe:"
 EXPECTED_JAVA_BLOCK = (
@@ -31,7 +34,6 @@ def fail(message: str) -> None:
 def instrument(source: str) -> str:
     if MARKER in source or PROBE_MARKER in source:
         fail("flood helper is already instrumented")
-
     import_anchor = "import net.minecraft.core.BlockPos;\n"
     if source.count(import_anchor) != 1:
         fail("expected exactly one BlockPos import anchor")
@@ -43,16 +45,10 @@ def instrument(source: str) -> str:
         + import_anchor,
         1,
     )
-
     logger_import_anchor = "import net.minecraft.world.level.levelgen.Heightmap;\n"
     if source.count(logger_import_anchor) != 1:
         fail("expected exactly one Heightmap import anchor")
-    source = source.replace(
-        logger_import_anchor,
-        logger_import_anchor + "import org.slf4j.Logger;\n",
-        1,
-    )
-
+    source = source.replace(logger_import_anchor, logger_import_anchor + "import org.slf4j.Logger;\n", 1)
     class_anchor = "public final class NeverOverworldFlood {\n"
     if source.count(class_anchor) != 1:
         fail("expected exactly one NeverOverworldFlood class anchor")
@@ -64,16 +60,10 @@ def instrument(source: str) -> str:
         + "    private static final AtomicInteger PROBE_LOG_COUNT = new AtomicInteger();\n",
         1,
     )
-
     apply_method_anchor = "    public static void apply(final WorldGenLevel level, final ChunkAccess chunk) {\n"
     if source.count(apply_method_anchor) != 1:
         fail("expected exactly one apply() method anchor")
-    source = source.replace(
-        apply_method_anchor,
-        apply_method_anchor + PROBE_JAVA_BLOCK,
-        1,
-    )
-
+    source = source.replace(apply_method_anchor, apply_method_anchor + PROBE_JAVA_BLOCK, 1)
     apply_anchor = "        final int minY = level.getMinY() + 1;\n"
     if source.count(apply_anchor) != 1:
         fail("expected exactly one apply() minY anchor")
@@ -113,7 +103,6 @@ public final class NeverOverworldFlood {
     ):
         if required not in patched:
             fail(f"SELF-TEST: missing {required!r}")
-
     if patched.count(MARKER) != 1:
         fail(f"SELF-TEST: expected exactly one runtime marker, got {patched.count(MARKER)}")
     if patched.count(PROBE_MARKER) != 1:
@@ -122,21 +111,16 @@ public final class NeverOverworldFlood {
         fail("SELF-TEST: LIGHT probe must execute before the NR height guard")
     if patched.index("ACTIVATION_LOGGED.compareAndSet") > patched.index("final int minY"):
         fail("SELF-TEST: activation marker must run before flood mutation work")
-
-    # Regression guard for heavy #97: the old Python replacement accidentally
-    # emitted Python string-literal fragments directly into the generated Java.
     for line in patched.splitlines():
         if line.lstrip().startswith('"'):
             fail(f"SELF-TEST: generated Java contains a stray quoted fragment: {line!r}")
-    for forbidden in (
-        '"            LOGGER.info(',
-        '"        final int minY',
-        '"        }',
-    ):
+    for forbidden in ('"            LOGGER.info(', '"        final int minY', '"        }'):
         if forbidden in patched:
             fail(f"SELF-TEST: generated Java contains Python string fragment {forbidden!r}")
-
-    print("[NeverFolia][NeverOverworld flood debug] RUNTIME-CONTEXT PROBE SELF-TEST OK")
+    if not R9_FIELD_OVERRIDES.is_file():
+        fail(f"SELF-TEST: R9 field override stage missing: {R9_FIELD_OVERRIDES}")
+    subprocess.run([sys.executable, str(R9_FIELD_OVERRIDES), "--self-test"], check=True)
+    print("[NeverFolia][NeverOverworld flood debug] RUNTIME-CONTEXT + R9 FIELD SELF-TEST OK")
 
 
 def main() -> None:
@@ -144,18 +128,19 @@ def main() -> None:
     parser.add_argument("folia", nargs="?", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-
     if args.self_test:
         self_test()
         return
     if args.folia is None:
         parser.error("folia worktree path is required unless --self-test is used")
-
-    helper = args.folia.resolve() / HELPER_REL
+    folia = args.folia.resolve()
+    helper = folia / HELPER_REL
     if not helper.is_file():
         fail(f"flood helper not found: {helper}")
     helper.write_text(instrument(helper.read_text(encoding="utf-8")), encoding="utf-8")
     print("[NeverFolia][NeverOverworld flood debug] activation marker + runtime context probe instrumented")
+    subprocess.run([sys.executable, str(R9_FIELD_OVERRIDES), str(folia)], check=True)
+    print("[NeverFolia][NeverOverworld flood debug] final R9 field overrides applied")
     print(f"  helper: {helper}")
 
 
