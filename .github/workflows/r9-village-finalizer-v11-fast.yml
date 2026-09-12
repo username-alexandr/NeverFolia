@@ -1,0 +1,31 @@
+name: R9 Village V11 Finalizer Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-village-finalizer-v11
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-finalizer-v11-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate hardcoded V11 finalizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Validate corrected V5 baseline
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
+      - name: Validate V11 production finalizer
+        run: python3 ./scripts/finalize-never-overworld-village-dryscore-r9.py --self-test
