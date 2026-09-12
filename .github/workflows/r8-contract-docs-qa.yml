@@ -1,0 +1,24 @@
+name: Validate R8 Contract Docs
+
+on:
+  push:
+    branches:
+      - qa/r8-contract-docs
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: R8 contract static validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-spec.py
+      - name: Self-test R8 flood connectivity
+        run: python3 ./scripts/harden-never-overworld-flood-connectivity-r8.py --self-test
+      - name: Self-test R8-C frozen surface cleanup
+        run: python3 ./scripts/harden-never-overworld-frozen-surface-r8c.py --self-test
+      - name: Self-test R8 rock-mass hardening
+        run: python3 ./scripts/harden-never-overworld-rock-mass-structures-r8.py --self-test
