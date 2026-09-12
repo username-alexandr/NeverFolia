@@ -1,21 +1,21 @@
-name: R9 Village Locate V5 Proof
+name: R9 Village Biome V6 Diagnostics
 
 on:
   push:
     branches:
-      - qa/r9-village-locate-contract-v5
+      - qa/r9-village-biome-diagnostics-v6
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: r9-village-locate-v5-${{ github.ref }}
+  group: r9-village-biome-v6-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  village-locate-v5:
-    name: Locate to persisted village starts
+  village-biome-v6:
+    name: Capture rejected village biome keys
     runs-on: ubuntu-latest
     timeout-minutes: 100
 
@@ -39,6 +39,9 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
 
+      - name: Self-test V6 biome diagnostics
+        run: python3 ./scripts/instrument-never-overworld-village-biome-v6.py --self-test
+
       - name: Prepare Folia 26.2.x upstream
         run: |
           chmod +x ./scripts/prepare-upstream.sh
@@ -57,6 +60,9 @@ jobs:
       - name: Apply R9-v5 reach64 calibration overlay
         run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
 
+      - name: Instrument rejected biome keys
+        run: python3 ./scripts/instrument-never-overworld-village-biome-v6.py ./.work/Folia
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
@@ -69,35 +75,53 @@ jobs:
           mkdir -p artifacts
           JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
-          cp "${JAR}" artifacts/NeverFolia-r9-village-locate-v5.jar
+          cp "${JAR}" artifacts/NeverFolia-r9-village-biome-v6.jar
           PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
           python3 ./scripts/build-never-overworld-core-pack.py \
-            --server-jar artifacts/NeverFolia-r9-village-locate-v5.jar \
+            --server-jar artifacts/NeverFolia-r9-village-biome-v6.jar \
             --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
-      - name: Run R9-v5 village locate to persisted-start proof
+      - name: Run locate diagnostics
+        continue-on-error: true
         run: |
           chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
           ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
-            artifacts/NeverFolia-r9-village-locate-v5.jar \
+            artifacts/NeverFolia-r9-village-biome-v6.jar \
             artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip
 
-      - name: Upload R9-v5 village locate diagnostics
+      - name: Summarize rejected biome keys
+        run: |
+          python3 - <<'PY'
+          import collections,re
+          from pathlib import Path
+          log=Path('overworld-village-locate-r9-v2-test/server.log')
+          text=log.read_text(errors='replace') if log.is_file() else ''
+          pat=re.compile(r'id=(minecraft:village_(?:desert|snowy|taiga)) reason=R9V6_BIOME_REJECT .*?detail=biome=([^\s]+)')
+          counts=collections.defaultdict(collections.Counter)
+          for target,_,biome in pat.findall(text): counts[target][biome]+=1
+          out=Path('artifacts/R9-village-biome-v6-summary.tsv')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          rows=[]
+          for target in ('minecraft:village_desert','minecraft:village_snowy','minecraft:village_taiga'):
+              for biome,count in counts[target].most_common(): rows.append(f'{target}\t{biome}\t{count}')
+          out.write_text('\n'.join(rows)+('\n' if rows else ''),encoding='utf-8')
+          print(out.read_text() if rows else 'NO R9V6 BIOME REJECT SAMPLES')
+          if not rows: raise SystemExit('no V6 biome reject samples captured')
+          PY
+
+      - name: Upload V6 biome diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R9-village-locate-v5-${{ github.sha }}
+          name: R9-village-biome-v6-${{ github.sha }}
           path: |
-            artifacts/village-locate-r9-v2-proof.json
+            artifacts/R9-village-biome-v6-summary.tsv
             overworld-village-locate-r9-v2-test/results.tsv
-            overworld-village-locate-r9-v2-test/direct-predictions.tsv
             overworld-village-locate-r9-v2-test/segment-*.log
             overworld-village-locate-r9-v2-test/server.log
-            overworld-village-locate-r9-v2-test/chunks-before-locate.txt
-            overworld-village-locate-r9-v2-test/chunks-after-locate.txt
           if-no-files-found: warn
           retention-days: 14
