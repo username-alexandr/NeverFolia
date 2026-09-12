@@ -21,6 +21,8 @@ ORIGIN_X=8192
 ORIGIN_Y=200
 ORIGIN_Z=8192
 COMMAND_TIMEOUT=20
+STRIPE_MAX_CHUNKS=8
+STRIPE_TIMEOUT=180
 
 VARIANTS=(plains desert savanna snowy taiga)
 
@@ -103,7 +105,7 @@ normal_stop() {
   SERVER_PID=""; KEEPER_PID=""; PIPE_PATH=""
 }
 
-# Phase 1: locate all five variants under the V4 zero-generation predictor and
+# Phase 1: locate all five variants under the zero-generation predictor and
 # materialize only the predicted start chunks. A normal stop then gives the NBT
 # parser a consistent persisted StructureStart containing all Jigsaw child bboxes.
 : > "${TEST_DIR}/server.log"
@@ -162,9 +164,10 @@ while IFS=$'\t' read -r target bx bz cx cz; do
 done < "${PREDICTIONS}"
 normal_stop
 
-# Resolve the true persisted bbox for every predicted start. We can do this after
-# phase 1 because StructureStart persists its complete Jigsaw Children[*].BB list
-# in the start chunk even when some neighboring piece chunks are not FULL yet.
+# Resolve the true persisted bbox for every predicted start. The persisted start
+# chunk already contains the complete Jigsaw Children[*].BB list. Phase 2 only
+# needs chunks intersecting that exact bbox; no extra one-chunk rectangle margin
+# is required by the water-at-Y=128 audit.
 python3 - "${ROOT_DIR}" "${WORLD_DIR}" "${PREDICTIONS}" "${BBOXES}" <<'PY'
 import importlib.util,sys
 from pathlib import Path
@@ -211,27 +214,39 @@ for line in preds.read_text().splitlines():
     if not bb: raise SystemExit(f'{target}: no persisted child bbox')
     minx=min(b[0] for b in bb); miny=min(b[1] for b in bb); minz=min(b[2] for b in bb)
     maxx=max(b[3] for b in bb); maxy=max(b[4] for b in bb); maxz=max(b[5] for b in bb)
-    cminx=minx//16-1; cminz=minz//16-1; cmaxx=maxx//16+1; cmaxz=maxz//16+1
+    cminx=minx//16; cminz=minz//16; cmaxx=maxx//16; cmaxz=maxz//16
     count=(cmaxx-cminx+1)*(cmaxz-cminz+1)
-    if count>400: raise SystemExit(f'{target}: bbox materialization too large: {count} chunks')
+    if count>256: raise SystemExit(f'{target}: exact bbox materialization too large: {count} chunks')
     rows.append((target,int(bx),int(bz),int(cx),int(cz),scx,scz,minx,miny,minz,maxx,maxy,maxz,cminx,cminz,cmaxx,cmaxz,count))
 out.write_text('\n'.join('\t'.join(map(str,row)) for row in rows)+'\n')
 for row in rows: print('[NeverFolia][village v4 bbox] resolved',row)
 PY
 
-# Phase 2: generate every chunk covering every actual persisted bbox, plus one
-# chunk margin, then normal-stop and run the independent water=0 auditor.
+# Phase 2: materialize the exact bbox in bounded horizontal stripes. At most
+# STRIPE_MAX_CHUNKS are forceloaded per batch, then immediately released. This
+# avoids the old 80-144 chunk simultaneous generation burst that timed out the
+# FULL barrier before the water audit could run.
 start_server
 ordinal=0
 while IFS=$'\t' read -r target bx bz cx cz scx scz minx miny minz maxx maxy maxz cminx cminz cmaxx cmaxz count; do
   ordinal=$((ordinal + 1))
-  x1=$((cminx*16)); z1=$((cminz*16)); x2=$((cmaxx*16+15)); z2=$((cmaxz*16+15))
-  echo "[NeverFolia][village v4 bbox] materialize bbox ${target}: ${minx},${minz}..${maxx},${maxz} chunks=${count}"
-  send_console "execute in minecraft:overworld run forceload add ${x1} ${z1} ${x2} ${z2}"
-  wait_loaded "${minx}" "${minz}" "NR_V4_BBOX_${ordinal}_NW" 300
-  wait_loaded "${maxx}" "${minz}" "NR_V4_BBOX_${ordinal}_NE" 300
-  wait_loaded "${minx}" "${maxz}" "NR_V4_BBOX_${ordinal}_SW" 300
-  wait_loaded "${maxx}" "${maxz}" "NR_V4_BBOX_${ordinal}_SE" 300
+  echo "[NeverFolia][village v4 bbox] materialize exact bbox ${target}: ${minx},${minz}..${maxx},${maxz} chunks=${count} stripe_max=${STRIPE_MAX_CHUNKS}"
+  stripe_id=0
+  for ((czrow=cminz; czrow<=cmaxz; czrow++)); do
+    sx=${cminx}
+    while [ "${sx}" -le "${cmaxx}" ]; do
+      ex=$((sx + STRIPE_MAX_CHUNKS - 1))
+      if [ "${ex}" -gt "${cmaxx}" ]; then ex=${cmaxx}; fi
+      x1=$((sx*16)); z1=$((czrow*16)); x2=$((ex*16+15)); z2=$((czrow*16+15))
+      stripe_id=$((stripe_id + 1))
+      token="NR_V4_BBOX_${ordinal}_STRIPE_${stripe_id}_${ex}_${czrow}"
+      echo "[NeverFolia][village v4 bbox] stripe ${target} row=${czrow} chunks=${sx}..${ex}"
+      send_console "execute in minecraft:overworld run forceload add ${x1} ${z1} ${x2} ${z2}"
+      wait_loaded "${x2}" "${z2}" "${token}" "${STRIPE_TIMEOUT}"
+      send_console "execute in minecraft:overworld run forceload remove ${x1} ${z1} ${x2} ${z2}"
+      sx=$((ex + 1))
+    done
+  done
 done < "${BBOXES}"
 normal_stop
 
