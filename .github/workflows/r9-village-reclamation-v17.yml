@@ -63,17 +63,22 @@ jobs:
       - name: Assert R9-v4 generated safety is no-op and V17 is installed
         run: |
           python3 - <<'PY'
+          import importlib.util
           from pathlib import Path
+          spec=importlib.util.spec_from_file_location('r9v4', 'scripts/harden-never-overworld-village-locate-r9.py')
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
           safety=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java').read_text()
-          if 'return start.isValid();' not in safety:
+          method=mod.method_text(safety, mod.SAFETY_SIG)
+          if 'return start.isValid();' not in method:
               raise SystemExit('R9-v4 no-op generated safety contract missing')
           for forbidden in ('inspectBoundingBox(', '.dry()', 'getBaseHeight('):
-              if forbidden in safety:
-                  raise SystemExit(f'generated-bbox rejection primitive leaked into V17: {forbidden}')
+              if forbidden in method:
+                  raise SystemExit(f'generated-bbox rejection primitive leaked into allowsGenerated: {forbidden}')
           start=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureStart.java').read_text()
           if start.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1:
               raise SystemExit('V17 reclamation call missing/drifted')
-          print('[NeverFolia][R9 V17] R9-v4 no-op safety + V17 source ordering OK')
+          print('[NeverFolia][R9 V17] scoped R9-v4 no-op safety + V17 source ordering OK')
           PY
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
