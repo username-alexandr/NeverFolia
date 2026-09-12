@@ -79,6 +79,12 @@ def contract(candidate: Counter[str], vanilla: Counter[str] | None) -> dict:
 
 
 def audit(world: Path, vanilla_world: Path | None, max_chunks: int) -> dict:
+    """Collect metrics only. Contract enforcement is deliberately separate.
+
+    The production density gate imports this function. Returning the report even
+    when the contract is violated lets the caller persist exact offending counts
+    before it raises, instead of losing the diagnostics in an early SystemExit.
+    """
     candidate_region = A.NR.find_region_dir(world)
     candidate_full = full_coords(candidate_region)
     if not candidate_full:
@@ -133,8 +139,8 @@ def audit(world: Path, vanilla_world: Path | None, max_chunks: int) -> dict:
         fail("no readable upper-range sections were scanned")
 
     status = contract(candidate_counts, vanilla_counts)
-    result = {
-        "schema": 1,
+    return {
+        "schema": 2,
         "contract": "R9 upper-world lapis/diamond suppression",
         "upper_y": [-64, 319],
         "full_chunks_requested": max_chunks,
@@ -159,17 +165,18 @@ def audit(world: Path, vanilla_world: Path | None, max_chunks: int) -> dict:
         **status,
     }
 
-    if not status["candidate_zero_upper_lapis_diamond"]:
+
+def enforce(result: dict, require_vanilla_coverage: bool) -> None:
+    if not result.get("candidate_zero_upper_lapis_diamond", False):
         fail(
             "R9 candidate retained forbidden upper-world lapis/diamond in persisted FULL chunks: "
-            f"{status['candidate_forbidden_ore_blocks']}"
+            f"{result.get('candidate_forbidden_ore_blocks')}"
         )
-    if vanilla_world is not None and not status["vanilla_reference_has_both_for_coverage"]:
+    if require_vanilla_coverage and not result.get("vanilla_reference_has_both_for_coverage", False):
         fail(
             "vanilla reference did not contain both lapis and diamond in the common sample; "
             "coverage is insufficient to prove the R9 suppression contract"
         )
-    return result
 
 
 def self_test() -> None:
@@ -188,6 +195,7 @@ def self_test() -> None:
         fail("SELF-TEST: empty vanilla diamond coverage was accepted")
 
     print("[NeverFolia][R9 upper ore integrity] SELF-TEST OK")
+    print("  audit(): metrics-only so callers can persist diagnostics before enforcement")
     print("  candidate Y=-64..319: lapis=0, diamond=0")
     print("  vanilla common-chunk coverage: lapis>0 and diamond>0 required")
 
@@ -221,6 +229,7 @@ def main() -> None:
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")
+    enforce(result, args.vanilla_world is not None)
 
 
 if __name__ == "__main__":
