@@ -9,6 +9,7 @@ POLICY_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chu
 FAST_SIG = "    private static boolean passesNeverOverworldPolicy("
 POLICY_SIG = "    static boolean allows("
 V16_MARKER = "// NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask."
+V16B_MARKER = "// NeverFolia R9-v16b: exact recheck of every preliminary probe for relaxed variants."
 FINAL_MARKER = "// NeverFolia R9-final: fixed variant-specific preliminary score plus exact solid mask."
 RING_SELECTOR = '    private static final int MAX_CANDIDATE_RINGS = Integer.getInteger("neverfolia.villageLocateRings", 128);'
 PROFILE_SELECTOR = 'final String maskProfile = System.getProperty("neverfolia.villageVariantMaskProfile", "fit");'
@@ -17,22 +18,17 @@ RINGS = {128, 192, 256}
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f"[NeverFolia][R9 village finalizer v16] {message}")
+    raise SystemExit(f"[NeverFolia][R9 village finalizer v16b] {message}")
 
 
 def method_bounds(text: str, signature: str) -> tuple[int, int]:
     start = text.find(signature)
-    if start < 0:
-        fail(f"method not found: {signature.strip()}")
+    if start < 0: fail(f"method not found: {signature.strip()}")
     opening = text.find("{", start)
-    if opening < 0:
-        fail("method opening brace missing")
-    depth = 0
-    in_s = in_c = in_line = in_block = escaped = False
-    i = opening
+    if opening < 0: fail("method opening brace missing")
+    depth = 0; in_s = in_c = in_line = in_block = escaped = False; i = opening
     while i < len(text):
-        ch = text[i]
-        nxt = text[i + 1] if i + 1 < len(text) else ""
+        ch = text[i]; nxt = text[i + 1] if i + 1 < len(text) else ""
         if in_line:
             if ch == "\n": in_line = False
             i += 1; continue
@@ -57,97 +53,67 @@ def method_bounds(text: str, signature: str) -> tuple[int, int]:
         if ch == "{": depth += 1
         elif ch == "}":
             depth -= 1
-            if depth == 0:
-                end = i + 1
-                if end < len(text) and text[end] == "\n": end += 1
-                return start, end
+            if depth == 0: return start, i + 1
         i += 1
     fail("unterminated method")
 
 
 def patch(fast: str, policy: str, profile: str, rings: int) -> tuple[str, str]:
-    if profile not in PROFILES:
-        fail(f"unsupported profile: {profile}")
-    if rings not in RINGS:
-        fail(f"unsupported rings: {rings}")
+    if profile not in PROFILES: fail(f"unsupported profile: {profile}")
+    if rings not in RINGS: fail(f"unsupported rings: {rings}")
     fixed_ring = f"    private static final int MAX_CANDIDATE_RINGS = {rings};"
     if fixed_ring not in fast:
-        if fast.count(RING_SELECTOR) != 1:
-            fail(f"ring selector count mismatch: {fast.count(RING_SELECTOR)}")
+        if fast.count(RING_SELECTOR) != 1: fail(f"ring selector count mismatch: {fast.count(RING_SELECTOR)}")
         fast = fast.replace(RING_SELECTOR, fixed_ring, 1)
     fixed_profile = f'final String maskProfile = "{profile}";'
     for label, text, sig in (("fast", fast, FAST_SIG), ("generation", policy, POLICY_SIG)):
-        start, end = method_bounds(text, sig)
-        method = text[start:end]
-        if FINAL_MARKER in method:
-            continue
-        if V16_MARKER not in method:
-            fail(f"{label}: V16 marker missing")
-        if PROFILE_SELECTOR not in method:
-            fail(f"{label}: V16 profile selector missing")
+        start, end = method_bounds(text, sig); method = text[start:end]
+        if FINAL_MARKER in method: continue
+        if V16_MARKER not in method: fail(f"{label}: V16 marker missing")
+        if V16B_MARKER not in method: fail(f"{label}: V16b exact recheck missing")
+        if PROFILE_SELECTOR not in method: fail(f"{label}: V16 profile selector missing")
         method = method.replace(V16_MARKER, FINAL_MARKER, 1)
         method = method.replace(PROFILE_SELECTOR, fixed_profile, 1)
-        if label == "fast":
-            fast = text[:start] + method + text[end:]
-        else:
-            policy = text[:start] + method + text[end:]
+        if label == "fast": fast = text[:start] + method + text[end:]
+        else: policy = text[:start] + method + text[end:]
     validate(fast, policy, profile, rings)
     return fast, policy
 
 
 def validate(fast: str, policy: str, profile: str, rings: int) -> None:
-    if f"private static final int MAX_CANDIDATE_RINGS = {rings};" not in fast:
-        fail("fixed ring constant missing")
+    if f"private static final int MAX_CANDIDATE_RINGS = {rings};" not in fast: fail("fixed ring constant missing")
     for label, text, sig in (("fast", fast, FAST_SIG), ("generation", policy, POLICY_SIG)):
-        start, end = method_bounds(text, sig)
-        method = text[start:end]
-        if FINAL_MARKER not in method:
-            fail(f"{label}: final marker missing")
-        if f'final String maskProfile = "{profile}";' not in method:
-            fail(f"{label}: fixed profile missing")
-        if "System.getProperty(" in method:
-            fail(f"{label}: runtime profile selector survived")
-        if "Heightmap.Types.OCEAN_FLOOR_WG" not in method:
-            fail(f"{label}: OCEAN_FLOOR_WG missing")
+        start, end = method_bounds(text, sig); method = text[start:end]
+        if FINAL_MARKER not in method: fail(f"{label}: final marker missing")
+        if V16B_MARKER not in method: fail(f"{label}: V16b exact recheck lost during finalization")
+        if method.count("for (final int[] probe : preliminaryProbes)") < 2: fail(f"{label}: V16b exact recheck loop missing")
+        if f'final String maskProfile = "{profile}";' not in method: fail(f"{label}: fixed profile missing")
+        if "System.getProperty(" in method: fail(f"{label}: runtime profile selector survived")
+        if "Heightmap.Types.OCEAN_FLOOR_WG" not in method: fail(f"{label}: OCEAN_FLOOR_WG missing")
         for forbidden in ("Structure.generate(", "NeverOverworldGeneratedVillageSafety.preview"):
-            if forbidden in method:
-                fail(f"{label}: forbidden generated preview leaked: {forbidden}")
+            if forbidden in method: fail(f"{label}: forbidden generated preview leaked: {forbidden}")
     for selector in ("neverfolia.villageLocateRings", "neverfolia.villageVariantMaskProfile"):
-        if selector in fast or selector in policy:
-            fail(f"QA selector leaked after finalization: {selector}")
+        if selector in fast or selector in policy: fail(f"QA selector leaked after finalization: {selector}")
 
 
 def self_test() -> None:
-    fast = '''class F {\n    private static final int MAX_CANDIDATE_RINGS = Integer.getInteger("neverfolia.villageLocateRings", 128);\n    private static boolean passesNeverOverworldPolicy(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final String maskProfile = System.getProperty("neverfolia.villageVariantMaskProfile", "fit");\n        int x1 = Heightmap.Types.OCEAN_FLOOR_WG.ordinal();\n        return true;\n    }\n}\n'''
-    policy = '''class P {\n    static boolean allows(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final String maskProfile = System.getProperty("neverfolia.villageVariantMaskProfile", "fit");\n        int x1 = Heightmap.Types.OCEAN_FLOOR_WG.ordinal();\n        return true;\n    }\n}\n'''
+    fast = '''class F {\n    private static final int MAX_CANDIDATE_RINGS = Integer.getInteger("neverfolia.villageLocateRings", 128);\n    private static boolean passesNeverOverworldPolicy(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final String maskProfile = System.getProperty("neverfolia.villageVariantMaskProfile", "fit");\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n        for (final int[] probe : preliminaryProbes) { int y = probe[0]; }\n        // NeverFolia R9-v16b: exact recheck of every preliminary probe for relaxed variants.\n        for (final int[] probe : preliminaryProbes) { int x1 = Heightmap.Types.OCEAN_FLOOR_WG.ordinal(); }\n        return true;\n    }\n}\n'''
+    policy = '''class P {\n    static boolean allows(int x) {\n        // NeverFolia R9-v16 QA: variant-specific preliminary score plus exact solid mask.\n        final String maskProfile = System.getProperty("neverfolia.villageVariantMaskProfile", "fit");\n        final int[][] preliminaryProbes = new int[][] {{-64,0},{64,0}};\n        for (final int[] probe : preliminaryProbes) { int y = probe[0]; }\n        // NeverFolia R9-v16b: exact recheck of every preliminary probe for relaxed variants.\n        for (final int[] probe : preliminaryProbes) { int x1 = Heightmap.Types.OCEAN_FLOOR_WG.ordinal(); }\n        return true;\n    }\n}\n'''
     for profile in sorted(PROFILES):
         for rings in sorted(RINGS):
-            f, p = patch(fast, policy, profile, rings)
-            validate(f, p, profile, rings)
-    print("[NeverFolia][R9 village finalizer v16] SELF-TEST OK")
-    print("  profile and ring budget fixed at build time")
+            f, p = patch(fast, policy, profile, rings); validate(f, p, profile, rings)
+    print("[NeverFolia][R9 village finalizer v16b] SELF-TEST OK")
+    print("  fixed profile/rings + V16b exact relaxed-probe recheck retained")
     print("  no QA JVM selectors survive")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("folia", nargs="?", type=Path)
-    ap.add_argument("--profile", choices=sorted(PROFILES), default="fit")
-    ap.add_argument("--rings", type=int, choices=sorted(RINGS), default=128)
-    ap.add_argument("--self-test", action="store_true")
-    args = ap.parse_args()
-    if args.self_test:
-        self_test(); return
-    if args.folia is None:
-        ap.error("folia worktree is required")
-    self_test()
+    ap = argparse.ArgumentParser(); ap.add_argument("folia", nargs="?", type=Path); ap.add_argument("--profile", choices=sorted(PROFILES), default="fit"); ap.add_argument("--rings", type=int, choices=sorted(RINGS), default=128); ap.add_argument("--self-test", action="store_true"); args = ap.parse_args()
+    if args.self_test: self_test(); return
+    if args.folia is None: ap.error("folia worktree is required")
     root = args.folia.resolve(); fp = root / FAST_REL; pp = root / POLICY_REL
-    for path in (fp, pp):
-        if not path.is_file(): fail(f"helper missing: {path}")
     fast, policy = patch(fp.read_text(encoding="utf-8"), pp.read_text(encoding="utf-8"), args.profile, args.rings)
     fp.write_text(fast, encoding="utf-8"); pp.write_text(policy, encoding="utf-8")
-    print(f"[NeverFolia][R9 village finalizer v16] fixed profile={args.profile} rings={args.rings}")
+    print(f"[NeverFolia][R9 village finalizer v16b] fixed profile={args.profile} rings={args.rings}")
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
