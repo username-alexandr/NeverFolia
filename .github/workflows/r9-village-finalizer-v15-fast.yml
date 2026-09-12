@@ -1,0 +1,25 @@
+name: R9 Village V15 Finalizer Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-village-finalizer-v15
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Validate corrected V5 baseline
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
+      - name: Validate V15 production finalizer
+        run: python3 ./scripts/finalize-never-overworld-village-two-stage-solid-v15.py --self-test
+      - name: Validate authoritative bbox gate
+        run: python3 ./scripts/restore-never-overworld-village-authoritative-solid-v14.py --self-test
