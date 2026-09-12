@@ -58,7 +58,7 @@ jobs:
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
-          BUILD_NUMBER: r9-village-locate
+          BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew :folia-server:createPaperclipJar --stacktrace
 
       - name: Collect JAR and build NeverOverworld pack
