@@ -9,6 +9,7 @@ POLICY_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chu
 FAST_SIG = "    private static boolean passesNeverOverworldPolicy("
 POLICY_SIG = "    static boolean allows("
 MARKER = "// NeverFolia R9-v10 QA: runtime-selectable shared preliminary village envelope."
+NON_VILLAGE_ANCHOR = "// Unrelated dry-land structures retain their established exact 3x3"
 
 # Production default remains V5 reach64. QA can select a candidate geometry with
 # -Dneverfolia.villageEnvelopeProfile=<name>. The exact same switch is injected
@@ -206,9 +207,22 @@ def validate(fast: str, policy: str) -> None:
                 fail(f"{label}: profile missing: {profile}")
         if 'System.getProperty("neverfolia.villageEnvelopeProfile", "reach64")' not in method:
             fail(f"{label}: runtime profile selector missing")
-        for forbidden in ("Structure.generate(", "NeverOverworldGeneratedVillageSafety.preview", "getBaseHeight("):
+        for forbidden in ("Structure.generate(", "NeverOverworldGeneratedVillageSafety.preview"):
             if forbidden in method:
                 fail(f"{label}: watchdog-risk primitive leaked: {forbidden}")
+
+        if label == "fast":
+            if "getBaseHeight(" in method:
+                fail("fast: getBaseHeight leaked into zero-generation locate path")
+        else:
+            marker_index = method.find(MARKER)
+            non_village_index = method.find(NON_VILLAGE_ANCHOR, marker_index)
+            if non_village_index < 0:
+                fail("generation: non-village boundary anchor missing")
+            village_block = method[marker_index:non_village_index]
+            if "getBaseHeight(" in village_block:
+                fail("generation: getBaseHeight leaked into V10 village block")
+
     if "R9V10_ENVELOPE_REJECT" not in fast or "R9V10_ACCEPT" not in fast:
         fail("fast: V10 diagnostics missing")
 
@@ -226,7 +240,7 @@ def self_test() -> None:
         fail("SELF-TEST: centre must not be duplicated in profile probes")
 
     fast_fixture = '''final class F {\n    private static boolean passesNeverOverworldPolicy(int x) {\n''' + OLD_FAST + '''    }\n}\n'''
-    generation_fixture = '''final class P {\n    static boolean allows(int x) {\n''' + OLD_GENERATION + '''    }\n}\n'''
+    generation_fixture = '''final class P {\n    static boolean allows(int x) {\n''' + OLD_GENERATION + '''        // Unrelated dry-land structures retain their established exact 3x3 generation-side surface contract.\n        final int other = generator.getBaseHeight(0, 0, type, heightAccessor, randomState);\n        return other > 0;\n    }\n}\n'''
     fast = patch_method(fast_fixture, FAST_SIG, OLD_FAST, fast_replacement(), "fast")
     policy = patch_method(generation_fixture, POLICY_SIG, OLD_GENERATION, generation_replacement(), "generation")
     validate(fast, policy)
@@ -238,6 +252,7 @@ def self_test() -> None:
     for name, points in PROFILES.items():
         print(f"  {name}: {len(points)} shared preliminary probes")
     print("  default remains reach64; QA profile selected by JVM property")
+    print("  generation getBaseHeight remains allowed only after the non-village boundary")
 
 
 def main() -> None:
