@@ -9,6 +9,8 @@ HELPER_REL = Path(
 )
 POLICY_SIG = "    private static boolean passesNeverOverworldPolicy("
 MARKER = "// NeverFolia R9: bounded village locate; never preview Jigsaw during /locate."
+CENTER_PROBE = "final int centerSurfaceY = preliminarySurfaceY(state, centerX, centerZ);"
+ENVELOPE_PROBE = "preliminarySurfaceY(state, centerX + dx, centerZ + dz)"
 
 NEW_POLICY = r'''    private static boolean passesNeverOverworldPolicy(
         final ChunkGenerator generator,
@@ -185,7 +187,7 @@ def validate(text: str) -> None:
         MARKER,
         'id.startsWith("minecraft:village_")',
         "final int[] offsets = {-radius, 0, radius};",
-        "preliminarySurfaceY(state, centerX + dx, centerZ + dz)",
+        ENVELOPE_PROBE,
         "drySamples >= minDrySamples(id)",
     )
     missing = [needle for needle in required if needle not in policy]
@@ -202,8 +204,10 @@ def validate(text: str) -> None:
     leaked = [needle for needle in forbidden if needle in policy]
     if leaked:
         fail(f"unbounded generation/height path survived in locate policy: {leaked}")
-    if policy.count("preliminarySurfaceY(") > 2:
-        fail("unexpected duplicate preliminarySurfaceY call sites in R9 policy")
+    if policy.count(CENTER_PROBE) != 1:
+        fail(f"expected exactly one R9 center preliminary-surface probe, got {policy.count(CENTER_PROBE)}")
+    if policy.count(ENVELOPE_PROBE) != 2:
+        fail(f"expected exactly two bounded envelope probe sites, got {policy.count(ENVELOPE_PROBE)}")
 
 
 def self_test() -> None:
@@ -232,6 +236,8 @@ def self_test() -> None:
         fail("SELF-TEST: Jigsaw preview call survived")
     if out.count(MARKER) != 1:
         fail("SELF-TEST: R9 marker count mismatch")
+    if policy.count(CENTER_PROBE) != 1 or policy.count(ENVELOPE_PROBE) != 2:
+        fail("SELF-TEST: bounded probe topology drifted")
     again = patch(out)
     if again != out:
         fail("SELF-TEST: transformer is not idempotent")
