@@ -1,0 +1,76 @@
+name: R8 Final Village Persisted BBox
+
+on:
+  push:
+    branches:
+      - qa/r8-final-village-persisted
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  village:
+    name: Persisted bbox / ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        variant: [desert, plains, savanna, snowy, taiga]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Self-test persisted bbox auditor
+        run: python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+
+      - name: Download exact R8 candidate JAR
+        uses: actions/download-artifact@v5
+        with:
+          name: NeverFolia-compiled-5a189854cc0550d21be757a55050bace8fee97e2
+          path: compiled
+          github-token: ${{ github.token }}
+          run-id: 34689958608
+          repository: username-alexandr/NeverFolia
+
+      - name: Build exact current NeverOverworld pack
+        run: |
+          set -euo pipefail
+          JAR="$(realpath "$(find compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)")"
+          test -f "$JAR"
+          mkdir -p qa-pack evidence/${{ matrix.variant }}
+          PACK="$PWD/qa-pack/NeverOverworld-Core.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar "$JAR" --output "$PACK"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "$PACK"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "$PACK"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "$PACK" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "$PACK" --verify
+
+      - name: Predict, persist and audit exact Jigsaw bbox
+        run: |
+          set -euo pipefail
+          JAR="$(realpath "$(find compiled -type f -name 'NeverFolia-*.jar' | sort | head -n 1)")"
+          PACK="$(realpath qa-pack/NeverOverworld-Core.zip)"
+          chmod +x ./scripts/qa-never-overworld-village-persisted-bbox.sh
+          ./scripts/qa-never-overworld-village-persisted-bbox.sh \
+            "$JAR" \
+            "$PACK" \
+            "${{ matrix.variant }}" \
+            "$PWD/evidence/${{ matrix.variant }}" \
+            "5a189854cc0550d21be757a55050bace8fee97e2"
+
+      - name: Upload village evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-final-village-${{ matrix.variant }}-${{ github.sha }}
+          path: evidence/${{ matrix.variant }}/*
+          if-no-files-found: warn
+          retention-days: 30
