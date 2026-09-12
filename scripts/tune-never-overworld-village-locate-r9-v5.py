@@ -18,6 +18,8 @@ OLD_REACH = "final int villageReach = 96;"
 NEW_REACH = "final int villageReach = 64;"
 OLD_OFFSETS = "final int[] villageOffsets = {-96, -48, 0, 48, 96};"
 NEW_OFFSETS = "final int[] villageOffsets = {-64, -32, 0, 32, 64};"
+OLD_GENERATION_RETURN = "return villageReach == 96;"
+NEW_GENERATION_RETURN = "return villageReach == 64;"
 
 
 def fail(message: str) -> None:
@@ -102,10 +104,17 @@ def patch_method(text: str, signature: str, kind: str) -> str:
     start, end = find_method_end(text, signature)
     body = text[start:end]
 
-    # Idempotence: an already calibrated V5 method is accepted as-is.
+    # Idempotence plus repair for the historical V5 bug where the numeric
+    # reach was changed to 64 but the generation-side sentinel remained == 96.
     if NEW_MARKER in body and NEW_REACH in body and NEW_OFFSETS in body:
         if OLD_MARKER in body or OLD_REACH in body or OLD_OFFSETS in body:
             fail(f"{kind}: mixed V4/V5 village envelope detected")
+        if kind == "generation":
+            if OLD_GENERATION_RETURN in body:
+                body = body.replace(OLD_GENERATION_RETURN, NEW_GENERATION_RETURN, 1)
+                return text[:start] + body + text[end:]
+            if NEW_GENERATION_RETURN not in body:
+                fail("generation: calibrated V5 sentinel missing")
         return text
 
     required = [OLD_MARKER, OLD_REACH, OLD_OFFSETS]
@@ -122,6 +131,10 @@ def patch_method(text: str, signature: str, kind: str) -> str:
         body = body.replace("R9V4_ENVELOPE_REJECT", "R9V5_ENVELOPE_REJECT")
         body = body.replace("R9V4_ACCEPT", "R9V5_ACCEPT")
         body = body.replace("5x5-preliminary-reach=", "5x5-calibrated-reach=")
+    else:
+        if OLD_GENERATION_RETURN not in body:
+            fail("generation: V4 reach96 sentinel missing")
+        body = body.replace(OLD_GENERATION_RETURN, NEW_GENERATION_RETURN, 1)
     return text[:start] + body + text[end:]
 
 
@@ -155,6 +168,10 @@ def validate(fast: str, policy: str, safety: str) -> None:
 
     if "R9V5_ENVELOPE_REJECT" not in fast_method or "R9V5_ACCEPT" not in fast_method:
         fail("fast: V5 diagnostics missing")
+    if OLD_GENERATION_RETURN in policy_method:
+        fail("generation: stale reach96 sentinel survived V5 calibration")
+    if NEW_GENERATION_RETURN not in policy_method:
+        fail("generation: reach64 sentinel missing")
     if "return start.isValid();" not in safety_method:
         fail("safety: start validity guard missing")
     if "inspectBoundingBox(" in safety_method or ".dry()" in safety_method:
@@ -175,9 +192,19 @@ def self_test() -> None:
         fail("SELF-TEST: generation transformer is not idempotent")
     if patch_safety(safety) != safety:
         fail("SELF-TEST: safety transformer is not idempotent")
+
+    # Regression fixture for the exact broken V5 state observed in earlier QA:
+    # reach64 constants present while the generation sentinel still compares 96.
+    stale_v5 = policy.replace(NEW_GENERATION_RETURN, OLD_GENERATION_RETURN, 1)
+    repaired = patch_method(stale_v5, POLICY_SIG, "generation")
+    if OLD_GENERATION_RETURN in method_text(repaired, POLICY_SIG):
+        fail("SELF-TEST: stale V5 generation sentinel was not repaired")
+    validate(fast, repaired, safety)
+
     print("[NeverFolia][R9 village locate v5] SELF-TEST OK")
     print("  locate + generation: identical 5x5 preliminarySurfaceLevel envelope")
     print("  calibrated reach: 64 blocks; offsets -64,-32,0,32,64")
+    print("  generation sentinel: reach64 (historical ==96 mismatch repaired)")
     print("  locate: zero Structure.generate / generated-bbox preview / getBaseHeight")
     print("  final safety: persisted full Jigsaw bbox water=0 QA")
 
