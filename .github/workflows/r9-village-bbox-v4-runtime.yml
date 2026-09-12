@@ -1,22 +1,22 @@
-name: R9 Village BBox V4 Runtime
+name: R9 Village BBox V5 Runtime
 
 # Full persisted-world proof: locate -> starts -> actual bbox -> water=0.
 on:
   push:
     branches:
-      - qa/r9-village-bbox-v4
+      - qa/r9-village-locate-contract-v5
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: r9-village-bbox-v4-runtime-${{ github.ref }}
+  group: r9-village-bbox-v5-runtime-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   runtime:
-    name: V4 locate + persisted starts + full bbox water=0
+    name: V5 locate + persisted starts + full bbox water=0
     runs-on: ubuntu-latest
     timeout-minutes: 150
 
@@ -40,11 +40,12 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
 
-      - name: Validate V4 bbox QA scripts
+      - name: Validate V5 bbox QA scripts
         run: |
           bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
           python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
           python3 ./scripts/harden-never-overworld-village-locate-r9.py --self-test
+          python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
 
       - name: Prepare Folia 26.2.x upstream
         run: |
@@ -61,6 +62,9 @@ jobs:
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
 
+      - name: Apply R9-v5 reach64 calibration overlay
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
@@ -70,37 +74,37 @@ jobs:
       - name: Collect JAR and build NeverOverworld pack
         run: |
           set -euo pipefail
-          mkdir -p artifacts/village-v4-bbox
+          mkdir -p artifacts/village-v5-bbox
           JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
-          cp "${JAR}" artifacts/NeverFolia-r9-village-bbox-v4.jar
+          cp "${JAR}" artifacts/NeverFolia-r9-village-bbox-v5.jar
           PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
           python3 ./scripts/build-never-overworld-core-pack.py \
-            --server-jar artifacts/NeverFolia-r9-village-bbox-v4.jar \
+            --server-jar artifacts/NeverFolia-r9-village-bbox-v5.jar \
             --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
-      - name: Run V4 persisted village bbox proof
+      - name: Run V5 persisted village bbox proof
         run: |
           chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
           ./scripts/qa-never-overworld-village-v4-bbox.sh \
-            artifacts/NeverFolia-r9-village-bbox-v4.jar \
+            artifacts/NeverFolia-r9-village-bbox-v5.jar \
             artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip \
-            artifacts/village-v4-bbox \
+            artifacts/village-v5-bbox \
             "${GITHUB_SHA}"
 
-      - name: Upload V4 bbox diagnostics
+      - name: Upload V5 bbox diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R9-village-bbox-v4-${{ github.sha }}
+          name: R9-village-bbox-v5-${{ github.sha }}
           path: |
-            artifacts/village-v4-bbox/*.json
-            artifacts/village-v4-bbox/*.tsv
-            artifacts/village-v4-bbox/server.log
+            artifacts/village-v5-bbox/*.json
+            artifacts/village-v5-bbox/*.tsv
+            artifacts/village-v5-bbox/server.log
             village-v4-bbox-test/locate-*.log
           if-no-files-found: warn
           retention-days: 14
