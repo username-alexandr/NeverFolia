@@ -1,5 +1,6 @@
 name: R9 Village BBox V4 Fast
 
+# Registers and validates the standalone V4 persisted-bbox QA layer.
 on:
   push:
     branches:
