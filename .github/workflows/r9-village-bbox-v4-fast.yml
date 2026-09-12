@@ -1,0 +1,23 @@
+name: R9 Village BBox V4 Fast
+
+on:
+  push:
+    branches:
+      - qa/r9-village-bbox-v4
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    name: V4 persisted village bbox proof self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Validate shell syntax
+        run: bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+      - name: Self-test persisted bbox auditor
+        run: python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
