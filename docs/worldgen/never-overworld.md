@@ -127,17 +127,41 @@ Required behavior:
    diagnostic assertion after all lava-producing generation paths are native-disabled.
 4. Vanilla generated-fluid features that would reintroduce uncontrolled lakes or
    springs are removed from the NR Core biome feature lists.
-5. Only air connected to an externally open flooded surface is filled with source
-   water.
-6. Sealed caves, enclosed mineshafts, Trial Chambers, Ancient City interiors and
-   other closed underground spaces must remain dry unless they have an actual open
-   connection to the flooded exterior.
-7. Player-placed fluids are not part of this generation pass and must not be
-   modified after chunk generation.
+5. The primary flood fills air connected to an externally open flooded surface
+   with source water.
+6. R8 adds a **large boundary-connected cavern fallback** for giant cave systems
+   whose real exterior connection crosses a chunk border and is therefore not
+   observable by a strictly chunk-local BFS. A residual component is classified as
+   hydrologically open only when all three thresholds hold: `>=768` floodable
+   blocks, `>=48` horizontal chunk-boundary cells and `>=24` blocks of vertical
+   span. The fallback scans only `Y=-384..96`, never reads or writes a neighboring
+   chunk, and therefore remains chunk-order deterministic.
+7. Small and medium sealed caves remain dry. Valid generated structure starts are
+   protected by their bounding box plus a two-block margin and are not used as
+   flood conduits.
+8. Enclosed mineshafts, Trial Chambers, Ancient City interiors and other closed
+   underground spaces remain dry unless they have an actual open connection or
+   satisfy the R8 giant-cavern classification outside a protected structure box.
+9. R8-C removes drowned frozen surface remnants during the existing drowned-column
+   scan: `SNOW`, `SNOW_BLOCK`, `POWDER_SNOW`, `ICE`, `PACKED_ICE` and `BLUE_ICE`
+   below the new flooded surface are converted to source water, after which the
+   scan continues to the real substrate and applies the normal drowned-surface
+   weathering rules.
+10. Player-placed fluids are not part of this generation pass and must not be
+    modified after chunk generation.
 
-NR-DEV-1 seeds the chunk-local flood using `OCEAN_FLOOR_WG` columns whose terrain
-surface is below the flood plane, then performs a six-direction BFS through air
-cells in the owning chunk.
+NR-DEV-1 seeds the primary chunk-local flood using `OCEAN_FLOOR_WG` columns whose
+terrain surface is below the flood plane, then performs a six-direction BFS through
+air cells in the owning chunk. The R8 fallback is a second, bounded classification
+pass over only large residual boundary-connected components; it does not make
+neighboring chunk state authoritative.
+
+The R8 field A/B gate is intentionally stricter than the normal runtime smoke. On
+the fixed 256-FULL-chunk comparison sample, the pre-R8 build contained 61 large
+boundary-connected dry cavern components (145,960 dry-air blocks; worst component
+8,604 blocks with 91-block vertical span), while R8 left zero components matching
+the same large-cavern criterion. This evidence is diagnostic for the flooded-world
+visual regression and does not replace strict chunk-order determinism testing.
 
 ## Vanilla and NeverFolia native structures
 
@@ -166,6 +190,11 @@ Candidate placement is deterministic from seed + candidate chunk. Failed
 candidates do not search neighboring chunks for a substitute location, generation
 never performs cross-chunk writes, and structure bounding boxes are rejected when
 they violate the configured vertical/geology/flood constraints.
+
+R8 hardens `buried_sanctum` and `sealed_cache` with authored rock-mass envelopes so
+their dry room shells cannot appear visibly suspended inside giant carved caverns.
+The production pack chain applies this hardening before Jigsaw type normalization
+and fingerprinting.
 
 Deep extensions for vanilla mineshafts and Trial Chambers are reserved by the
 structure contract, while Ancient City placement is protected from extending
@@ -235,6 +264,13 @@ A combined NeverFolia TEST build is acceptable only when the exact same JAR pass
 14. Combined NeverOverworld + NeverNether runtime smoke.
 15. Strict NeverNether forward-vs-reverse chunk-order semantic hashing.
 16. Strict NeverOverworld forward-vs-reverse chunk-order semantic hashing.
+17. True-vanilla 26.2 ore reference generation and candidate comparison.
+18. Candidate ore-density enforcement before checksums/artifact upload.
+
+R8 additionally requires its targeted field QA to remain green: rock-mass template
+persistence, giant-cavern A/B regression, and strict NeverOverworld determinism.
+R8-C must compile on Java 25 and pass the normal NeverOverworld runtime smoke after
+its frozen-surface transformer is applied.
 
 The final test artifact must contain one NeverFolia JAR together with independently
 versioned NeverOverworld and NeverNether Core packs, the geology audit report and
