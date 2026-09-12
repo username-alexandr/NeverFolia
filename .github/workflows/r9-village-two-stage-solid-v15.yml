@@ -1,0 +1,149 @@
+name: R9 Village Two Stage Solid V15
+
+on:
+  push:
+    branches:
+      - qa/r9-village-two-stage-solid-v15
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-village-two-stage-solid-v15-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build one V15 two-stage-solid JAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Validate V15 contracts
+        run: |
+          python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
+          python3 ./scripts/tune-never-overworld-village-two-stage-solid-v15.py --self-test
+          python3 ./scripts/restore-never-overworld-village-authoritative-solid-v14.py --self-test
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Apply corrected V5 baseline
+        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
+      - name: Apply V15 two-stage solid predictor
+        run: python3 ./scripts/tune-never-overworld-village-two-stage-solid-v15.py ./.work/Folia
+      - name: Restore V14 authoritative actual-bbox solid gate
+        run: python3 ./scripts/restore-never-overworld-village-authoritative-solid-v14.py ./.work/Folia
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+      - name: Collect JAR and build V15 NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/v15-build
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}" && test -f "${JAR}"
+          cp "${JAR}" artifacts/v15-build/NeverFolia-r9-village-v15.jar
+          PACK="artifacts/v15-build/NeverOverworld-Core-r9-village-v15.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/v15-build/NeverFolia-r9-village-v15.jar --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+      - name: Upload V15 runtime inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: r9-village-v15-runtime-inputs-${{ github.sha }}
+          path: artifacts/v15-build/*
+          retention-days: 7
+
+  matrix:
+    name: ${{ matrix.profile }} / rings-${{ matrix.rings }} / two-stage + authoritative bbox
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [solid5, solid7, solid13]
+        rings: [128, 256]
+    env:
+      JAVA_TOOL_OPTIONS: -Dneverfolia.villageSolidProfile=${{ matrix.profile }} -Dneverfolia.villageLocateRings=${{ matrix.rings }}
+    steps:
+      - name: Checkout NeverFolia
+        uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download shared V15 runtime inputs
+        uses: actions/download-artifact@v5
+        with:
+          name: r9-village-v15-runtime-inputs-${{ github.sha }}
+          path: artifacts/v15-build
+      - name: Verify selected two-stage profile
+        run: |
+          echo "JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}"
+          test "${JAVA_TOOL_OPTIONS}" = "-Dneverfolia.villageSolidProfile=${{ matrix.profile }} -Dneverfolia.villageLocateRings=${{ matrix.rings }}"
+      - name: Run all 10 locate targets to persisted starts
+        run: |
+          chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
+            artifacts/v15-build/NeverFolia-r9-village-v15.jar \
+            artifacts/v15-build/NeverOverworld-Core-r9-village-v15.zip
+      - name: Preserve locate proof
+        if: always()
+        run: |
+          OUT="artifacts/v15-${{ matrix.profile }}-rings-${{ matrix.rings }}/locate"
+          mkdir -p "${OUT}"
+          cp -f artifacts/village-locate-r9-v2-proof.json "${OUT}/" 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.tsv "${OUT}/" 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.log "${OUT}/" 2>/dev/null || true
+      - name: Run full persisted Jigsaw bbox water=0 proof
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/v15-build/NeverFolia-r9-village-v15.jar \
+            artifacts/v15-build/NeverOverworld-Core-r9-village-v15.zip \
+            "artifacts/v15-${{ matrix.profile }}-rings-${{ matrix.rings }}/bbox" \
+            "${GITHUB_SHA}-${{ matrix.profile }}-rings-${{ matrix.rings }}"
+      - name: Upload V15 profile proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R9-village-v15-${{ matrix.profile }}-rings-${{ matrix.rings }}-${{ github.sha }}
+          path: |
+            artifacts/v15-${{ matrix.profile }}-rings-${{ matrix.rings }}/**/*
+            village-v4-bbox-test/*.tsv
+            village-v4-bbox-test/locate-*.log
+          if-no-files-found: warn
+          retention-days: 14
