@@ -6,6 +6,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+CANDIDATE_POLICY = "r9-v17-strict12-rings128-actual-bbox-reclamation"
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"[NeverFolia][village persisted bbox] {message}")
@@ -123,7 +125,7 @@ def audit(root: Path, world: Path, locate_path: Path, output: Path, source_sha: 
                     first_water.append([x, 128, z, value])
 
     report: dict[str, object] = {
-        "schema": 4,
+        "schema": 5,
         "structure": target,
         "locate_block": [bx, bz],
         "predicted_chunk": [cx, cz],
@@ -136,7 +138,7 @@ def audit(root: Path, world: Path, locate_path: Path, output: Path, source_sha: 
         "water_samples": water,
         "first_water": first_water,
         "policy": "persisted-jigsaw-bbox-all-blocks-zero-water-y128",
-        "candidate_policy": "r9-v4-shared-5x5-preliminary-reach96",
+        "candidate_policy": CANDIDATE_POLICY,
         "source_sha": source_sha,
         "save_barrier": "normal-stop-only",
     }
@@ -162,7 +164,9 @@ def self_test() -> None:
     fixture = {"a": {"BB": {"$int_array": [1, 2, 3, 4, 5, 6]}}, "b": [{"bounding_box": [7, 8, 9, 10, 11, 12]}]}
     if collect_boxes(fixture) != [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]:
         fail("SELF-TEST: recursive bbox collection failed")
-    print("[NeverFolia][village persisted bbox] R9-V4 SELF-TEST OK")
+    if CANDIDATE_POLICY != "r9-v17-strict12-rings128-actual-bbox-reclamation":
+        fail("SELF-TEST: stale candidate policy label")
+    print("[NeverFolia][village persisted bbox] R9-V17 SELF-TEST OK")
 
 
 def main() -> None:
