@@ -9,30 +9,18 @@ import zipfile
 from pathlib import Path
 
 MANIFEST = "neveroverworld-test1-manifest.json"
-VILLAGE_JIGSAW_REACH = 80
-VILLAGE_MAX_GENERATED_BBOX_SPAN = 256
-VILLAGE_MAX_GENERATED_BBOX_AREA = 65536
+VILLAGE_JIGSAW_REACH = 80  # vanilla reference only
+VILLAGE_LOCATE_RINGS = 128
+VILLAGE_STRICT_PROBES = 12
+FLOOD_LEVEL = 128
 
-# NeverOverworld leaves only high terrain above the Y=128 flood plane. Runtime
-# matrix QA proved that meadow/cherry and old-growth taiga families do not offer
-# reliable strict dry village starts on the deterministic TEST1 seed. Persisted
-# NBT biome QA additionally proved that dry plains/savanna placement candidates
-# are dominated by mountain biomes. Keep climate-specific natural families and
-# add only the warm/non-snowy mountain fallback actually observed on candidates:
-#   plains  -> elevated savanna grasslands + stony peaks
-#   savanna -> savanna highlands + stony peaks
-#   taiga   -> cold grove / snowy slopes
-# Do not add jagged/frozen peaks or snowy slopes to plains/savanna: that would
-# make the architectural variant cross into visibly incompatible cold terrain.
-# R6 splits village variants into independent structure sets with distinct salts,
-# so these biome overlaps do not steal weighted slots from another variant.
-#
-# Runtime safety is no longer inferred from a fixed radius. The cheap prefilter
-# checks only the candidate centre above the flood plane. Structure#generate then
-# builds the deterministic Jigsaw layout and the actual StructureStart bounding
-# box is checked column-by-column before the start is persisted. Fast locate uses
-# the same read-only generated layout preview. Persisted NBT bbox water=0 remains
-# the independent final arbiter.
+# R9 V17 keeps /locate and generation on the same zero-generation strict
+# preliminary-surface contract. The highland biome expansion below is the exact
+# V6/V7 diagnostic-backed set used by the successful V17 isolated runtime proof.
+# Actual shoreline safety is no longer guessed from this biome list: once the
+# real StructureStart exists during FEATURES, V17 reclaims the actual enclosing
+# village bbox in the owning chunk, and persisted full-bbox water=0 remains the
+# independent release gate.
 EXTRA = {
     "village_plains": [
         "minecraft:meadow",
@@ -46,14 +34,46 @@ EXTRA = {
         "minecraft:old_growth_spruce_taiga",
         "minecraft:grove",
         "minecraft:snowy_slopes",
+        "minecraft:jagged_peaks",
+        "minecraft:frozen_peaks",
+        "minecraft:stony_peaks",
     ],
-    "village_snowy": ["minecraft:grove", "minecraft:snowy_slopes"],
+    "village_snowy": [
+        "minecraft:grove",
+        "minecraft:snowy_slopes",
+        "minecraft:jagged_peaks",
+        "minecraft:frozen_peaks",
+    ],
     "village_savanna": [
         "minecraft:savanna_plateau",
         "minecraft:windswept_savanna",
         "minecraft:stony_peaks",
     ],
-    "village_desert": ["minecraft:badlands", "minecraft:wooded_badlands", "minecraft:eroded_badlands"],
+    "village_desert": [
+        "minecraft:badlands",
+        "minecraft:wooded_badlands",
+        "minecraft:eroded_badlands",
+        "minecraft:stony_peaks",
+        "minecraft:savanna_plateau",
+    ],
+}
+
+FALLBACKS = {
+    "village_plains": [
+        "minecraft:savanna_plateau",
+        "minecraft:windswept_savanna",
+        "minecraft:stony_peaks",
+    ],
+    "village_savanna": ["minecraft:stony_peaks"],
+    "village_desert": ["minecraft:stony_peaks", "minecraft:savanna_plateau"],
+    "village_snowy": ["minecraft:jagged_peaks", "minecraft:frozen_peaks"],
+    "village_taiga": [
+        "minecraft:grove",
+        "minecraft:snowy_slopes",
+        "minecraft:jagged_peaks",
+        "minecraft:frozen_peaks",
+        "minecraft:stony_peaks",
+    ],
 }
 
 
@@ -70,39 +90,44 @@ def transform(payload: bytes) -> bytes:
         entries = {info.filename: source.read(info.filename) for info in source.infolist()}
     if MANIFEST not in entries:
         fail("NeverOverworld manifest missing")
+
     for name, values in EXTRA.items():
         path = f"data/minecraft/tags/worldgen/biome/has_structure/{name}.json"
         if path in entries:
             fail(f"pack already overrides {path}; merge policy must be reviewed")
         entries[path] = dump({"replace": False, "values": values})
+
     manifest = json.loads(entries[MANIFEST])
     for stale in (
         "village_bbox_overhang_margin",
         "village_dry_samples",
         "village_dry_radius",
         "village_dry_step",
+        "village_generated_bbox_max_span",
+        "village_generated_bbox_max_area",
+        "village_prediction_reach",
+        "village_prediction_step",
+        "village_prediction_samples",
+        "village_layout_safety",
     ):
         manifest.pop(stale, None)
-    manifest["village_surface_policy"] = "generated-jigsaw-bbox-all-columns-dry-highland"
-    manifest["village_prefilter"] = "candidate-center-world-surface-wg-gte129"
-    manifest["village_layout_safety"] = "structure-start-bbox-all-xz-world-surface-wg-gte129"
-    manifest["village_fast_locate_layout"] = "same-structure-generate-preview-references0"
+
+    manifest["village_surface_policy"] = "r9-v17-strict12-rings128-actual-bbox-reclamation"
+    manifest["village_prefilter"] = "center-gte129-biome-then-strict12-preliminary-probes"
+    manifest["village_generation_policy"] = "same-strict12-preliminary-probes-as-fast-locate"
+    manifest["village_fast_locate_layout"] = "zero-generation-strict12-preliminary-rings128"
+    manifest["village_strict_probe_count"] = VILLAGE_STRICT_PROBES
+    manifest["village_locate_max_candidate_rings"] = VILLAGE_LOCATE_RINGS
     manifest["village_jigsaw_max_distance_from_center"] = VILLAGE_JIGSAW_REACH
-    manifest["village_generated_bbox_max_span"] = VILLAGE_MAX_GENERATED_BBOX_SPAN
-    manifest["village_generated_bbox_max_area"] = VILLAGE_MAX_GENERATED_BBOX_AREA
+    manifest["village_actual_bbox_reclamation"] = "features-owning-chunk-y80-128-waterline-foundation"
+    manifest["village_reclamation_flood_level"] = FLOOD_LEVEL
     manifest["village_persisted_bbox_gate"] = "all-blocks-zero-water-y128"
     manifest["village_spacing"] = 34
     manifest["village_highland_biomes"] = EXTRA
-    manifest["village_highland_fallbacks"] = {
-        "village_plains": [
-            "minecraft:savanna_plateau",
-            "minecraft:windswept_savanna",
-            "minecraft:stony_peaks",
-        ],
-        "village_savanna": ["minecraft:stony_peaks"],
-        "village_taiga": ["minecraft:grove", "minecraft:snowy_slopes"],
-    }
+    manifest["village_highland_fallbacks"] = FALLBACKS
+    manifest["village_fallback_basis"] = "R9 V6 dry-candidate biome-key diagnostics; carried into proven V17"
     entries[MANIFEST] = dump(manifest)
+
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as target:
         for name in sorted(entries):
@@ -119,25 +144,23 @@ def apply_pack(path: Path) -> None:
         temp.replace(path)
     finally:
         temp.unlink(missing_ok=True)
-    print("[NeverFolia][NeverOverworld highland villages] GENERATED-BBOX HIGHLAND POLICY METADATA APPLIED")
-    print("  prefilter: candidate centre WORLD_SURFACE_WG >= 129")
-    print("  final runtime safety: actual generated StructureStart bbox, every X/Z column")
-    print("  fast locate: same Structure#generate preview with references=0")
-    print("  vanilla village Jigsaw max_distance_from_center: 80 (reference only)")
-    print("  accepted generated bbox limit: 256x256 / 65536 columns")
-    print("  plains fallback: savanna plateau / windswept savanna / stony peaks")
-    print("  savanna fallback: savanna plateau / windswept savanna / stony peaks")
-    print("  taiga fallback: grove / snowy slopes")
-    print("  cold peaks are not added to plains/savanna")
-    print("  persisted village bbox all-block Y=128 water=0 audit remains authoritative")
+    print("[NeverFolia][NeverOverworld highland villages] R9 V17 PRODUCTION HIGHLAND POLICY APPLIED")
+    print("  locate: strict 12/12 preliminary probes, hardcoded rings128")
+    print("  generation: same strict 12/12 preliminary probes")
+    print("  desert fallback: stony peaks / savanna plateau")
+    print("  snowy fallback: jagged peaks / frozen peaks")
+    print("  taiga fallback: grove / snowy slopes / jagged / frozen / stony peaks")
+    print("  actual generated bbox: owning-chunk reclamation before LIGHT flood")
+    print("  persisted full Jigsaw bbox Y=128 water=0 remains authoritative")
     print("  structure spacing: vanilla 34")
 
 
 def self_test() -> None:
     if VILLAGE_JIGSAW_REACH != 80:
         fail("SELF-TEST: vanilla Jigsaw reach reference drifted")
-    if VILLAGE_MAX_GENERATED_BBOX_SPAN != 256 or VILLAGE_MAX_GENERATED_BBOX_AREA != 65536:
-        fail("SELF-TEST: generated bbox safety cap drifted")
+    if VILLAGE_LOCATE_RINGS != 128 or VILLAGE_STRICT_PROBES != 12 or FLOOD_LEVEL != 128:
+        fail("SELF-TEST: V17 production constants drifted")
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(MANIFEST, dump({
@@ -146,6 +169,12 @@ def self_test() -> None:
             "village_dry_samples": 169,
             "village_dry_radius": 96,
             "village_dry_step": 16,
+            "village_generated_bbox_max_span": 256,
+            "village_generated_bbox_max_area": 65536,
+            "village_prediction_reach": 64,
+            "village_prediction_step": 32,
+            "village_prediction_samples": 25,
+            "village_layout_safety": "old-generated-bbox-scan",
         }))
     result = transform(buf.getvalue())
     with zipfile.ZipFile(io.BytesIO(result)) as z:
@@ -154,37 +183,51 @@ def self_test() -> None:
             tag = json.loads(z.read(f"data/minecraft/tags/worldgen/biome/has_structure/{name}.json"))
             if tag != {"replace": False, "values": values}:
                 fail(f"SELF-TEST: wrong biome tag for {name}: {tag}")
-    if manifest.get("village_surface_policy") != "generated-jigsaw-bbox-all-columns-dry-highland":
-        fail("SELF-TEST: generated-bbox policy marker missing")
+
     expected = {
-        "village_prefilter": "candidate-center-world-surface-wg-gte129",
-        "village_layout_safety": "structure-start-bbox-all-xz-world-surface-wg-gte129",
-        "village_fast_locate_layout": "same-structure-generate-preview-references0",
-        "village_jigsaw_max_distance_from_center": 80,
-        "village_generated_bbox_max_span": 256,
-        "village_generated_bbox_max_area": 65536,
+        "village_surface_policy": "r9-v17-strict12-rings128-actual-bbox-reclamation",
+        "village_fast_locate_layout": "zero-generation-strict12-preliminary-rings128",
+        "village_generation_policy": "same-strict12-preliminary-probes-as-fast-locate",
+        "village_strict_probe_count": 12,
+        "village_locate_max_candidate_rings": 128,
+        "village_actual_bbox_reclamation": "features-owning-chunk-y80-128-waterline-foundation",
+        "village_reclamation_flood_level": 128,
         "village_persisted_bbox_gate": "all-blocks-zero-water-y128",
     }
     for key, value in expected.items():
         if manifest.get(key) != value:
             fail(f"SELF-TEST: {key} mismatch: {manifest.get(key)} != {value}")
-    for stale in ("village_bbox_overhang_margin", "village_dry_samples", "village_dry_radius", "village_dry_step"):
+
+    for stale in (
+        "village_bbox_overhang_margin",
+        "village_dry_samples",
+        "village_dry_radius",
+        "village_dry_step",
+        "village_generated_bbox_max_span",
+        "village_generated_bbox_max_area",
+        "village_prediction_reach",
+        "village_prediction_step",
+        "village_prediction_samples",
+        "village_layout_safety",
+    ):
         if stale in manifest:
-            fail(f"SELF-TEST: stale reach96 manifest key survived: {stale}")
-    fallbacks = manifest.get("village_highland_fallbacks", {})
-    if fallbacks.get("village_plains") != [
-        "minecraft:savanna_plateau", "minecraft:windswept_savanna", "minecraft:stony_peaks"
-    ]:
-        fail("SELF-TEST: plains stony-peaks fallback contract missing")
-    if fallbacks.get("village_savanna") != ["minecraft:stony_peaks"]:
-        fail("SELF-TEST: savanna stony-peaks fallback contract missing")
-    if fallbacks.get("village_taiga") != ["minecraft:grove", "minecraft:snowy_slopes"]:
-        fail("SELF-TEST: taiga fallback contract missing")
-    for variant in ("village_plains", "village_savanna"):
-        cold = {"minecraft:jagged_peaks", "minecraft:frozen_peaks", "minecraft:snowy_slopes"}
+            fail(f"SELF-TEST: stale pre-V17 manifest key survived: {stale}")
+
+    required_taiga = {"minecraft:jagged_peaks", "minecraft:frozen_peaks", "minecraft:stony_peaks"}
+    if not required_taiga.issubset(EXTRA["village_taiga"]):
+        fail("SELF-TEST: proven taiga highland fallback set missing")
+    if FALLBACKS["village_desert"] != ["minecraft:stony_peaks", "minecraft:savanna_plateau"]:
+        fail("SELF-TEST: desert diagnostic-backed fallback contract missing")
+    if FALLBACKS["village_snowy"] != ["minecraft:jagged_peaks", "minecraft:frozen_peaks"]:
+        fail("SELF-TEST: snowy diagnostic-backed fallback contract missing")
+
+    cold = {"minecraft:jagged_peaks", "minecraft:frozen_peaks", "minecraft:snowy_slopes"}
+    for variant in ("village_plains", "village_savanna", "village_desert"):
         if cold.intersection(EXTRA[variant]):
-            fail(f"SELF-TEST: cold mountain biome leaked into {variant}")
-    print("[NeverFolia][NeverOverworld highland villages] SELF-TEST OK")
+            fail(f"SELF-TEST: snowy peak fallback leaked into warm/non-snowy {variant}")
+
+    print("[NeverFolia][NeverOverworld highland villages] R9 V17 PRODUCTION SELF-TEST OK")
+    print("  proven V6/V7 biome set retained; manifest describes final V17 policy")
 
 
 def main() -> None:
@@ -193,7 +236,8 @@ def main() -> None:
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
-        self_test(); return
+        self_test()
+        return
     if args.input is None:
         parser.error("--input is required")
     self_test()
