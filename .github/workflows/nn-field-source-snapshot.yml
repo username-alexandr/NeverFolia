@@ -14,10 +14,13 @@ jobs:
       - uses: actions/checkout@v6
       - name: Export tracked source and source-input inventory
         run: |
+          set -euo pipefail
           mkdir -p artifacts
           git archive --format=zip HEAD -o artifacts/NeverNether-field-baseline-source.zip
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
           git ls-files worldgen-sources > artifacts/SOURCE-INPUTS.txt
+          (cd artifacts && sha256sum *.zip *.txt > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: NeverNether-field-sources-${{ github.sha }}
