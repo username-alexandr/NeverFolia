@@ -91,6 +91,7 @@ class Archive:
         with path.open("rb") as fh:
             self.sha256 = hashlib.file_digest(fh, "sha256").hexdigest()
         self.target = target
+        self.optional_external_structures: set[str] = set()
         self.native_codecs: set[tuple[str, str]] = set()
         self.supplemental_notices: dict[PurePosixPath, bytes] = {}
         self.entries: dict[PurePosixPath, bytes] = {}
@@ -242,6 +243,11 @@ def apply_server_compatibility(archive: Archive, source_key: str) -> None:
         apply_recoveries(archive, recovery)
 
 
+    if source_key == "dungeons_and_taverns":
+        from nevernether_dnt_r6 import SOURCE_SHA, apply_dnt
+        if archive.sha256 == SOURCE_SHA:
+            apply_dnt(archive)
+
     if source_key == "better_monuments":
         from nevernether_monument_r5 import SOURCE_SHA, apply_monument
         if archive.sha256 == SOURCE_SHA:
@@ -315,7 +321,12 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
         if recording is not None:
             recording.append((registry, ident, origin, required))
         if registry == "worldgen/template_pool" and ident in aliases:
-            # Bindings are per root structure; never invent an alias pool file.
+            # 26.2 expansion-envelope inspection can read the original pool
+            # before alias resolution. Retain it ONLY when the actual source
+            # supplies it; never synthesize an empty physical alias pool.
+            if resource_path(registry, ident) in archive.entries:
+                add_reference(registry, ident, origin, required)
+            # Bindings remain scoped to the current structure.
             for target in sorted(resolve_pool(ident)):
                 add_reference(registry, target, origin, required)
             return
@@ -325,6 +336,12 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
         path = resource_path(registry, ident)
         canonical = ident if ":" in ident else "minecraft:" + ident
         edges.add((origin, registry, canonical))
+        if registry == "worldgen/structure" and canonical in archive.optional_external_structures:
+            if required:
+                missing.add((registry, canonical, origin))
+            else:
+                runtime_review.add(("optional_external_structure_not_imported", canonical, origin))
+            return
         if path in archive.entries:
             if path not in queued:
                 queued.add(path)
@@ -368,6 +385,12 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
                 commands = re.sub(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', '""', line)
                 for target in re.findall(r"(?:^|\s)function\s+(#?[a-z0-9_.-]+:[a-z0-9_./-]+)", commands):
                     holder("function", target, origin)
+                for level in re.findall(r"(?:^|\s)neverfolia:dnt\s+call_trade_([2-5])(?:$|\s)", commands):
+                    ref("function", "nova_structures:quest/add_trade_lv" + level, origin)
+                if "neverfolia:dnt loot_emeralds" in commands:
+                    ref("loot_table", "nova_structures:villagers/villager_emerald_counts", origin)
+                for level in re.findall(r"(?:^|\s)neverfolia:dnt\s+loot_chart_([2-5])(?:$|\s)", commands):
+                    ref("loot_table", "nova_structures:villagers/tavern_quest" + {"2":"", "3":"_uncommon", "4":"_rare", "5":"_epic"}[level], origin)
                 for target in re.findall(r"(?:if|unless)\s+predicate\s+([a-z0-9_.-]+:[a-z0-9_./-]+)", commands):
                     ref("predicate", target, origin)
                 for target in re.findall(r"(?:^|\s)loot\s+([a-z0-9_.-]+:[a-z0-9_./-]+)", commands):
@@ -425,6 +448,9 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
                 ref("tags/damage_type", tag["id"], origin)
         if value.get("condition") == "minecraft:entity_properties":
             holder("entity_type", value.get("predicate", {}).get("entity_type"), origin)
+        location = value.get("location")
+        if isinstance(location, dict) and "structures" in location:
+            holder("worldgen/structure", location["structures"], origin)
         if typ == "minecraft:run_function":
             holder("function", value["function"], origin)
         if registry in ("trial_spawner", "structure"):
@@ -541,6 +567,16 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
             if (not isinstance(size, list) or len(size) != 3
                     or any(type(n) is not int or n < 0 for n in size)):
                 raise ValueError(f"Invalid structure NBT size: {path}")
+        if registry == "structure":
+            # Coordinates and palette indices contain no resource references.
+            # Inspect every palette and every block/entity NBT, not millions of
+            # scalar voxel coordinates. This is a read-only observation view.
+            value = {
+                "palette": value.get("palette", []),
+                "palettes": value.get("palettes", []),
+                "blocks": [block["nbt"] for block in value.get("blocks", []) if "nbt" in block],
+                "entities": [entity["nbt"] for entity in value.get("entities", []) if "nbt" in entity],
+            }
         recording = []
         old_blockers, old_review = set(blockers), set(runtime_review)
         walk(value, registry, str(path))
