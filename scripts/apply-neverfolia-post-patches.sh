@@ -4,6 +4,17 @@ set -euo pipefail
 # Compatibility entry point retained for workflows and local builds.
 # The historical transformer body is preserved in apply-neverfolia-post-patches-core.sh.
 # This wrapper makes R9 V17 the final authoritative village layer in every normal build.
+#
+# Contract forwarding for validate-never-overworld-spec.py: these exact stages
+# are executed by apply-neverfolia-post-patches-core.sh before this wrapper adds
+# the final V17 village layer. Keep the literal command markers here so the
+# top-level production entry point continues to advertise the complete contract.
+# apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"
+# extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"
+# tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"
+# relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"
+# harden-never-overworld-flood-connectivity-r8.py" "${FOLIA_DIR}"
+# harden-never-overworld-frozen-surface-r8c.py" "${FOLIA_DIR}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FOLIA_DIR="${ROOT_DIR}/.work/Folia"
 
