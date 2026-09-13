@@ -7,6 +7,7 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_HASHER = ROOT / "scripts/hash-never-nether-chunks.py"
@@ -26,13 +27,16 @@ RAW = load_module(RAW_HASHER, "neverfolia_raw_chunk_reader")
 OVER = load_module(OVER_HASHER, "neverfolia_overworld_reader")
 
 REGION_RE = re.compile(r"^r\.(-?\d+)\.(-?\d+)\.mca$")
-AIR_OR_FLUID = {
+AIR = {
     "minecraft:air",
     "minecraft:cave_air",
     "minecraft:void_air",
-    "minecraft:water",
-    "minecraft:lava",
 }
+WATERLIKE = {
+    "minecraft:water",
+    "minecraft:bubble_column",
+}
+FLUID = WATERLIKE | {"minecraft:lava"}
 # Decoration that may sit above the actual drowned ground. Ignore it while
 # resolving the first terrain/substrate block in a column.
 OVERLAY = {
@@ -67,6 +71,7 @@ DROWNED_PALETTE = {
     "minecraft:stone",
     "minecraft:andesite",
 }
+POWDER_SNOW = "minecraft:powder_snow"
 
 
 def fail(message: str) -> None:
@@ -91,26 +96,74 @@ def generated_chunks(region_dir: Path):
             yield rx * 32 + lx, rz * 32 + lz
 
 
-def resolve_drowned_substrate(root: dict, wx: int, wz: int, flood_level: int, min_scan_y: int) -> tuple[int, str] | None:
-    if RAW.block_at(root, wx, flood_level, wz) != "minecraft:water":
+def inspect_drowned_column(
+    get_block: Callable[[int], str],
+    flood_level: int,
+    min_scan_y: int,
+) -> dict | None:
+    """Inspect the persisted vertical water column, not a cached heightmap.
+
+    R9 contract: if Y=flood_level is source water, every open cell above the
+    first solid/substrate must remain water/aquatic decoration. Air in that
+    interval is the exact field defect that produced visible underwater voids
+    and dry cells above magma. Powder snow is also invalid below the flood plane.
+    """
+    if get_block(flood_level) != "minecraft:water":
         return None
+
+    air_gaps: list[tuple[int, str]] = []
+    powder_snow: list[int] = []
+    non_water_fluids: list[tuple[int, str]] = []
+    substrate: tuple[int, str] | None = None
+
     for y in range(flood_level - 1, min_scan_y - 1, -1):
-        block = RAW.block_at(root, wx, y, wz)
-        if block in AIR_OR_FLUID or block in OVERLAY:
+        block = get_block(y)
+        if block in WATERLIKE or block in OVERLAY:
             continue
-        return y, block
-    return None
+        if block in AIR:
+            air_gaps.append((y, block))
+            continue
+        if block == "minecraft:lava":
+            non_water_fluids.append((y, block))
+            continue
+        if block == POWDER_SNOW:
+            powder_snow.append(y)
+        substrate = (y, block)
+        break
+
+    return {
+        "substrate": substrate,
+        "air_gaps": air_gaps,
+        "powder_snow": powder_snow,
+        "non_water_fluids": non_water_fluids,
+    }
+
+
+def resolve_drowned_column(root: dict, wx: int, wz: int, flood_level: int, min_scan_y: int) -> dict | None:
+    return inspect_drowned_column(
+        lambda y: RAW.block_at(root, wx, y, wz),
+        flood_level,
+        min_scan_y,
+    )
 
 
 def audit(world: Path, max_chunks: int, flood_level: int = 128, min_scan_y: int = -96) -> dict:
     region = OVER.find_region_dir(world)
     chunks_scanned = 0
     drowned_columns = 0
+    unresolved_deep_columns = 0
+    air_gap_columns = 0
+    air_gap_blocks = 0
+    powder_snow_columns = 0
+    non_water_fluid_columns = 0
     material_counts: Counter[str] = Counter()
     forbidden_living: Counter[str] = Counter()
     forbidden_remains: Counter[str] = Counter()
     drowned_palette: Counter[str] = Counter()
     depth_bands: Counter[str] = Counter()
+    air_gap_examples: list[dict] = []
+    powder_snow_examples: list[dict] = []
+    non_water_fluid_examples: list[dict] = []
 
     for cx, cz in generated_chunks(region):
         if chunks_scanned >= max_chunks:
@@ -126,11 +179,50 @@ def audit(world: Path, max_chunks: int, flood_level: int = 128, min_scan_y: int 
             for lx in range(16):
                 wx = base_x + lx
                 wz = base_z + lz
-                resolved = resolve_drowned_substrate(root, wx, wz, flood_level, min_scan_y)
-                if resolved is None:
+                inspected = resolve_drowned_column(root, wx, wz, flood_level, min_scan_y)
+                if inspected is None:
                     continue
-                y, block = resolved
                 drowned_columns += 1
+
+                air_gaps = inspected["air_gaps"]
+                if air_gaps:
+                    air_gap_columns += 1
+                    air_gap_blocks += len(air_gaps)
+                    if len(air_gap_examples) < 24:
+                        air_gap_examples.append(
+                            {
+                                "x": wx,
+                                "z": wz,
+                                "cells": [[y, block] for y, block in air_gaps[:12]],
+                            }
+                        )
+
+                powder = inspected["powder_snow"]
+                if powder:
+                    powder_snow_columns += 1
+                    if len(powder_snow_examples) < 24:
+                        powder_snow_examples.append({"x": wx, "z": wz, "y": powder[0]})
+
+                non_water = inspected["non_water_fluids"]
+                if non_water:
+                    non_water_fluid_columns += 1
+                    if len(non_water_fluid_examples) < 24:
+                        non_water_fluid_examples.append(
+                            {
+                                "x": wx,
+                                "z": wz,
+                                "cells": [[y, block] for y, block in non_water[:12]],
+                            }
+                        )
+
+                substrate = inspected["substrate"]
+                if substrate is None:
+                    # Extended-height terrain can legitimately place the first
+                    # solid bottom below this audit's configured min_scan_y.
+                    unresolved_deep_columns += 1
+                    continue
+
+                y, block = substrate
                 material_counts[block] += 1
                 depth = flood_level - y
                 if depth <= 6:
@@ -150,6 +242,16 @@ def audit(world: Path, max_chunks: int, flood_level: int = 128, min_scan_y: int 
         fail("no generated chunks were readable")
     if drowned_columns == 0:
         fail("no Y=128 flooded columns were found in the generated sample")
+    if air_gap_columns:
+        fail(
+            "open flooded columns contain persisted air before the first solid bottom: "
+            f"columns={air_gap_columns}, air_blocks={air_gap_blocks}, examples={air_gap_examples[:8]}"
+        )
+    if powder_snow_columns:
+        fail(
+            "powder_snow survived below the Y=128 open-water plane: "
+            f"columns={powder_snow_columns}, examples={powder_snow_examples[:8]}"
+        )
     if forbidden_living:
         details = ", ".join(f"{name}={count}" for name, count in sorted(forbidden_living.items()))
         fail(f"living pre-flood surface survived underwater: {details}")
@@ -167,11 +269,17 @@ def audit(world: Path, max_chunks: int, flood_level: int = 128, min_scan_y: int 
         )
 
     return {
-        "schema": 1,
+        "schema": 2,
         "flood_level": flood_level,
         "min_scan_y": min_scan_y,
         "chunks_scanned": chunks_scanned,
         "drowned_columns": drowned_columns,
+        "unresolved_deep_columns": unresolved_deep_columns,
+        "open_water_air_gap_columns": air_gap_columns,
+        "open_water_air_gap_blocks": air_gap_blocks,
+        "powder_snow_columns": powder_snow_columns,
+        "non_water_fluid_columns": non_water_fluid_columns,
+        "non_water_fluid_examples": non_water_fluid_examples,
         "forbidden_living_surface": dict(sorted(forbidden_living.items())),
         "forbidden_drowned_remains": dict(sorted(forbidden_remains.items())),
         "depth_bands": dict(sorted(depth_bands.items())),
@@ -191,11 +299,66 @@ def self_test() -> None:
         fail("SELF-TEST: living and weathered material sets overlap")
     if not FORBIDDEN_DROWNED_REMAINS.issuperset({"minecraft:mushroom_stem", "minecraft:red_mushroom_block"}):
         fail("SELF-TEST: giant mushroom cleanup set drifted")
-    print("[NeverFolia][NeverOverworld drowned surface audit] SELF-TEST OK")
+
+    def synthetic(mapping: dict[int, str], default: str = "minecraft:stone") -> Callable[[int], str]:
+        return lambda y: mapping.get(y, default)
+
+    good = inspect_drowned_column(
+        synthetic(
+            {
+                128: "minecraft:water",
+                127: "minecraft:water",
+                126: "minecraft:seagrass",
+                125: "minecraft:water",
+                124: "minecraft:sand",
+            }
+        ),
+        128,
+        120,
+    )
+    if good is None or good["air_gaps"] or good["substrate"] != (124, "minecraft:sand"):
+        fail(f"SELF-TEST: healthy drowned column misclassified: {good}")
+
+    gap = inspect_drowned_column(
+        synthetic(
+            {
+                128: "minecraft:water",
+                127: "minecraft:water",
+                126: "minecraft:cave_air",
+                125: "minecraft:water",
+                124: "minecraft:magma_block",
+            }
+        ),
+        128,
+        120,
+    )
+    if gap is None or gap["air_gaps"] != [(126, "minecraft:cave_air")]:
+        fail(f"SELF-TEST: underwater air gap was not detected: {gap}")
+
+    powder = inspect_drowned_column(
+        synthetic({128: "minecraft:water", 127: "minecraft:powder_snow"}),
+        128,
+        120,
+    )
+    if powder is None or powder["powder_snow"] != [127]:
+        fail(f"SELF-TEST: submerged powder snow was not detected: {powder}")
+
+    dry = inspect_drowned_column(
+        synthetic({128: "minecraft:air"}),
+        128,
+        120,
+    )
+    if dry is not None:
+        fail("SELF-TEST: dry Y=128 column must not enter drowned audit")
+
+    print("[NeverFolia][NeverOverworld drowned surface audit] R9 INTEGRITY SELF-TEST OK")
+    print("  open-water air gaps: forbidden")
+    print("  submerged powder snow: forbidden")
+    print("  deep bottoms below scan floor: diagnostic, not false-positive failure")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Audit flooded NeverOverworld surface weathering in persisted chunk NBT")
+    parser = argparse.ArgumentParser(description="Audit flooded NeverOverworld surface weathering and open-water integrity in persisted chunk NBT")
     parser.add_argument("--world", type=Path)
     parser.add_argument("--max-chunks", type=int, default=1024)
     parser.add_argument("--flood-level", type=int, default=128)

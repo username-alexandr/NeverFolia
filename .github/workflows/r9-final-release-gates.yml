@@ -1,0 +1,167 @@
+name: R9 Final Release Gates
+
+on:
+  push:
+    branches: [wip/neverfolia-test1-fieldgen-r9-final-candidate]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-final-release-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build final gate artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v6
+        with: {fetch-depth: 0}
+      - name: Validate release-gate scripts
+        run: |
+          python3 ./scripts/audit-never-overworld-drowned-surface.py --self-test
+          python3 ./scripts/tune-never-overworld-ore-field-r9.py --self-test
+          python3 ./scripts/finalize-never-overworld-upper-ores-r9.py --self-test
+          python3 ./scripts/audit-never-overworld-r9-upper-ores.py --self-test
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
+          python3 ./scripts/audit-never-overworld-r9-vanilla-structures.py --self-test
+          python3 ./scripts/finalize-never-overworld-village-v17.py --self-test
+          python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n ./scripts/probe-never-overworld-r9-vanilla-structures.sh
+          bash -n ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+      - name: Prepare and patch Folia
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh ./scripts/apply-folia-patches-ci.sh
+          ./scripts/prepare-upstream.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+      - name: Apply final normal post-patch chain
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh ./scripts/apply-neverfolia-post-patches-core.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+      - name: Assert final source contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk')
+          fast=(root/'NeverOverworldVanillaFastLocate.java').read_text()
+          flood=(root/'NeverOverworldFlood.java').read_text()
+          geology=(root/'NeverOverworldOreGeology.java').read_text()
+          if 'neverfolia.villageLocateRings' in fast: raise SystemExit('QA ring selector survived')
+          if 'MAX_CANDIDATE_RINGS = 128; // NeverFolia R9 V17 production' not in fast: raise SystemExit('V17 rings128 missing')
+          if 'NeverFolia R9: final owner-chunk upper lapis/diamond cleanup at LIGHT' not in flood: raise SystemExit('upper-ore LIGHT cleanup missing')
+          if 'GOLD' not in geology or '0.48D' not in geology: raise SystemExit('gold 0.48D missing')
+          print('[NeverFolia][R9 final] source contracts present')
+          PY
+      - name: Build Paperclip
+        working-directory: .work/Folia
+        env: {BUILD_NUMBER: '${{ github.run_number }}'}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+      - name: Build final NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/r9-final-build
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -f "${JAR}"
+          cp "${JAR}" artifacts/r9-final-build/NeverFolia-r9-final.jar
+          PACK=artifacts/r9-final-build/NeverOverworld-Core-r9-final.zip
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/r9-final-build/NeverFolia-r9-final.jar --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r9-final-runtime-inputs-${{ github.sha }}
+          path: artifacts/r9-final-build/*
+          retention-days: 14
+
+  village:
+    name: V17 village 10/10 + 5/5 + bbox water=0
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env: {JAVA_TOOL_OPTIONS: -Dneverfolia.debugVillageReclamation=true}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: actions/download-artifact@v5
+        with:
+          name: r9-final-runtime-inputs-${{ github.sha }}
+          path: artifacts/r9-final-build
+      - name: Locate and persist all villages
+        run: |
+          [[ "${JAVA_TOOL_OPTIONS}" != *villageLocateRings* ]]
+          chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh artifacts/r9-final-build/NeverFolia-r9-final.jar artifacts/r9-final-build/NeverOverworld-Core-r9-final.zip
+      - name: Require V17 reclamation and no watchdog
+        run: |
+          grep -F '[NeverFolia][R9V17_RECLAIM]' overworld-village-locate-r9-v2-test/server.log
+          ! grep -Eqi 'FoliaWatchdogThread|has not responded in [0-9]' overworld-village-locate-r9-v2-test/server.log
+      - name: Audit full persisted Jigsaw bboxes
+        run: |
+          chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh artifacts/r9-final-build/NeverFolia-r9-final.jar artifacts/r9-final-build/NeverOverworld-Core-r9-final.zip artifacts/r9-final-proof/village "${GITHUB_SHA}-r9-final"
+      - name: Verify V17 bbox metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          expected='r9-v17-strict12-rings128-actual-bbox-reclamation'
+          files=sorted(Path('artifacts/r9-final-proof/village').glob('*-persisted-bbox.json'))
+          if len(files)!=5: raise SystemExit(f'expected 5 reports, got {len(files)}')
+          for p in files:
+              d=json.loads(p.read_text())
+              if d.get('candidate_policy')!=expected or d.get('water_samples')!=0 or d.get('missing')!=0: raise SystemExit(f'{p}: {d}')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R9-final-village-${{ github.sha }}
+          path: |
+            artifacts/r9-final-proof/village/**/*
+            artifacts/village-locate-r9-v2-proof.json
+            overworld-village-locate-r9-v2-test/*.log
+            village-v4-bbox-test/*.tsv
+          if-no-files-found: warn
+          retention-days: 30
+
+  structures:
+    name: Swamp hut + ruined portal + Trial Chambers integrity
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: actions/download-artifact@v5
+        with:
+          name: r9-final-runtime-inputs-${{ github.sha }}
+          path: artifacts/r9-final-build
+      - name: Run natural vanilla structure integrity proof
+        run: |
+          chmod +x ./scripts/probe-never-overworld-r9-vanilla-structures.sh
+          ./scripts/probe-never-overworld-r9-vanilla-structures.sh artifacts/r9-final-build/NeverFolia-r9-final.jar artifacts/r9-final-build/NeverOverworld-Core-r9-final.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R9-final-vanilla-structures-${{ github.sha }}
+          path: |
+            artifacts/r9-vanilla-structure-integrity.json
+            overworld-r9-vanilla-structures-test/structure-manifest.json
+            overworld-r9-vanilla-structures-test/locate-*.log
+            overworld-r9-vanilla-structures-test/server.log
+          if-no-files-found: warn
+          retention-days: 30

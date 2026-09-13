@@ -8,6 +8,7 @@ from pathlib import Path
 
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java")
 R9_FIELD_OVERRIDES = Path(__file__).with_name("apply-neverfolia-r9-field-overrides.py")
+R9_UPPER_ORE_FINALIZER = Path(__file__).with_name("finalize-never-overworld-upper-ores-r9.py")
 MARKER = "[NeverFolia][NeverOverworld] LIGHT flood active: chunk-owned surface-connected Y<=128"
 PROBE_MARKER = "[NeverFolia][NeverOverworld] LIGHT flood probe:"
 EXPECTED_JAVA_BLOCK = (
@@ -117,10 +118,11 @@ public final class NeverOverworldFlood {
     for forbidden in ('"            LOGGER.info(', '"        final int minY', '"        }'):
         if forbidden in patched:
             fail(f"SELF-TEST: generated Java contains Python string fragment {forbidden!r}")
-    if not R9_FIELD_OVERRIDES.is_file():
-        fail(f"SELF-TEST: R9 field override stage missing: {R9_FIELD_OVERRIDES}")
-    subprocess.run([sys.executable, str(R9_FIELD_OVERRIDES), "--self-test"], check=True)
-    print("[NeverFolia][NeverOverworld flood debug] RUNTIME-CONTEXT + R9 FIELD SELF-TEST OK")
+    for stage in (R9_FIELD_OVERRIDES, R9_UPPER_ORE_FINALIZER):
+        if not stage.is_file():
+            fail(f"SELF-TEST: required final R9 stage missing: {stage}")
+        subprocess.run([sys.executable, str(stage), "--self-test"], check=True)
+    print("[NeverFolia][NeverOverworld flood debug] RUNTIME-CONTEXT + R9 FIELD + FINAL UPPER-ORE SELF-TEST OK")
 
 
 def main() -> None:
@@ -141,6 +143,8 @@ def main() -> None:
     print("[NeverFolia][NeverOverworld flood debug] activation marker + runtime context probe instrumented")
     subprocess.run([sys.executable, str(R9_FIELD_OVERRIDES), str(folia)], check=True)
     print("[NeverFolia][NeverOverworld flood debug] final R9 field overrides applied")
+    subprocess.run([sys.executable, str(R9_UPPER_ORE_FINALIZER), str(folia)], check=True)
+    print("[NeverFolia][NeverOverworld flood debug] final R9 upper lapis/diamond cleanup applied")
     print(f"  helper: {helper}")
 
 

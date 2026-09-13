@@ -9,7 +9,7 @@ GEOLOGY_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/ch
 PRUNER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldOreExposurePruner.java")
 
 R9_CHANCE = {
-    "COAL": "0.51D", "IRON": "0.27D", "COPPER": "0.39D", "GOLD": "0.44D",
+    "COAL": "0.51D", "IRON": "0.27D", "COPPER": "0.39D", "GOLD": "0.48D",
     "REDSTONE": "0.32D", "LAPIS": "0.33D", "DIAMOND": "0.26D",
 }
 R9_PROFILES = {
