@@ -42,7 +42,47 @@ def debris_placed(feature: str, minimum: int, maximum: int) -> dict:
     return {"feature":f"minecraft:{feature}","placement":[{"type":"minecraft:in_square"},{"type":"minecraft:height_range","height":{"type":"minecraft:trapezoid","min_inclusive":{"absolute":minimum},"max_inclusive":{"absolute":maximum}}},{"type":"minecraft:biome"}]}
 
 
+def make_delta_surface_solid(root: Path) -> None:
+    """Do not turn unvalidated floor skins into unsupported source lava.
+
+    Keep density, sea-level fluids and vanilla springs unchanged. This only
+    replaces the lava result in the native Basalt Deltas material rule; bounded
+    elevated lakes require a separate terrain-validated placement mechanism.
+    """
+    path = root / "data/minecraft/worldgen/noise_settings/nether.json"
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    candidates = [
+        rule for rule in settings["surface_rule"]["sequence"]
+        if rule.get("if_true") == {
+            "type": "minecraft:biome", "biome_is": "minecraft:basalt_deltas"
+        }
+    ]
+    if len(candidates) != 1:
+        raise ValueError("Expected exactly one native Basalt Deltas surface rule")
+    replacements = 0
+
+    def visit(value: object) -> None:
+        nonlocal replacements
+        if isinstance(value, dict):
+            if value.get("type") == "minecraft:block":
+                state = value.get("result_state", {})
+                if state.get("Name") == "minecraft:lava":
+                    value["result_state"] = {"Name": "minecraft:magma_block"}
+                    replacements += 1
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(candidates[0])
+    if replacements != 1:
+        raise ValueError(f"Expected one unsafe delta lava result, found {replacements}")
+    write_json(root, path.relative_to(root).as_posix(), settings)
+
+
 def finalize_pack_tree(root: Path) -> None:
+    make_delta_surface_solid(root)
     basalt_override = root / BASALT_BLOBS_OVERRIDE
     if not basalt_override.is_file(): raise SystemExit("Expected diagnostic basalt_blobs override is missing; base builder contract changed")
     basalt_override.unlink()
@@ -60,6 +100,9 @@ def finalize_pack_tree(root: Path) -> None:
     manifest.pop("diagnostic_disabled_placed_features", None)
     manifest["netherrack_replace_blobs_mode"] = "vanilla_geometry_chunk_owned_v1"
     manifest["lava_vegetation_policy"] = "air-origin-filter-r6"
+    manifest["deterministic_delta_mode"] = "surface_noise_threshold_3d_solid_v2"
+    manifest["delta_surface_fluid_policy"] = "no_unbounded_source_lava"
+    manifest["field_integrity_revision"] = "NN-FIELD-R1"
     manifest["ancient_debris_profile"] = {"peak_y":16,"large_range":[-64,96],"small_range":[-112,144],"distribution":"trapezoid","discard_chance_on_air_exposure":1.0}
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -91,7 +134,9 @@ def self_test() -> None:
         assert AIR_FILTER in fungi["placement"]
         assert manifest["ancient_debris_profile"]["peak_y"] == 16
         assert manifest["lava_vegetation_policy"] == "air-origin-filter-r6"
-    print("[NeverFolia][NeverNether core TEST1] R6 SELF-TEST OK")
+        assert manifest["delta_surface_fluid_policy"] == "no_unbounded_source_lava"
+        assert manifest["field_integrity_revision"] == "NN-FIELD-R1"
+    print("[NeverFolia][NeverNether core TEST1] R6 + FIELD-R1 SELF-TEST OK")
 
 
 def main() -> None:
@@ -99,7 +144,7 @@ def main() -> None:
     parser.add_argument("--output",type=Path); parser.add_argument("--self-test",action="store_true"); args=parser.parse_args()
     if args.self_test: self_test(); return
     if args.output is None: parser.error("--output is required unless --self-test is used")
-    self_test(); build(args.output); print(f"Built finalized TEST1 R6 core pack: {args.output}")
+    self_test(); build(args.output); print(f"Built finalized TEST1 R6 + FIELD-R1 core pack: {args.output}")
 
 
 if __name__ == "__main__":
