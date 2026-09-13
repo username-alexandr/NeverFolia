@@ -153,7 +153,7 @@ public final class NeverNetherNativeProcessors {
             var box = settings.getBoundingBox();
             if (box == null || !box.isInside(pos) || pos.getY() < -123 || pos.getY() > 378) return false;
             if (!(level instanceof WorldGenRegion region)) return false;
-            return Math.floorDiv(pos.getX(), 16) == region.getCenter().x && Math.floorDiv(pos.getZ(), 16) == region.getCenter().z;
+            return Math.floorDiv(pos.getX(), 16) == region.getCenter().x() && Math.floorDiv(pos.getZ(), 16) == region.getCenter().z();
         }
         @Override public List<StructureTemplate.StructureBlockInfo> finalizeProcessing(ServerLevelAccessor level, BlockPos position,
             BlockPos reference, List<StructureTemplate.StructureBlockInfo> original, List<StructureTemplate.StructureBlockInfo> processed,
@@ -182,6 +182,7 @@ public final class NeverNetherNativeProcessors {
                     if (!owned(level, settings, pos)) return NeverNetherPillarPlan.Cell.UNKNOWN;
                     var templateCell = occupied.get(pos);
                     if (templateCell != null) {
+                        if (templateCell.state().hasBlockEntity()) return NeverNetherPillarPlan.Cell.PROTECTED;
                         return templateCell.state().canOcclude() ? NeverNetherPillarPlan.Cell.ANCHOR : NeverNetherPillarPlan.Cell.PROTECTED;
                     }
                     BlockState current = level.getBlockState(pos); // same, already-owned chunk only
