@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "audit": "nevernether-source-preflight-r3",
+  "status": "blocked",
+  "target_data_pack_format": [
+    107,
+    1
+  ],
+  "approved_custom_structure_count": 20,
+  "supplied_structure_definition_count": 20,
+  "structures_passing_source_dependency_preflight": 17,
+  "missing_sources": [],
+  "invalid_sources": [],
+  "release_ready": false,
+  "runtime_validated": false,
+  "baseline_commit": "d76739fac10790ebcedc8611fa7e31e48ad312de",
+  "verification_scope": "Local actual user-supplied ZIPs; not a Minecraft runtime test. Metadata only; third-party assets not included.",
+  "uploaded_dungeons_filename": "Dungeons and Taverns v5.3.2(1).zip",
+  "sources": [
+    {
+      "key": "hearths",
+      "filename": "Hearths v1.0.5.dp.zip",
+      "sha256": "cf6877c2ffbdfba29d49452a90fdf6ab06b7e7e564b808abd2361976cddd6420",
+      "size_bytes": 152688,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "selected_counts": {
+        "structure": 12,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 8
+      },
+      "runtime_review_required_count": 0,
+      "structures": [
+        {
+          "id": "hearths:crimson_tower",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "hearths:warped_tower",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "hearths:netherrack_spiral",
+          "source_dependency_preflight_passed": true
+        }
+      ],
+      "compatibility_change_count": 0,
+      "missing_required_resources": [],
+      "unsupported_codec_types": []
+    },
+    {
+      "key": "dungeons_and_taverns",
+      "filename": "Dungeons and Taverns v5.3.2.zip",
+      "sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "size_bytes": 20724798,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "selected_counts": {
+        "enchantment": 22,
+        "function": 30,
+        "item_modifier": 1,
+        "loot_table": 151,
+        "predicate": 7,
+        "structure": 949,
+        "tags/block": 2,
+        "tags/damage_type": 2,
+        "tags/enchantment": 19,
+        "tags/entity_type": 1,
+        "tags/item": 2,
+        "tags/worldgen/biome": 3,
+        "trial_spawner": 46,
+        "worldgen/configured_feature": 12,
+        "worldgen/placed_feature": 12,
+        "worldgen/processor_list": 10,
+        "worldgen/structure": 12,
+        "worldgen/template_pool": 135
+      },
+      "runtime_review_required_count": 32,
+      "structures": [
+        {
+          "id": "nova_structures:nether_port",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:nether_keep",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:hamlet",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:piglin_outstation",
+          "source_dependency_preflight_passed": false
+        },
+        {
+          "id": "nova_structures:piglin_donjon",
+          "source_dependency_preflight_passed": false
+        },
+        {
+          "id": "nova_structures:sealing_halls",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_fort",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_warped",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_crimson",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_soul",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:piglin_camp",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "nova_structures:piglin_camp_collony",
+          "source_dependency_preflight_passed": true
+        }
+      ],
+      "compatibility_change_count": 13,
+      "missing_required_resources": [
+        "nova_structures:donjon/coloseum_part/deco_14",
+        "nova_structures:donjon/coloseum_part/deco_15",
+        "nova_structures:donjon/room/donjon_room_3x3x3_1",
+        "nova_structures:piglin_outstation/main/piglin_outpost_outer_layer_foundation_1"
+      ],
+      "unsupported_codec_types": []
+    },
+    {
+      "key": "explorify",
+      "filename": "Explorify v1.6.5.dp.zip",
+      "sha256": "09dea87923b8dc021a6694f7c6487725b1a666e255e122bce55fdd2dc3377d4f",
+      "size_bytes": 766527,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "selected_counts": {
+        "structure": 15,
+        "tags/worldgen/biome": 1,
+        "worldgen/processor_list": 2,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 4
+      },
+      "runtime_review_required_count": 0,
+      "structures": [
+        {
+          "id": "explorify:black_spiral",
+          "source_dependency_preflight_passed": true
+        }
+      ],
+      "compatibility_change_count": 0,
+      "missing_required_resources": [],
+      "unsupported_codec_types": []
+    },
+    {
+      "key": "structory_towers",
+      "filename": "Structory_Towers_v1.0.17.zip",
+      "sha256": "90af7fddea07973fef035b0c99213cc6b4c2baafeeb9c7f8a230b6e256687aa0",
+      "size_bytes": 488685,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "selected_counts": {
+        "loot_table": 11,
+        "structure": 4,
+        "tags/worldgen/biome": 2,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 6
+      },
+      "runtime_review_required_count": 0,
+      "structures": [
+        {
+          "id": "structory_towers:nether/fortress_tower",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "structory_towers:nether/strange_outpost",
+          "source_dependency_preflight_passed": true
+        },
+        {
+          "id": "structory_towers:nether/warped_outpost",
+          "source_dependency_preflight_passed": true
+        }
+      ],
+      "compatibility_change_count": 2,
+      "missing_required_resources": [],
+      "unsupported_codec_types": []
+    },
+    {
+      "key": "better_monuments",
+      "filename": "Repurposed_Structures-Better_Monuments_v7.zip",
+      "sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+      "size_bytes": 3008089,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "selected_counts": {
+        "structure": 45,
+        "worldgen/configured_feature": 2,
+        "worldgen/placed_feature": 2,
+        "worldgen/processor_list": 1,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 10
+      },
+      "runtime_review_required_count": 0,
+      "structures": [
+        {
+          "id": "repurposed_structures:monument_nether",
+          "source_dependency_preflight_passed": false
+        }
+      ],
+      "compatibility_change_count": 0,
+      "missing_required_resources": [
+        "repurposed_structures:chests/monuments/nether"
+      ],
+      "unsupported_codec_types": [
+        "repurposed_structures:noise_replace_with_properties_processor",
+        "repurposed_structures:pillar_processor",
+        "repurposed_structures:random_replace_with_properties_processor",
+        "repurposed_structures:structure_void_processor",
+        "yungsapi:max_count_single_element"
+      ]
+    }
+  ],
+  "compatibility_spec": "worldgen-spec/never-nether-source-compat.json",
+  "full_audit_provided_in_review_bundle": true
+}

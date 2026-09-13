@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-from nevernether_source_inputs import Archive, apply_server_compatibility, inspect_dependencies, selected_files
+from nevernether_source_inputs import Archive, apply_server_compatibility, inspect_dependencies, selected_files, json_resource
 
 ROOT = Path(__file__).resolve().parents[1]
 PLACEMENT_SPEC = ROOT / "worldgen-spec" / "never-nether-structures.json"
@@ -173,9 +173,17 @@ def copy_allowed_source_files(pack: PackFiles, source: SourceArchive) -> None:
     archive = Archive(source.path)
     # Apply optional integrations only when the supplied source actually has
     # them. Synthetic importer fixtures intentionally contain no mod pools.
-    if source.key == "structory_towers" and any("/waystones/" in str(p) for p in archive.entries):
+    if source.key != "structory_towers" or any("/waystones/" in str(p) for p in archive.entries):
         apply_server_compatibility(archive, source.key)
     result = inspect_dependencies(archive, APPROVED_BY_SOURCE[source.key])
+    # A union of different roots' virtual aliases can mask a missing binding in
+    # one root. Check each root in its own alias context before copying bytes.
+    for sid in APPROVED_BY_SOURCE[source.key]:
+        scoped = inspect_dependencies(archive, [sid])
+        if not scoped["source_dependency_preflight_passed"]:
+            result["source_dependency_preflight_passed"] = False
+            for field in ("missing_required_references", "unsupported_or_review_required"):
+                result[field] = sorted({tuple(row) for row in result[field] + scoped[field]})
     try:
         selected = selected_files(archive, result)
     except ValueError as exc:
@@ -194,7 +202,8 @@ def copy_allowed_source_files(pack: PackFiles, source: SourceArchive) -> None:
         pack.put(path, payload)
     pack.source_preflight.append({"key": source.key, "selected_counts": result["selected_counts"],
                                   "compatibility_changes": result["compatibility_changes"],
-                                  "external_vanilla_references_unverified": result["external_vanilla_references_unverified"]})
+                                  "external_vanilla_references_unverified": result["external_vanilla_references_unverified"],
+                                  "runtime_review_required": result["runtime_review_required"]})
 
 
 def copy_core(pack: PackFiles, core: Path) -> None:
@@ -304,7 +313,7 @@ def write_structure_sets(pack: PackFiles, placement: dict) -> None:
 def validate_output(pack: PackFiles, placement: dict) -> None:
     for path, payload in pack.files.items():
         if path.suffix == ".json":
-            read_json_bytes(payload, str(path))
+            json_resource(payload, path)
 
     for sid in APPROVED_IDS:
         structure = read_json_bytes(pack.files[structure_path(sid)], sid)
@@ -376,7 +385,7 @@ def build(
         "removed_non_minecraft_processor_entries": removed_processors,
         "non_minecraft_dependency_preflight_passed": True,
         "runtime_external_mod_dependency": "not_runtime_verified",
-        "source_import_policy": "reachable_dependencies_only_107_1",
+        "source_import_policy": "reachable_typed_dependencies_and_pool_aliases_107_1_r3",
         "source_dependency_audits": pack.source_preflight,
         "third_party_structure_sets_imported": False,
     }

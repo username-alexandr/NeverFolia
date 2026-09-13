@@ -32,8 +32,8 @@
       "filename": "Dungeons and Taverns v5.3.2.zip",
       "role": "approved_nether_structures",
       "required_for_test1_structure_pack": true,
-      "sha256": null,
-      "hash_status": "pending_reverification"
+      "sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "hash_status": "pinned"
     },
     "explorify": {
       "version": "1.6.5",

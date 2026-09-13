@@ -54,9 +54,11 @@ def audit_sources(directory: Path) -> dict:
                 raise ValueError("SHA-256 differs from the pinned source manifest")
             archive = Archive(path)
             record["archive_crc_verified"] = True
-            if key == "structory_towers":
+            if key in ("structory_towers", "dungeons_and_taverns"):
                 raw = inspect_dependencies(archive, ids)
-                record["before_optional_mod_compatibility"] = {"unsupported_or_review_required": raw["unsupported_or_review_required"]}
+                record["before_source_compatibility"] = {
+                    "missing_required_references": raw["missing_required_references"],
+                    "unsupported_or_review_required": raw["unsupported_or_review_required"]}
                 apply_server_compatibility(archive, key)
             record["source_report"] = inspect_dependencies(archive, ids)
             record["structures"] = [inspect_dependencies(archive, [sid]) for sid in ids]
@@ -84,7 +86,7 @@ def audit_sources(directory: Path) -> dict:
         hashes.setdefault(item["sha256"], []).append(item["filename"])
     complete = not missing and not invalid and passed_count == approved_count
     return {
-        "schema": 1, "audit": "nevernether-source-preflight-r2", "worldgen_id": spec["worldgen_id"],
+        "schema": 1, "audit": "nevernether-source-preflight-r3", "worldgen_id": spec["worldgen_id"],
         "source_manifest": str(MANIFEST.relative_to(ROOT)), "target_data_pack_format": [107, 1],
         "status": "source_preflight_passed" if complete else "blocked",
         "approved_custom_structure_count": approved_count,
