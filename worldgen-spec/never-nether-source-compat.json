@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "minecraft": "26.2",
+  "worldgen_id": "NN-DEV-1",
+  "policy": "explicit_server_only_compatibility_no_asset_redistribution",
+  "optional_mod_pool_overrides": {
+    "structory_towers": {
+      "structory_towers:waystones/waystone": {
+        "reason": "optional Waystones mod content is not part of the native Folia server",
+        "replacement": "empty_pool"
+      },
+      "structory_towers:waystones/fwaystone": {
+        "reason": "optional Fabric Waystones mod content is not part of the native Folia server",
+        "replacement": "empty_pool"
+      }
+    }
+  },
+  "unknown_custom_codecs": "reject_without_conversion",
+  "missing_loot_tables": "reject_without_fallback"
+}

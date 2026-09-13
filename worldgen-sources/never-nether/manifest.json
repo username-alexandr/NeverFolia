@@ -13,18 +13,19 @@
     "amplified_nether": {
       "version": "1.2.15",
       "filename": "Amplified_Nether_v1.2.15.zip",
-      "role": "terrain_noise_reference",
+      "role": "excluded_separate_terrain_generator",
       "required_for_test1_structure_pack": false,
       "sha256": null,
-      "hash_status": "pending_reverification"
+      "hash_status": "pending_reverification",
+      "implementation_import_allowed": false
     },
     "hearths": {
       "version": "1.0.5",
       "filename": "Hearths v1.0.5.dp.zip",
       "role": "nether_biome_detail_and_structures",
       "required_for_test1_structure_pack": true,
-      "sha256": null,
-      "hash_status": "pending_reverification"
+      "sha256": "cf6877c2ffbdfba29d49452a90fdf6ab06b7e7e564b808abd2361976cddd6420",
+      "hash_status": "pinned"
     },
     "dungeons_and_taverns": {
       "version": "5.3.2",
@@ -39,16 +40,16 @@
       "filename": "Explorify v1.6.5.dp.zip",
       "role": "approved_nether_structures",
       "required_for_test1_structure_pack": true,
-      "sha256": null,
-      "hash_status": "pending_reverification"
+      "sha256": "09dea87923b8dc021a6694f7c6487725b1a666e255e122bce55fdd2dc3377d4f",
+      "hash_status": "pinned"
     },
     "structory_towers": {
       "version": "1.0.17",
       "filename": "Structory_Towers_v1.0.17.zip",
       "role": "approved_nether_towers",
       "required_for_test1_structure_pack": true,
-      "sha256": null,
-      "hash_status": "pending_reverification"
+      "sha256": "90af7fddea07973fef035b0c99213cc6b4c2baafeeb9c7f8a230b6e256687aa0",
+      "hash_status": "pinned"
     },
     "better_monuments": {
       "version": "7",

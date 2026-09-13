@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
+from nevernether_source_inputs import Archive, apply_server_compatibility, inspect_dependencies, selected_files
+
 ROOT = Path(__file__).resolve().parents[1]
 PLACEMENT_SPEC = ROOT / "worldgen-spec" / "never-nether-structures.json"
 
@@ -110,6 +112,7 @@ class SourceArchive:
 class PackFiles:
     def __init__(self) -> None:
         self.files: dict[PurePosixPath, bytes] = {}
+        self.source_preflight: list[dict] = []
 
     def put(self, path: PurePosixPath | str, payload: bytes) -> None:
         p = PurePosixPath(path)
@@ -145,22 +148,8 @@ def find_pack_root(zf: zipfile.ZipFile, archive: Path) -> PurePosixPath:
 
 
 def normalized_entries(archive: Path) -> dict[PurePosixPath, bytes]:
-    with zipfile.ZipFile(archive) as zf:
-        root = find_pack_root(zf, archive)
-        prefix = "" if str(root) == "." else f"{root.as_posix().rstrip('/')}/"
-        result: dict[PurePosixPath, bytes] = {}
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            name = info.filename
-            if prefix and not name.startswith(prefix):
-                continue
-            rel = name[len(prefix):] if prefix else name
-            p = PurePosixPath(rel)
-            if not p.parts or ".." in p.parts:
-                continue
-            result[p] = zf.read(info)
-        return result
+    # 26.2 uses data pack 107.1. Resolve only applicable overlays, in order.
+    return Archive(archive).entries
 
 
 def is_structure_definition(path: PurePosixPath) -> bool:
@@ -181,50 +170,31 @@ def resource_tail(path: PurePosixPath) -> str | None:
 
 
 def copy_allowed_source_files(pack: PackFiles, source: SourceArchive) -> None:
-    entries = normalized_entries(source.path)
-    approved_for_source = set(APPROVED_BY_SOURCE[source.key])
-
-    for path, payload in entries.items():
-        if not path.parts or path.parts[0] != "data":
-            continue
-
+    archive = Archive(source.path)
+    # Apply optional integrations only when the supplied source actually has
+    # them. Synthetic importer fixtures intentionally contain no mod pools.
+    if source.key == "structory_towers" and any("/waystones/" in str(p) for p in archive.entries):
+        apply_server_compatibility(archive, source.key)
+    result = inspect_dependencies(archive, APPROVED_BY_SOURCE[source.key])
+    try:
+        selected = selected_files(archive, result)
+    except ValueError as exc:
+        details = {
+            "missing_required_references": result["missing_required_references"],
+            "unsupported_or_review_required": result["unsupported_or_review_required"],
+        }
+        raise SystemExit(f"{source.key}: {exc}\n" + json.dumps(details, indent=2)) from exc
+    for path, payload in selected.items():
         tail = resource_tail(path)
-        if tail is None:
-            continue
-        if any(tail.startswith(prefix) for prefix in BANNED_RESOURCE_PREFIXES):
-            continue
-
-        # Only explicitly approved structure definitions are accepted.
-        if is_structure_definition(path):
-            sid = id_from_structure_path(path)
-            if sid not in approved_for_source:
-                continue
-            pack.put(path, payload)
-            continue
-
-        namespace = path.parts[1] if len(path.parts) > 1 else ""
-
-        # D&T's Nether Keep intentionally depends on its minecraft:nether_fortress
-        # jigsaw assets. Do not copy unrelated minecraft namespace changes.
-        if namespace == "minecraft":
-            allowed_minecraft_dependency = (
-                "nether_fortress" in path.parts
-                and (
-                    tail.startswith("worldgen/template_pool/")
-                    or tail.startswith("structure/")
-                    or tail.startswith("structures/")
-                    or tail.startswith("worldgen/processor_list/")
-                    or tail.startswith("loot_table/")
-                    or tail.startswith("loot_tables/")
-                )
-            )
-            if not allowed_minecraft_dependency:
-                continue
-
-        # Custom namespace data is inert unless referenced by an approved structure.
-        # Copying it keeps the first TEST1 importer robust while structure sets and
-        # all dimension/terrain overrides remain excluded above.
+        if tail is None or any(tail.startswith(prefix) for prefix in BANNED_RESOURCE_PREFIXES):
+            raise SystemExit(f"Forbidden source dependency: {path}")
+        previous = pack.get(path)
+        if previous is not None and previous != payload:
+            raise SystemExit(f"Conflicting source dependency would overwrite existing data: {path}")
         pack.put(path, payload)
+    pack.source_preflight.append({"key": source.key, "selected_counts": result["selected_counts"],
+                                  "compatibility_changes": result["compatibility_changes"],
+                                  "external_vanilla_references_unverified": result["external_vanilla_references_unverified"]})
 
 
 def copy_core(pack: PackFiles, core: Path) -> None:
@@ -234,35 +204,18 @@ def copy_core(pack: PackFiles, core: Path) -> None:
 
 
 def sanitize_processor_lists(pack: PackFiles) -> int:
-    """Remove processor entries requiring non-vanilla runtime processor codecs.
-
-    The Better Monuments compatibility pack references Repurposed Structures custom
-    processor types. TEST1 intentionally degrades those visual processors rather than
-    requiring the Repurposed Structures mod at runtime.
-    """
-    changed = 0
-    for path in list(pack.files):
+    """Legacy entry point, now fail-closed: never drop unsupported behavior."""
+    for path, payload in pack.files.items():
         tail = resource_tail(path)
         if not tail or not tail.startswith("worldgen/processor_list/") or path.suffix != ".json":
             continue
-        value = read_json_bytes(pack.files[path], str(path))
-        processors = value.get("processors")
-        if not isinstance(processors, list):
-            continue
-        filtered = []
-        for processor in processors:
-            if not isinstance(processor, dict):
-                filtered.append(processor)
-                continue
-            ptype = processor.get("processor_type") or processor.get("type")
-            if isinstance(ptype, str) and ":" in ptype and not ptype.startswith("minecraft:"):
-                changed += 1
-                continue
-            filtered.append(processor)
-        if filtered != processors:
-            value["processors"] = filtered
-            pack.put(path, json_bytes(value))
-    return changed
+        value = read_json_bytes(payload, str(path))
+        for processor in value.get("processors", []):
+            if isinstance(processor, dict):
+                ptype = processor.get("processor_type") or processor.get("type")
+                if isinstance(ptype, str) and ":" in ptype and not ptype.startswith("minecraft:"):
+                    raise SystemExit(f"Unsupported processor {ptype} in {path}; no processor was removed")
+    return 0
 
 
 def rewrite_approved_structures(pack: PackFiles, placement: dict) -> list[dict]:
@@ -421,7 +374,10 @@ def build(
         "approved_structure_count": len(rewritten),
         "approved_structures": rewritten,
         "removed_non_minecraft_processor_entries": removed_processors,
-        "runtime_external_mod_dependency": False,
+        "non_minecraft_dependency_preflight_passed": True,
+        "runtime_external_mod_dependency": "not_runtime_verified",
+        "source_import_policy": "reachable_dependencies_only_107_1",
+        "source_dependency_audits": pack.source_preflight,
         "third_party_structure_sets_imported": False,
     }
     pack.put("nevernether-structure-integration-manifest.json", json_bytes(integration_manifest))
