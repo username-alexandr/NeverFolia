@@ -1,0 +1,50 @@
+name: NeverNether R5 Pinned Supplemental Inputs
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/never-nether-source-supplements-r5.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inputs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch immutable public source blobs and verify identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          python3 - <<'PY'
+          import base64, hashlib, json, os, pathlib, urllib.request
+          entries = {
+            'OpenSimplex2F.java': ('KdotJPG/OpenSimplex2', '7c9a5320989ebf4b83440b0b029920f7d5fd9933'),
+            'LICENSE-OpenSimplex2-CC0.txt': ('KdotJPG/OpenSimplex2', '0e259d42c996742e9e3cba14c677129b2c1b6311'),
+            'monument-nether.json': ('TelepathicGrunt/RepurposedStructures', '3b904acf35ccdfcce24e6bf5a40f71ba94f0f7c4'),
+            'monument-lucky-pool.json': ('TelepathicGrunt/RepurposedStructures', '44e3784a01e55dda8ca5790dd1f97c8460357791'),
+            'LICENSE-RepurposedStructures.txt': ('TelepathicGrunt/RepurposedStructures', '0a041280bd00a9d068f503b8ee7ce35214bd24a1'),
+          }
+          manifest = []
+          for name, (repo, sha) in entries.items():
+              url = f'https://api.github.com/repos/{repo}/git/blobs/{sha}'
+              req = urllib.request.Request(url, headers={'User-Agent':'NeverFolia-CI', 'Authorization':'Bearer ' + os.environ['GH_TOKEN']})
+              with urllib.request.urlopen(req, timeout=30) as r: obj = json.load(r)
+              if obj.get('encoding') != 'base64': raise ValueError('Expected blob encoding')
+              raw = base64.b64decode(obj['content'])
+              actual = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+              if actual != sha: raise ValueError(f'Pinned blob mismatch: {name}')
+              pathlib.Path('artifacts',name).write_bytes(raw)
+              manifest.append({'file':name,'repository':repo,'git_blob':sha,'sha256':hashlib.sha256(raw).hexdigest()})
+          pathlib.Path('artifacts/INPUTS.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          (cd artifacts && sha256sum *.java *.json *.txt > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverNether-source-supplements-r5-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7
