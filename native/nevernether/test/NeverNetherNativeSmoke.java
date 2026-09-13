@@ -60,6 +60,7 @@ public final class NeverNetherNativeSmoke {
         System.out.println("NeverNether native 26.2 bootstrap/codec smoke: " + checks + " checks passed; no worldgen performed");
     }
     private static void r5Checks() {
+        var blueGlass = BuiltInRegistries.BLOCK.getOptional(Identifier.fromNamespaceAndPath("minecraft", "blue_stained_glass")).orElseThrow();
         for (String id : List.of("noise_replace_properties", "random_replace_properties", "vertical_pillar")) {
             check(BuiltInRegistries.STRUCTURE_PROCESSOR.getOptional(Identifier.fromNamespaceAndPath("neverfolia", id)).isPresent(), "R5 registered " + id);
         }
@@ -104,7 +105,7 @@ public final class NeverNetherNativeSmoke {
                 check(Double.doubleToLongBits(NeverNetherNoise.sample(seed, x, y, z)) == Double.doubleToLongBits(reference.noise3_Classic(x, y, z)), "CC0 noise wrapper parity");
             }
         }
-        var triggers = List.of(new NeverNetherNativeProcessors.Replacement(Blocks.BLUE_STAINED_GLASS.defaultBlockState(), Blocks.POLISHED_BLACKSTONE_BRICKS.defaultBlockState()));
+        var triggers = List.of(new NeverNetherNativeProcessors.Replacement(blueGlass.defaultBlockState(), Blocks.POLISHED_BLACKSTONE_BRICKS.defaultBlockState()));
         var pillar = new NeverNetherNativeProcessors.VerticalPillar(triggers, Identifier.fromNamespaceAndPath("minecraft", "empty"), net.minecraft.core.Direction.DOWN, Optional.empty(), 1000, false);
         var pjson = NeverNetherNativeProcessors.VerticalPillar.CODEC.codec().encodeStart(JsonOps.INSTANCE, pillar).getOrThrow();
         check(NeverNetherNativeProcessors.VerticalPillar.CODEC.codec().parse(JsonOps.INSTANCE, pjson).getOrThrow().equals(pillar), "pillar codec roundtrip");
@@ -113,7 +114,7 @@ public final class NeverNetherNativeSmoke {
         pjson.getAsJsonObject().addProperty("direction", "down");
         pjson.getAsJsonObject().addProperty("forced_placement", true);
         check(NeverNetherNativeProcessors.VerticalPillar.CODEC.codec().parse(JsonOps.INSTANCE, pjson).error().isPresent(), "reject forced destruction");
-        var marker = new StructureTemplate.StructureBlockInfo(BlockPos.ZERO, Blocks.BLUE_STAINED_GLASS.defaultBlockState(), null);
+        var marker = new StructureTemplate.StructureBlockInfo(BlockPos.ZERO, blueGlass.defaultBlockState(), null);
         var changed = pillar.processBlock(null, BlockPos.ZERO, BlockPos.ZERO, BlockPos.ZERO, marker, settings);
         check(changed.state().is(Blocks.POLISHED_BLACKSTONE_BRICKS), "marker replaced without world write");
         check(pillar.finalizeProcessing(null, BlockPos.ZERO, BlockPos.ZERO, List.of(marker), List.of(changed), settings).equals(List.of(changed)), "live/unknown world is not accessed");
