@@ -20,6 +20,7 @@ jobs:
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
           git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
           git ls-files worldgen-sources > artifacts/SOURCE-INPUTS.txt
+          git ls-files native/nevernether | xargs sha256sum > artifacts/NATIVE-SOURCE-SHA256.txt
           (cd artifacts && sha256sum *.zip *.txt > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
