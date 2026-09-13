@@ -1,4 +1,4 @@
-name: R9 Village Reclamation V17 Production
+name: R9 Village Reclamation V17 Integrated Production
 
 on:
   push:
@@ -10,12 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: r9-village-reclamation-v17-production-${{ github.ref }}
+  group: r9-village-v17-integrated-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build hardcoded V17 production JAR
+    name: Build integrated V17 production JAR
     runs-on: ubuntu-latest
     timeout-minutes: 100
     steps:
@@ -34,13 +34,16 @@ jobs:
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
-      - name: Validate production V17 contracts
+      - name: Validate V17 scripts
         run: |
           python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py --self-test
           python3 ./scripts/tune-never-overworld-village-strict-search-v12.py --self-test
           python3 ./scripts/apply-never-overworld-village-reclamation-v17.py --self-test
           python3 ./scripts/finalize-never-overworld-village-v17.py --self-test
+          python3 ./scripts/adapt-never-overworld-highland-villages.py --self-test
           python3 ./scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n ./scripts/apply-neverfolia-post-patches.sh
+          bash -n ./scripts/apply-neverfolia-post-patches-core.sh
           bash -n ./scripts/probe-never-overworld-village-locate-r9-v2.sh
           bash -n ./scripts/qa-never-overworld-village-v4-bbox.sh
       - name: Prepare Folia 26.2.x upstream
@@ -51,60 +54,67 @@ jobs:
         run: |
           chmod +x ./scripts/apply-folia-patches-ci.sh
           ./scripts/apply-folia-patches-ci.sh ./.work/Folia
-      - name: Apply NeverFolia post patches
+      - name: Apply normal NeverFolia production post-patch chain
         run: |
-          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh ./scripts/apply-neverfolia-post-patches-core.sh
           ./scripts/apply-neverfolia-post-patches.sh
-      - name: Apply corrected V5 baseline
-        run: python3 ./scripts/tune-never-overworld-village-locate-r9-v5.py ./.work/Folia
-      - name: Apply V12 strict 12-of-12 contract
-        run: python3 ./scripts/tune-never-overworld-village-strict-search-v12.py ./.work/Folia
-      - name: Apply V17 actual-bbox reclamation
-        run: python3 ./scripts/apply-never-overworld-village-reclamation-v17.py ./.work/Folia
-      - name: Freeze V17 production policy
-        run: python3 ./scripts/finalize-never-overworld-village-v17.py ./.work/Folia
-      - name: Re-validate frozen production source
+      - name: Assert normal chain already contains frozen V17
         run: |
-          python3 ./scripts/finalize-never-overworld-village-v17.py ./.work/Folia
           python3 - <<'PY'
           from pathlib import Path
-          fast = Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaFastLocate.java').read_text()
-          policy = Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldVanillaStructurePolicy.java').read_text()
+          root=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level')
+          fast=(root/'chunk/NeverOverworldVanillaFastLocate.java').read_text()
+          policy=(root/'chunk/NeverOverworldVanillaStructurePolicy.java').read_text()
+          safety=(root/'chunk/NeverOverworldGeneratedVillageSafety.java').read_text()
+          start=(root/'levelgen/structure/StructureStart.java').read_text()
+          helper=root/'levelgen/structure/NeverOverworldVillageReclamation.java'
           if 'neverfolia.villageLocateRings' in fast or 'neverfolia.villageLocateRings' in policy:
-              raise SystemExit('QA villageLocateRings property survived production finalization')
+              raise SystemExit('QA villageLocateRings selector survived normal production post-patches')
           if 'private static final int MAX_CANDIDATE_RINGS = 128; // NeverFolia R9 V17 production' not in fast:
-              raise SystemExit('hardcoded rings128 production constant missing')
+              raise SystemExit('normal production chain did not hardcode rings128')
           if 'R9-v17 production: strict 12/12 probes + rings128 + actual-bbox reclamation' not in fast:
-              raise SystemExit('production V17 policy marker missing')
-          print('[NeverFolia][R9 V17 production] source frozen with no QA ring selector')
+              raise SystemExit('normal production chain missing V17 policy marker')
+          if start.count('NeverOverworldVillageReclamation.apply(level, this, chunkPos);') != 1 or not helper.is_file():
+              raise SystemExit('normal production chain missing V17 reclamation hook/helper')
+          sig='    static boolean allowsGenerated('
+          a=safety.find(sig); b=safety.find('{',a); depth=0; end=None
+          for i in range(b,len(safety)):
+              if safety[i]=='{': depth+=1
+              elif safety[i]=='}':
+                  depth-=1
+                  if depth==0: end=i+1; break
+          body=safety[a:end]
+          if 'return start.isValid();' not in body or 'inspectBoundingBox(' in body or '.dry()' in body or 'getBaseHeight(' in body:
+              raise SystemExit('generated safety is not the R9-v4 no-op contract')
+          print('[NeverFolia][R9 V17 integrated] normal post-patch chain is frozen to V17 production')
           PY
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew :folia-server:createPaperclipJar --stacktrace
-      - name: Collect JAR and build production NeverOverworld pack
+      - name: Collect JAR and build NeverOverworld pack
         run: |
           set -euo pipefail
-          mkdir -p artifacts/v17-production-build
+          mkdir -p artifacts/v17-integrated-build
           JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
           test -n "${JAR}" && test -f "${JAR}"
-          cp "${JAR}" artifacts/v17-production-build/NeverFolia-r9-village-v17-production.jar
-          PACK="artifacts/v17-production-build/NeverOverworld-Core-r9-village-v17-production.zip"
-          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/v17-production-build/NeverFolia-r9-village-v17-production.jar --output "${PACK}"
+          cp "${JAR}" artifacts/v17-integrated-build/NeverFolia-r9-village-v17-integrated.jar
+          PACK="artifacts/v17-integrated-build/NeverOverworld-Core-r9-village-v17-integrated.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py --server-jar artifacts/v17-integrated-build/NeverFolia-r9-village-v17-integrated.jar --output "${PACK}"
           python3 ./scripts/build-never-overworld-native-structures.py --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py --input "${PACK}"
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
-      - name: Upload production runtime inputs
+      - name: Upload integrated runtime inputs
         uses: actions/upload-artifact@v4
         with:
-          name: r9-village-v17-production-inputs-${{ github.sha }}
-          path: artifacts/v17-production-build/*
+          name: r9-village-v17-integrated-inputs-${{ github.sha }}
+          path: artifacts/v17-integrated-build/*
           retention-days: 7
 
   runtime:
-    name: Production rings128 / 10 locates + 5 starts + bbox water=0
+    name: Integrated V17 / 10 locates + 5 starts + bbox water=0
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -118,70 +128,66 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: Download production runtime inputs
+      - name: Download integrated runtime inputs
         uses: actions/download-artifact@v5
         with:
-          name: r9-village-v17-production-inputs-${{ github.sha }}
-          path: artifacts/v17-production-build
+          name: r9-village-v17-integrated-inputs-${{ github.sha }}
+          path: artifacts/v17-integrated-build
       - name: Assert runtime has no QA ring selector
         run: |
-          echo "JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}"
           if [[ "${JAVA_TOOL_OPTIONS}" == *villageLocateRings* ]]; then
-            echo 'QA villageLocateRings property is forbidden in production proof' >&2
+            echo 'QA villageLocateRings property is forbidden in integrated production proof' >&2
             exit 1
           fi
       - name: Run all 10 locate targets to persisted starts
         run: |
           chmod +x ./scripts/probe-never-overworld-village-locate-r9-v2.sh
           ./scripts/probe-never-overworld-village-locate-r9-v2.sh \
-            artifacts/v17-production-build/NeverFolia-r9-village-v17-production.jar \
-            artifacts/v17-production-build/NeverOverworld-Core-r9-village-v17-production.zip
+            artifacts/v17-integrated-build/NeverFolia-r9-village-v17-integrated.jar \
+            artifacts/v17-integrated-build/NeverOverworld-Core-r9-village-v17-integrated.zip
       - name: Preserve locate proof
         if: always()
         run: |
-          mkdir -p artifacts/v17-production-proof/locate
-          cp -f artifacts/village-locate-r9-v2-proof.json artifacts/v17-production-proof/locate/ 2>/dev/null || true
-          cp -f overworld-village-locate-r9-v2-test/*.tsv artifacts/v17-production-proof/locate/ 2>/dev/null || true
-          cp -f overworld-village-locate-r9-v2-test/*.log artifacts/v17-production-proof/locate/ 2>/dev/null || true
+          mkdir -p artifacts/v17-integrated-proof/locate
+          cp -f artifacts/village-locate-r9-v2-proof.json artifacts/v17-integrated-proof/locate/ 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.tsv artifacts/v17-integrated-proof/locate/ 2>/dev/null || true
+          cp -f overworld-village-locate-r9-v2-test/*.log artifacts/v17-integrated-proof/locate/ 2>/dev/null || true
       - name: Require runtime reclamation evidence
         run: |
           grep -F '[NeverFolia][R9V17_RECLAIM]' overworld-village-locate-r9-v2-test/server.log
           if grep -Eqi 'FoliaWatchdogThread|has not responded in [0-9]' overworld-village-locate-r9-v2-test/server.log; then
-            echo 'watchdog signature detected during production V17 locate/materialization' >&2
+            echo 'watchdog signature detected during integrated V17 runtime' >&2
             exit 1
           fi
       - name: Run full persisted Jigsaw bbox water=0 proof
         run: |
           chmod +x ./scripts/qa-never-overworld-village-v4-bbox.sh
           ./scripts/qa-never-overworld-village-v4-bbox.sh \
-            artifacts/v17-production-build/NeverFolia-r9-village-v17-production.jar \
-            artifacts/v17-production-build/NeverOverworld-Core-r9-village-v17-production.zip \
-            artifacts/v17-production-proof/bbox \
-            "${GITHUB_SHA}-v17-production"
-      - name: Verify V17 metadata in persisted bbox reports
+            artifacts/v17-integrated-build/NeverFolia-r9-village-v17-integrated.jar \
+            artifacts/v17-integrated-build/NeverOverworld-Core-r9-village-v17-integrated.zip \
+            artifacts/v17-integrated-proof/bbox \
+            "${GITHUB_SHA}-v17-integrated"
+      - name: Verify V17 metadata in all bbox reports
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
           expected='r9-v17-strict12-rings128-actual-bbox-reclamation'
-          files=sorted(Path('artifacts/v17-production-proof/bbox').glob('*-persisted-bbox.json'))
-          if len(files) != 5:
-              raise SystemExit(f'expected 5 bbox reports, got {len(files)}')
+          files=sorted(Path('artifacts/v17-integrated-proof/bbox').glob('*-persisted-bbox.json'))
+          if len(files) != 5: raise SystemExit(f'expected 5 bbox reports, got {len(files)}')
           for path in files:
               data=json.loads(path.read_text())
-              if data.get('candidate_policy') != expected:
-                  raise SystemExit(f'{path}: stale candidate_policy={data.get("candidate_policy")!r}')
-              if data.get('water_samples') != 0 or data.get('missing') != 0:
-                  raise SystemExit(f'{path}: bbox safety failed')
-          print('[NeverFolia][R9 V17 production] all five reports carry V17 metadata and water=0')
+              if data.get('candidate_policy') != expected or data.get('water_samples') != 0 or data.get('missing') != 0:
+                  raise SystemExit(f'{path}: integrated V17 bbox proof failed: {data}')
+          print('[NeverFolia][R9 V17 integrated] 5/5 bbox reports carry V17 metadata and water=0')
           PY
-      - name: Upload production V17 proof
+      - name: Upload integrated V17 proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R9-village-v17-production-${{ github.sha }}
+          name: R9-village-v17-integrated-${{ github.sha }}
           path: |
-            artifacts/v17-production-proof/**/*
+            artifacts/v17-integrated-proof/**/*
             village-v4-bbox-test/*.tsv
             village-v4-bbox-test/locate-*.log
           if-no-files-found: warn
