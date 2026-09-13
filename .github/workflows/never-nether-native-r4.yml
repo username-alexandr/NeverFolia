@@ -5,6 +5,7 @@ on:
     paths:
       - 'native/nevernether/**'
       - 'scripts/apply-never-nether-native-adapters-r4.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
       - '.github/workflows/never-nether-native-r4.yml'
   workflow_dispatch:
 permissions:
@@ -37,6 +38,7 @@ jobs:
           git -C .work/Folia rev-parse HEAD > artifacts/FOLIA-SHA.txt
           test "$(cat artifacts/FOLIA-SHA.txt)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-transformers.log
           python3 scripts/apply-never-nether-native-adapters-r4.py .work/Folia --include-smoke-test
           cat > .work/native-smoke.init.gradle <<'GROOVY'
           gradle.projectsEvaluated {
@@ -50,13 +52,13 @@ jobs:
           }
           GROOVY
           (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverNetherNativeSmoke -I ../native-smoke.init.gradle --stacktrace) 2>&1 | tee artifacts/native-compile-codec.log
-          printf '%s\n' 'PASS: native adapters compile and bootstrap/codec smoke passes on inspected Folia 26.2. No worldgen, no complete NeverFolia production-chain build, no monument import.' > artifacts/STATUS.txt
+          printf '%s\n' 'PASS: native adapters compile and bootstrap/codec smoke passes on inspected Folia 26.2. Full NeverFolia production transformer chain included. No worldgen, no server JAR packaging, no monument import.' > artifacts/STATUS.txt
       - name: Capture verification scope and checksums
         if: always()
         run: |
           mkdir -p artifacts
           git ls-files native/nevernether | xargs sha256sum > artifacts/NATIVE-SOURCE-SHA256.txt
-          printf '%s\n' 'This job tests only quota and void-filter adapters. It does not port pillar/noise/random processors, repair monument loot, or generate a world.' > artifacts/SCOPE.txt
+          printf '%s\n' 'This job compiles the full production transformer chain with quota and void-filter adapters and tests their bootstrap/codecs. It does not port pillar/noise/random processors, repair monument loot, or generate a world.' > artifacts/SCOPE.txt
           (cd artifacts && sha256sum *.txt *.log > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         if: always()
