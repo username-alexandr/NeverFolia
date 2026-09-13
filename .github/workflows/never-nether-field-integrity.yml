@@ -35,6 +35,7 @@ jobs:
           python3 scripts/test-never-nether-monument-r5.py 2>&1 | tee artifacts/monument-r5-tests.log
           python3 scripts/test-never-nether-startup-r5.py 2>&1 | tee artifacts/startup-r5-tests.log
           python3 scripts/test-never-nether-dnt-r6.py 2>&1 | tee artifacts/dnt-r6-tests.log
+          python3 scripts/test-never-nether-worldgen-r7.py 2>&1 | tee artifacts/worldgen-r7-tests.log
           python3 scripts/apply-never-nether-native-adapters-r4.py --self-test
           {
             python3 scripts/validate-never-nether-spec.py

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "sources": {
+    "dungeons_and_taverns": {
+      "source_sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "repairs": [{
+        "path": "data/nova_structures/structure/hamlet/trialspawner_magma_cube.nbt",
+        "input_sha256": "30482de0483ae9f7f5f48ade353e26afca998d94fc6dc7414c640a7d23d74828",
+        "old": "minecraft:chisled_polished_blackstone",
+        "new": "minecraft:chiseled_polished_blackstone",
+        "count": 1
+      }]
+    },
+    "better_monuments": {
+      "source_sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+      "repairs": [{
+        "path": "data/betteroceanmonuments/structure/nether/start.nbt",
+        "input_sha256": "baabff653597dce0a657baa3f0f2971e34e80a3beffab94f131b59de4cdc3593",
+        "old": "minecraft:chain",
+        "new": "minecraft:iron_chain",
+        "count": 1
+      }]
+    }
+  }
+}

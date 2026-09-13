@@ -253,6 +253,9 @@ def apply_server_compatibility(archive: Archive, source_key: str) -> None:
         if archive.sha256 == SOURCE_SHA:
             apply_monument(archive)
 
+    from nevernether_jigsaw_states_r7 import apply_states
+    apply_states(archive, source_key)
+
 
 def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str, ...]) -> dict:
     pending = deque()
@@ -463,7 +466,7 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
                 holder("item", value.get(key), origin)
             holder("enchantment", value.get("exclusive_set"), origin)
             codec(value.get("type"), "enchantment_effect_type", origin)
-            if "scoreboard" in json.dumps(value.get("requirements", {})) or '"scores"' in json.dumps(value.get("requirements", {})):
+            if "scoreboard" in json.dumps(value.get("requirements", {})) or '\"scores\"' in json.dumps(value.get("requirements", {})):
                 runtime_review.add(("scoreboard_initialization_required", "scoreboard", origin))
         if registry in ("loot_table", "item_modifier", "predicate"):
             function = value.get("function")
