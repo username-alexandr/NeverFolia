@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Install narrowly scoped native 26.2 quota and void-filter adapters.
+"""Install native 26.2 R4/R5 structure adapters and finite R6 entity actions.
 
-No third-party processors/templates are embedded; no source importer is unblocked.
+No third-party templates or generic unsafe command registrations are embedded.
 All hook contracts are validated before writing any generated source file.
 """
 from __future__ import annotations
@@ -16,6 +16,12 @@ REGISTRY = 'net/minecraft/core/registries/BuiltInRegistries.java'
 MARKER = '// NeverFolia NN-NATIVE-R4'
 
 HOOKS = {
+    'net/minecraft/commands/Commands.java': (
+        '        AdvancementCommands.register(this.dispatcher);',
+        '        AdvancementCommands.register(this.dispatcher);\n'
+        '        // NeverFolia NN-DNT-R6 finite owning-entity actions, no global unsafe commands\n'
+        '        net.minecraft.server.commands.NeverNetherDntCommands.register(this.dispatcher);'
+    ),
     POOLS + 'StructurePoolElementType.java': (
         '    MapCodec<P> codec();',
         '    ' + MARKER + '\n'
@@ -77,6 +83,7 @@ def prepare(root: Path, include_smoke: bool = False) -> dict[Path, str]:
     staged[placement] = text
     source = ROOT / 'native/nevernether/java'
     expected = {
+        'net/minecraft/server/commands/NeverNetherDntCommands.java',
         POOLS + 'NeverNetherPieceBudget.java',
         POOLS + 'NeverNetherLimitedPoolElement.java',
         'net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherNativeProcessors.java',
@@ -88,6 +95,7 @@ def prepare(root: Path, include_smoke: bool = False) -> dict[Path, str]:
     for rel in sorted(expected): staged[target / rel] = (source / rel).read_text()
     if include_smoke:
         staged[target / POOLS / 'NeverNetherNativeSmoke.java'] = (ROOT / 'native/nevernether/test/NeverNetherNativeSmoke.java').read_text()
+        staged[target / 'NeverNetherDntSmoke.java'] = (ROOT / 'native/nevernether/test/NeverNetherDntSmoke.java').read_text()
     return staged
 
 
@@ -96,7 +104,7 @@ def apply(root: Path, include_smoke: bool = False) -> None:
     for path, content in staged.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8')
-    print(f'[NeverFolia][NN-NATIVE-R4] Installed {len(staged)} native files/hooks; R5 property/vertical-support processors installed; runtime QA required')
+    print(f'[NeverFolia][NN-NATIVE-R4] Installed {len(staged)} native files/hooks; R5 processors and finite R6 entity actions installed; runtime QA required')
 
 
 def self_test() -> None:
@@ -107,7 +115,7 @@ def self_test() -> None:
         placement = target / POOLS / 'JigsawPlacement.java'
         placement.write_text('\n'.join(old for old, _ in PLACEMENT_HOOKS))
         staged = prepare(root)
-        assert len(staged) == 9
+        assert len(staged) == 11
         for p, text in staged.items(): p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)
         assert prepare(root) == staged
         placement.write_text('missing anchor')
