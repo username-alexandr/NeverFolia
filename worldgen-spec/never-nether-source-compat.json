@@ -114,5 +114,20 @@
         }
       ]
     }
+  },
+  "authored_reconstructions": {
+    "dungeons_and_taverns": {
+      "source_sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "contract_inputs": {
+        "data/nova_structures/structure/donjon/coloseum_part/deco_13.nbt": "0ddd869b52c346f707282fd6d9d6bb679468f8c8609ddba9110d96790f72fa5c",
+        "data/nova_structures/structure/donjon/room/donjon_room_3x3x2_1.nbt": "ead86f65fe71f9014824393576b019e5dd7e15a97864f4a1a460137a23ba9c1e",
+        "data/nova_structures/structure/piglin_outstation/main/piglin_outpost_outer_layer_vault_1.nbt": "a36895137e8c194a2830b384c90d4a9fe6c8cb03a4e9e1a297e1506ca556a385",
+        "data/nova_structures/worldgen/template_pool/donjon/donjon_coloseum.json": "5ed22b48f33ae4dc4c5d1edf755b9b2d020028101e4b3e46449a33177ef73d6e",
+        "data/nova_structures/worldgen/template_pool/donjon/donjon_room.json": "9b63a04ba2e42b087cc9516e7ef92d3aa80468c6815d98f042fb1e56fdfeea27",
+        "data/nova_structures/worldgen/template_pool/piglin_outstation/outer_layer.json": "68a7dbf3d8653a42eda61be0bc213a94259f063a309398620ba8803adf0e495e"
+      },
+      "policy": "new_designs_not_upstream_originals",
+      "runtime_validated": false
+    }
   }
 }

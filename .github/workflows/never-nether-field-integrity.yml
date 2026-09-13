@@ -5,6 +5,7 @@ on:
     branches: ['wip/nevernether-field-r1']
     paths:
       - 'scripts/**'
+      - 'native/nevernether/**'
       - 'worldgen-spec/**'
       - 'worldgen-sources/never-nether/manifest.json'
       - 'docs/worldgen/never-nether-field-integrity-r1.md'
@@ -30,6 +31,8 @@ jobs:
           python3 scripts/test-never-nether-field-integrity.py 2>&1 | tee artifacts/field-integrity-tests.log
           python3 scripts/test-never-nether-source-inputs.py 2>&1 | tee artifacts/source-inputs-tests.log
           python3 scripts/test-never-nether-source-r3.py 2>&1 | tee artifacts/source-r3-tests.log
+          python3 scripts/test-never-nether-recovery-r4.py 2>&1 | tee artifacts/recovery-r4-tests.log
+          python3 scripts/apply-never-nether-native-adapters-r4.py --self-test
           {
             python3 scripts/validate-never-nether-spec.py
             python3 scripts/hash-never-nether-chunks.py --self-test
@@ -46,7 +49,7 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --inject
           python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --verify | tee artifacts/fingerprint-verification.log
           cp docs/worldgen/never-nether-field-integrity-r1.md artifacts/CANDIDATE-NOTES.md
-          cp docs/worldgen/never-nether-source-intake-r3.md artifacts/SOURCE-INTAKE-NOTES.md
+          cp docs/worldgen/never-nether-source-intake-r4.md artifacts/SOURCE-INTAKE-NOTES.md
           printf '%s\n' 'CANDIDATE ONLY: no compiled server JAR, no real-world runtime test, no third-party structure assets.' > artifacts/STATUS.txt
           (cd artifacts && sha256sum *.zip *.txt *.md *.log > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4

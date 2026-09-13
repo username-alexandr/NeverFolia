@@ -30,3 +30,6 @@ echo "[NeverFolia] Freezing final R9 V17 village production policy (rings128)"
 python3 "${ROOT_DIR}/scripts/finalize-never-overworld-village-v17.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Final R9 V17 village production chain applied"
+
+echo "[NeverFolia] Installing native NeverNether R4 quota and void-filter adapters"
+python3 "${ROOT_DIR}/scripts/apply-never-nether-native-adapters-r4.py" "${FOLIA_DIR}"

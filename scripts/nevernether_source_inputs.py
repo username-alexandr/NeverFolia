@@ -234,6 +234,11 @@ def apply_server_compatibility(archive: Archive, source_key: str) -> None:
         archive.provenance[path] = "neverfolia-authored/optional-mod-pool-override"
         archive.compatibility_changes.append({"resource": str(path), "policy": "empty_optional_mod_pool", "reason": rule["reason"]})
 
+    recovery = config.get("authored_reconstructions", {}).get(source_key)
+    if recovery is not None and archive.sha256 == recovery["source_sha256"]:
+        from nevernether_recovery_templates import apply_recoveries
+        apply_recoveries(archive, recovery)
+
 
 def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str, ...]) -> dict:
     pending = deque()
