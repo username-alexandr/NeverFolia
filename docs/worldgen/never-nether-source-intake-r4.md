@@ -16,7 +16,7 @@ Four absent D&T templates are now generated from independently authored geometry
 
 | Missing path under `nova_structures` | New design | Size |
 | --- | --- | --- |
-| `donjon/coloseum_part/deco_14` | basalt/blackstone light pedestal | 4 x 4 x 4 |
+| `donjon/coloseum_part/deco_14` | blackstone light pedestal | 4 x 4 x 4 |
 | `donjon/coloseum_part/deco_15` | gilded/basalt light feature | 4 x 4 x 4 |
 | `donjon/room/donjon_room_3x3x3_1` | three-level gallery with ladders and loot/mob connections | 46 x 21 x 46 |
 | `piglin_outstation/main/piglin_outpost_outer_layer_foundation_1` | solid buttress/platform with continuation anchors | 22 x 42 x 48 |
@@ -67,28 +67,41 @@ Remaining work: noise/property replacement, random/property replacement,
 chunk-owned pillar support, the missing monument loot table, and integration of
 all adapters with explicit source rewrites. No unsupported behavior is dropped.
 
-## Validation scope
+## Verified checks and their exact scope
 
-- `test-never-nether-recovery-r4.py`: 19 synthetic reconstruction regressions.
-- `NeverNetherPieceBudgetTest`: 359 assertions using immutable inputs, including
-  failed attempts, group collisions, nested quotas, cap boundaries and concurrent
-  independent starts. This test runs with a real Java compiler, without Minecraft.
-- `apply-never-nether-native-adapters-r4.py --self-test`: anchor/idempotence/failure
-  atomicity checks, plus local application to the downloaded exact 26.2 sources.
-- `NeverNether R4 Native Compile and Codec` CI: intended to compile the native
-  additions against the inspected upstream Folia SHA and run real registry and
-  codec bootstrap smoke checks. Consult the actual run result; a workflow file
-  is not proof of a passing build. No world is created by this job, and it does not
-  run the full existing NeverFolia production transformer chain.
-- The normal fast regression CI retains R1/R2/R3 tests and adds R4 recovery tests.
-  Third-party source ZIPs are absent from CI; real-source audit is local evidence.
+- Local Python suites: **97 tests passed** (23 FIELD-R1, 29 source-input,
+  26 remote SOURCE-R3, 19 recovery-R4). FIELD-R1 Regression #5 / 34771424409
+  reran these at 5ad127f99553d1494e94e9017ad0ac39610b74b2 and succeeded.
+- Pure Java quota tests: **359 assertions passed**, including cap boundaries,
+  failed geometry probes, group collisions, nested quotas and concurrent
+  independent starts. These assertions do not create a Minecraft world.
+- Native isolated compile/codec CI #1 / 34771052539 succeeded at
+  3b63dbf238cb7f4fde0b9f0dbc8d35b7a3774c52.
+- Native full production-chain compile/codec CI #2 / **34771486487 succeeded**
+  at **3e66a80e7e2daa1ac70e4f744daf3c0cd5980359**. The normal NeverFolia post-patch
+  script, including the R9 village chain, ran before Java 25 compilation.
+  Actual Minecraft bootstrap, registrations, codec round-trip and void behavior
+  passed **12 checks**. No world was generated and no server JAR was packaged.
+- The downloaded full-chain artifact SHA-256 is
+  `85d835316f60370228248a0f72e3f3ed48b4924e6bf9b7c73795d3b75ae4fc20`.
+  Its inner checksums and recorded native source hashes were verified locally.
+- Validate NeverOverworld #522 / 34771486478 succeeded at the same 3e66a80 SHA.
+  This is the fast check, not a fresh Overworld runtime determinism gate.
+- The real five-source full importer now stops at **Better Monuments**, not D&T.
+  Previously existing output bytes and all five input ZIP hashes stayed unchanged.
+  Third-party ZIPs are absent from CI; this is local real-source evidence.
+
+The adapter patcher was also applied twice to the exact inspected 26.2 sources:
+reapplication is idempotent; changed anchors are rejected before writing files.
+Documentation-only commits after 3e66a80 do not imply another native CI run.
 
 No density function, lava level or fluid simulation is changed by SOURCE-R4.
-FIELD-R1's lava-shelf candidate is retained, not newly runtime-validated. Reported
-cavities still need saved affected Nether chunks to establish their origin.
+All **24** resources in the rebuilt Core match the prior FIELD-R1 CI resource
+bytes. FIELD-R1's lava-shelf candidate is retained, not newly runtime-validated.
+Reported cavities still need saved affected Nether chunks to establish their origin.
 
 Do not install this source-review bundle as a datapack, replace a live server JAR,
-or bypass the existing worldgen fingerprint lock. Required release gates remain:
-full native production-chain build, complete 20-structure import, registry startup,
-world-space structure QA, persisted fluid/cavity inspection and strict chunk-order
-determinism on freshly generated test worlds.
+or bypass the existing worldgen fingerprint lock. Remaining release gates:
+complete monument adapters and 20-structure import, candidate JAR packaging,
+startup with the full actual datapack, world-space structure QA, persisted
+fluid/cavity inspection and strict chunk-order determinism on fresh test worlds.
