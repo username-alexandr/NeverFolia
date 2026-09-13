@@ -9,6 +9,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import urllib.request
 
@@ -36,7 +37,11 @@ def prepare(cache: Path = CACHE, offline: bool = False) -> dict[str, bytes]:
             if offline:
                 raise ValueError(f'Pinned noise input missing in offline cache: {path}')
             url = f'https://api.github.com/repos/KdotJPG/OpenSimplex2/git/blobs/{sha}'
-            request = urllib.request.Request(url, headers={'User-Agent': 'NeverFolia-build', 'Accept': 'application/vnd.github+json'})
+            headers = {'User-Agent': 'NeverFolia-build', 'Accept': 'application/vnd.github+json'}
+            token = os.environ.get('GH_TOKEN')
+            if token:
+                headers['Authorization'] = 'Bearer ' + token
+            request = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(request, timeout=30) as response:
                 body = json.load(response)
             if body.get('encoding') != 'base64':

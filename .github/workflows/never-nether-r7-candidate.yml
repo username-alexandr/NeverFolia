@@ -18,6 +18,8 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
       - name: Compile normal production sources and package Paperclip
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
