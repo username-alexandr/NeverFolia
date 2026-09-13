@@ -1,0 +1,26 @@
+name: NeverNether Field Source Snapshot
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/nn-field-source-snapshot.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Export tracked source and source-input inventory
+        run: |
+          mkdir -p artifacts
+          git archive --format=zip HEAD -o artifacts/NeverNether-field-baseline-source.zip
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git ls-files worldgen-sources > artifacts/SOURCE-INPUTS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverNether-field-sources-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
