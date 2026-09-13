@@ -32,6 +32,8 @@ jobs:
           python3 scripts/test-never-nether-source-inputs.py 2>&1 | tee artifacts/source-inputs-tests.log
           python3 scripts/test-never-nether-source-r3.py 2>&1 | tee artifacts/source-r3-tests.log
           python3 scripts/test-never-nether-recovery-r4.py 2>&1 | tee artifacts/recovery-r4-tests.log
+          python3 scripts/test-never-nether-monument-r5.py 2>&1 | tee artifacts/monument-r5-tests.log
+          python3 scripts/test-never-nether-startup-r5.py 2>&1 | tee artifacts/startup-r5-tests.log
           python3 scripts/apply-never-nether-native-adapters-r4.py --self-test
           {
             python3 scripts/validate-never-nether-spec.py
@@ -49,8 +51,8 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --inject
           python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --verify | tee artifacts/fingerprint-verification.log
           cp docs/worldgen/never-nether-field-integrity-r1.md artifacts/CANDIDATE-NOTES.md
-          cp docs/worldgen/never-nether-source-intake-r4.md artifacts/SOURCE-INTAKE-NOTES.md
-          printf '%s\n' 'CANDIDATE ONLY: no compiled server JAR, no real-world runtime test, no third-party structure assets.' > artifacts/STATUS.txt
+          cp docs/worldgen/never-nether-source-intake-r5.md artifacts/SOURCE-INTAKE-NOTES.md
+          printf '%s\n' 'CANDIDATE ONLY: CI contains synthetic tests and Core, not the real third-party structure pack or full-world acceptance.' > artifacts/STATUS.txt
           (cd artifacts && sha256sum *.zip *.txt *.md *.log > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:

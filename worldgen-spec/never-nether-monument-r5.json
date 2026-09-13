@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "source_sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+  "native_profile": "NN-NATIVE-R5",
+  "contract_hashes": {
+    "data/betteroceanmonuments/worldgen/processor_list/nether/main.json": "742b74f6ab1d76ac2165b82da10fa487d8e636cb3d2d83db79d90509b90a1db6",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/fire.json": "772e01f6cce4a83ce1e508f71a704c01e053d74b839558a8dc8376b563d6aea1",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/lower_middle_chambers.json": "b39ecbb715beb252fe140f6278d6914e730b850392703ba317e38f0b4df46b4b",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/maze_chamber_battle_rooms.json": "57e2ca34fa103f7caefac154f1aad750acd21a0cee5daf07ba273138e86898a4",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/mobs.json": "ae3d584d7b7cc42b7375fbd2b1bf984998aa813de56d5b56eac5532009bfe7ac",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/outside_walkway_shrines.json": "46e5063e3b9f9d8724c3d0d591a64afc855cbe2d48df555fd9408371a7622a09",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/parthenons.json": "224bcd166a0f603c45d0f491b18fa1060aa77cc40285584420e9270775995a5e",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/side_lower_chambers.json": "817a92d32a5b45adc33f9929b901c018889ebf5442af774b3a6f902e3b77beb3",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/starts.json": "4935d655230b0a952867005ee006a5aa565d79c2f190bce2b03b3e033cd6c25d",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/top_domes.json": "4c1bf67e134d8db668d5cc8b2879739e366fb929e8e7a508caeb4f02b1bf0701",
+    "data/betteroceanmonuments/worldgen/template_pool/nether/top_rings.json": "5db9b8778e737eed633982df60a2dbe9af6727bea3f3ef6fe142dc3ff842f63f"
+  },
+  "expected_translations": {
+    "repurposed_structures:noise_replace_with_properties_processor": 4,
+    "repurposed_structures:pillar_processor": 1,
+    "repurposed_structures:random_replace_with_properties_processor": 3,
+    "repurposed_structures:structure_void_processor": 1,
+    "yungsapi:max_count_single_element": 25
+  },
+  "upstream_loot_revision": "954d94462a54e818392d6994ec7d970c5d30a829",
+  "supplemental_files": [
+    {
+      "filename": "monument-nether.json",
+      "git_blob": "3b904acf35ccdfcce24e6bf5a40f71ba94f0f7c4",
+      "pack_path": "data/repurposed_structures/loot_table/chests/monuments/nether.json"
+    },
+    {
+      "filename": "monument-lucky-pool.json",
+      "git_blob": "44e3784a01e55dda8ca5790dd1f97c8460357791",
+      "pack_path": "data/repurposed_structures/loot_table/chests/lucky_pool.json"
+    },
+    {
+      "filename": "LICENSE-RepurposedStructures.txt",
+      "git_blob": "0a041280bd00a9d068f503b8ee7ce35214bd24a1",
+      "pack_path": "licenses/RepurposedStructures-LGPL.txt"
+    }
+  ],
+  "legacy_feature_hashes": {
+    "data/betteroceanmonuments/worldgen/configured_feature/crimson_roots.json": "b15aa9a4d5d86a77cec70d7bb5742bd8e0d6cdacc300b6b74066f6d0394c86b1",
+    "data/betteroceanmonuments/worldgen/configured_feature/fire.json": "a881485e04cf8f7c27a2c1010cd1bf9f038379b0d113a6f7160d2abaf90a8eca"
+  },
+  "legacy_feature_conversion": {
+    "target_type": "minecraft:sequence",
+    "preserves_attempt_counts_and_offset_distribution": true,
+    "historic_rng_stream_preserved": false
+  }
+}

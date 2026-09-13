@@ -45,6 +45,7 @@ def audit_sources(directory: Path) -> dict:
         if not path.is_file():
             missing.append({"key": key, "filename": entry["filename"], "structure_count": len(ids)})
             continue
+        print(f"Inspecting {key}...", file=sys.stderr, flush=True)
         record = {"key": key, "filename": path.name, "sha256": digest(path),
                   "size_bytes": path.stat().st_size}
         pinned = entry.get("sha256")
@@ -54,7 +55,7 @@ def audit_sources(directory: Path) -> dict:
                 raise ValueError("SHA-256 differs from the pinned source manifest")
             archive = Archive(path)
             record["archive_crc_verified"] = True
-            if key in ("structory_towers", "dungeons_and_taverns"):
+            if key in ("structory_towers", "dungeons_and_taverns", "better_monuments"):
                 raw = inspect_dependencies(archive, ids)
                 record["before_source_compatibility"] = {
                     "missing_required_references": raw["missing_required_references"],
@@ -66,34 +67,19 @@ def audit_sources(directory: Path) -> dict:
                                       for m in result["missing_required_references"])
                                for sid, result in zip(ids, record["structures"]))
             passed_count += sum(result["source_dependency_preflight_passed"] for result in record["structures"])
-        except Exception as exc:  # Untrusted archive failures cannot become a passing report.
+        except Exception as exc:
             record["error"] = f"{type(exc).__name__}: {exc}"
             invalid.append(key)
         sources.append(record)
-    extras = []
-    # Metadata/hashes only: Amplified terrain is deliberately not a transformation
-    # source; Witch Huts is outside the approved Nether import set.
-    for name, reason in (
-        ("Amplified_Nether_v1.2.15.zip", "excluded_separate_terrain_generator"),
-        ("Repurposed_Structures-Better_Witch_Huts_v5.zip", "excluded_overworld_content"),
-        ("Repurposed_Structures-Better_Witch_Huts_v5 (1).zip", "excluded_overworld_content"),
-    ):
-        path = directory / name
-        if path.is_file():
-            extras.append({"filename": name, "sha256": digest(path), "size_bytes": path.stat().st_size, "reason": reason})
-    hashes: dict[str, list[str]] = {}
-    for item in extras:
-        hashes.setdefault(item["sha256"], []).append(item["filename"])
     complete = not missing and not invalid and passed_count == approved_count
     return {
-        "schema": 1, "audit": "nevernether-source-preflight-r3", "worldgen_id": spec["worldgen_id"],
+        "schema": 1, "audit": "nevernether-source-preflight-r5", "worldgen_id": spec["worldgen_id"],
         "source_manifest": str(MANIFEST.relative_to(ROOT)), "target_data_pack_format": [107, 1],
         "status": "source_preflight_passed" if complete else "blocked",
         "approved_custom_structure_count": approved_count,
         "supplied_structure_definition_count": found_count,
         "structures_passing_source_dependency_preflight": passed_count,
         "missing_sources": missing, "invalid_sources": invalid, "sources": sources,
-        "excluded_inputs": extras, "identical_duplicate_inputs": [names for names in hashes.values() if len(names) > 1],
         "release_ready": False, "runtime_validated": False,
         "assets_written_or_uploaded": False,
         "interpretation": [

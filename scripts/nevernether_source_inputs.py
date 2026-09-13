@@ -91,6 +91,8 @@ class Archive:
         with path.open("rb") as fh:
             self.sha256 = hashlib.file_digest(fh, "sha256").hexdigest()
         self.target = target
+        self.native_codecs: set[tuple[str, str]] = set()
+        self.supplemental_notices: dict[PurePosixPath, bytes] = {}
         self.entries: dict[PurePosixPath, bytes] = {}
         self.provenance: dict[PurePosixPath, str] = {}
         self.active_overlays: list[str] = []
@@ -240,6 +242,12 @@ def apply_server_compatibility(archive: Archive, source_key: str) -> None:
         apply_recoveries(archive, recovery)
 
 
+    if source_key == "better_monuments":
+        from nevernether_monument_r5 import SOURCE_SHA, apply_monument
+        if archive.sha256 == SOURCE_SHA:
+            apply_monument(archive)
+
+
 def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str, ...]) -> dict:
     pending = deque()
     selected: set[PurePosixPath] = set()
@@ -330,6 +338,9 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
             missing.add((registry, canonical, origin))
 
     def codec(value: object, kind: str, origin: str) -> None:
+        if isinstance(value, str) and (kind, value) in archive.native_codecs:
+            runtime_review.add(("requires_native_r5_runtime", value, origin))
+            return
         if isinstance(value, str) and ":" in value and not value.startswith("minecraft:"):
             blockers.add((kind, value, origin))
 
@@ -375,6 +386,13 @@ def inspect_dependencies(archive: Archive, structure_ids: list[str] | tuple[str,
             return
         if not isinstance(value, dict):
             return
+        # Discriminator IDs may legally omit the minecraft namespace. Normalize
+        # only our inspection view, never the original source resource bytes.
+        value = dict(value)
+        for field in ("type", "function", "condition", "element_type", "processor_type", "predicate_type"):
+            ident = value.get(field)
+            if isinstance(ident, str) and ident and ":" not in ident and re.fullmatch(r"[a-z0-9_./-]+", ident):
+                value[field] = "minecraft:" + ident
         for field in ("element_type", "processor_type", "predicate_type"):
             codec(value.get(field), field, origin)
         # Holder references appearing in loot, processor block-entity modifiers,

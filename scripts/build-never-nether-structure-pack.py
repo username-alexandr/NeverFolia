@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
+from nevernether_monument_r5 import PROCESSORS
 from nevernether_source_inputs import Archive, apply_server_compatibility, inspect_dependencies, selected_files, json_resource
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +201,10 @@ def copy_allowed_source_files(pack: PackFiles, source: SourceArchive) -> None:
         if previous is not None and previous != payload:
             raise SystemExit(f"Conflicting source dependency would overwrite existing data: {path}")
         pack.put(path, payload)
+    for path, payload in archive.supplemental_notices.items():
+        if pack.get(path) is not None and pack.get(path) != payload:
+            raise SystemExit(f"Conflicting source notice: {path}")
+        pack.put(path, payload)
     pack.source_preflight.append({"key": source.key, "selected_counts": result["selected_counts"],
                                   "compatibility_changes": result["compatibility_changes"],
                                   "external_vanilla_references_unverified": result["external_vanilla_references_unverified"],
@@ -222,7 +227,7 @@ def sanitize_processor_lists(pack: PackFiles) -> int:
         for processor in value.get("processors", []):
             if isinstance(processor, dict):
                 ptype = processor.get("processor_type") or processor.get("type")
-                if isinstance(ptype, str) and ":" in ptype and not ptype.startswith("minecraft:"):
+                if isinstance(ptype, str) and ":" in ptype and not ptype.startswith("minecraft:") and ptype not in PROCESSORS.values():
                     raise SystemExit(f"Unsupported processor {ptype} in {path}; no processor was removed")
     return 0
 
@@ -262,6 +267,9 @@ def rewrite_approved_structures(pack: PackFiles, placement: dict) -> list[dict]:
         # Repurposed Structures custom structure codec here.
         structure["type"] = "minecraft:jigsaw"
         structure["start_pool"] = alias
+        if sid == "repurposed_structures:monument_nether":
+            structure["use_expansion_hack"] = False
+            structure["max_distance_from_center"] = 128
         structure.pop("project_start_to_heightmap", None)
 
         spec_entry = entries_by_id[sid]
