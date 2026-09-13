@@ -80,6 +80,8 @@ def prepare(root: Path, include_smoke: bool = False) -> dict[Path, str]:
         POOLS + 'NeverNetherPieceBudget.java',
         POOLS + 'NeverNetherLimitedPoolElement.java',
         'net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherNativeProcessors.java',
+        'net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherPillarPlan.java',
+        'net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherNoise.java',
     }
     found = {str(p.relative_to(source)) for p in source.rglob('*.java')}
     if found != expected: raise ValueError(f'Unexpected native source set: {sorted(found)}')
@@ -94,7 +96,7 @@ def apply(root: Path, include_smoke: bool = False) -> None:
     for path, content in staged.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8')
-    print(f'[NeverFolia][NN-NATIVE-R4] Installed {len(staged)} native files/hooks; monument source conversion remains blocked')
+    print(f'[NeverFolia][NN-NATIVE-R4] Installed {len(staged)} native files/hooks; R5 property/vertical-support processors installed; runtime QA required')
 
 
 def self_test() -> None:
@@ -105,7 +107,7 @@ def self_test() -> None:
         placement = target / POOLS / 'JigsawPlacement.java'
         placement.write_text('\n'.join(old for old, _ in PLACEMENT_HOOKS))
         staged = prepare(root)
-        assert len(staged) == 7
+        assert len(staged) == 9
         for p, text in staged.items(): p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)
         assert prepare(root) == staged
         placement.write_text('missing anchor')

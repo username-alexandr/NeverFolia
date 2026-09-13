@@ -31,5 +31,7 @@ python3 "${ROOT_DIR}/scripts/finalize-never-overworld-village-v17.py" "${FOLIA_D
 
 echo "[NeverFolia] Final R9 V17 village production chain applied"
 
-echo "[NeverFolia] Installing native NeverNether R4 quota and void-filter adapters"
+echo "[NeverFolia] Preparing pinned CC0 noise for native NeverNether R5"
+python3 "${ROOT_DIR}/scripts/prepare-never-nether-noise-r5.py" --install "${FOLIA_DIR}"
+echo "[NeverFolia] Installing native NeverNether R4/R5 adapters"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-native-adapters-r4.py" "${FOLIA_DIR}"
