@@ -20,6 +20,16 @@ public final class NeverNetherNativeSmoke {
         if (!condition) throw new AssertionError(name);
         checks++;
     }
+    private static <T extends Comparable<T>> String propertyName(net.minecraft.world.level.block.state.BlockState state,
+        net.minecraft.world.level.block.state.properties.Property<T> property) {
+        return property.getName(state.getValue(property));
+    }
+    private static java.util.Map<String, String> properties(net.minecraft.world.level.block.state.BlockState state) {
+        // Compare property names/values, not the identity of the engine's values container.
+        var result = new java.util.TreeMap<String, String>();
+        for (var property : state.getProperties()) result.put(property.getName(), propertyName(state, property));
+        return result;
+    }
     private static NeverNetherLimitedPoolElement element(String name, int count) {
         return new NeverNetherLimitedPoolElement(
             Either.left(Identifier.fromNamespaceAndPath("neverfolia", "qa/template")),
@@ -69,10 +79,10 @@ public final class NeverNetherNativeSmoke {
         for (var state : Blocks.RED_NETHER_BRICK_STAIRS.getStateDefinition().getPossibleStates()) {
             var input = new StructureTemplate.StructureBlockInfo(new BlockPos(-17, 31, 16), state, null);
             var out = random.processBlock(null, BlockPos.ZERO, BlockPos.ZERO, BlockPos.ZERO, input, settings);
-            check(out.state().is(Blocks.NETHER_BRICK_STAIRS) && out.state().getValues().equals(state.getValues()), "all stair properties preserved");
+            check(out.state().is(Blocks.NETHER_BRICK_STAIRS) && properties(out.state()).equals(properties(state)), "all stair properties preserved: " + state + " -> " + out.state());
         }
         var slab = Blocks.RED_NETHER_BRICK_SLAB.defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.SLAB_TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP);
-        check(NeverNetherNativeProcessors.copyProperties(slab, Blocks.NETHER_BRICK_SLAB.defaultBlockState()).getValues().equals(slab.getValues()), "slab properties retained");
+        check(properties(NeverNetherNativeProcessors.copyProperties(slab, Blocks.NETHER_BRICK_SLAB.defaultBlockState())).equals(properties(slab)), "slab properties retained");
         var zero = new NeverNetherNativeProcessors.RandomProperties(Blocks.RED_NETHER_BRICKS, Blocks.NETHER_BRICKS, 0.0f);
         var info = new StructureTemplate.StructureBlockInfo(BlockPos.ZERO, Blocks.RED_NETHER_BRICKS.defaultBlockState(), null);
         check(zero.processBlock(null, BlockPos.ZERO, BlockPos.ZERO, BlockPos.ZERO, info, new StructurePlaceSettings()) == info, "probability zero");
