@@ -1,0 +1,49 @@
+name: NeverNether R10 Substrate API Probe
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/never-nether-r10-api.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Export exact section and small-plant APIs
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          bash scripts/prepare-upstream.sh
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production-chain.log 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile
+          root=Path('.work/Folia/folia-server/src/minecraft/java/net/minecraft')
+          names=['world/level/chunk/LevelChunkSection.java','world/level/chunk/PalettedContainerFactory.java','world/level/levelgen/feature/SimpleBlockFeature.java','world/level/block/MushroomBlock.java']
+          hashes={}
+          with zipfile.ZipFile('artifacts/substrate-api.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for name in names:
+                  raw=(root/name).read_bytes();z.writestr('net/minecraft/'+name,raw);hashes[name]=hashlib.sha256(raw).hexdigest()
+          Path('artifacts/API-SHA256.json').write_text(json.dumps(hashes,indent=2)+'\n')
+          PY
+          printf '%s\n' 'Pinned source inspection only. No worldgen modification, world test or release.' > artifacts/SCOPE.txt
+          (cd artifacts && sha256sum *.zip *.txt *.json *.log > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverNether-r10-substrate-api-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7
