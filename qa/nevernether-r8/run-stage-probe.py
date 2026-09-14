@@ -6,6 +6,8 @@ normal stop and unchanged runtime are recorded. This is not release acceptance.
 """
 from __future__ import annotations
 import argparse
+import importlib.util
+import sys
 import hashlib
 import json
 import os
@@ -13,6 +15,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+
+
+_SPEC = importlib.util.spec_from_file_location('nn_probe_supervisor', Path(__file__).with_name('probe_supervisor.py'))
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError('Probe supervisor is missing')
+SUPERVISOR = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(SUPERVISOR)
 
 
 def sha(path: Path) -> str:
@@ -64,6 +73,30 @@ def runtime_inventory(runtime: Path) -> tuple[list[str], dict]:
                      'manifest_sha256': sha(runtime / 'classpath.txt')}
 
 
+def finish(evidence: dict, directory: Path, runtime: Path, inventory: dict, pack: Path, plugin: Path) -> int:
+    """Persist a failing result even if post-run input verification itself fails."""
+    print('[NN-PROBE] rechecking runtime and input identity', file=sys.stderr, flush=True)
+    errors = []
+    try:
+        _, after = runtime_inventory(runtime)
+        evidence['runtime_unchanged'] = after == inventory
+    except (OSError, ValueError, TypeError) as error:
+        evidence['runtime_unchanged'] = False
+        errors.append('runtime: ' + str(error))
+    try:
+        evidence['inputs_unchanged'] = sha(pack) == evidence['pack_sha256'] and sha(plugin) == evidence['qa_plugin_sha256']
+    except OSError as error:
+        evidence['inputs_unchanged'] = False
+        errors.append('inputs: ' + str(error))
+    if errors:
+        evidence['verification_errors'] = errors
+    SUPERVISOR.write_json(directory / 'run-evidence.json', evidence)
+    print(json.dumps(evidence, indent=2))
+    return 0 if (evidence['stage'] == 'completed' and evidence['process_exit_code'] == 0
+                 and not evidence['forced_stop'] and evidence['runtime_unchanged']
+                 and evidence['inputs_unchanged']) else 2
+
+
 def main(plan_validator=checked_plan) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--java', type=Path, required=True)
@@ -77,12 +110,19 @@ def main(plan_validator=checked_plan) -> int:
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--timeout', type=int, default=900)
     parser.add_argument('--accept-eula', action='store_true')
+    parser.add_argument('--check-only', action='store_true', help='Validate inputs without creating a world or starting Java')
+    parser.add_argument('--heartbeat-seconds', type=int, default=15)
+    parser.add_argument('--stall-timeout', type=int, default=180)
     args = parser.parse_args()
     if not args.accept_eula:
         parser.error('Review the Minecraft EULA and explicitly pass --accept-eula')
     if not 1 <= args.port <= 65535 or not 60 <= args.timeout <= 3600:
         parser.error('Invalid port or timeout outside 60..3600 seconds')
+    if not 1 <= args.heartbeat_seconds <= 300 or not 10 <= args.stall_timeout <= 3600:
+        parser.error('Invalid heartbeat or no-progress timeout')
     try:
+        env = SUPERVISOR.checked_environment()
+        print('[NN-PROBE] checking inputs and runtime inventory', file=sys.stderr, flush=True)
         for path in (args.java, args.pack, args.qa_plugin):
             if not path.is_file():
                 raise ValueError(f'Missing required input: {path}')
@@ -92,6 +132,12 @@ def main(plan_validator=checked_plan) -> int:
     except (OSError, ValueError, TypeError) as error:
         parser.error(str(error))
     directory = args.new_directory.resolve()
+    if directory.exists():
+        parser.error('New probe directory already exists; no overwrite or implicit resume')
+    if args.check_only:
+        print(json.dumps({'preflight': 'PASS', 'runtime_payload_sha256': inventory['payload_sha256'],
+                          'chunks': len(plan['chunks']), 'world_created': False, 'process_started': False}))
+        return 0
     directory.mkdir(parents=True, exist_ok=False)
     (directory / 'world/datapacks').mkdir(parents=True)
     (directory / 'plugins').mkdir()
@@ -121,54 +167,13 @@ pause-when-empty-seconds=-1
                 'runtime_payload_sha256': inventory['payload_sha256'],
                 'classpath_manifest_sha256': inventory['manifest_sha256'],
                 'order': 'reverse' if args.reverse else 'forward', 'release_ready': False}
-    command = [str(args.java.resolve()), '-Xms512M', '-Xmx3200M', '-XX:ActiveProcessorCount=4',
-               '-Dpaper.disablePluginRemapping=true', '-Dneverfolia.qa.stageProbe=true',
+    command = [str(args.java.resolve()), *SUPERVISOR.JVM_FLAGS,
                '-cp', os.pathsep.join(entries), 'org.bukkit.craftbukkit.Main', '--nogui']
-    evidence['jvm_flags'] = command[1:6]
-    # External JVM injection must not change a supposedly identical runtime test.
-    env = dict(os.environ)
-    for key in ('JDK_JAVA_OPTIONS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS'):
-        if env.get(key):
-            raise ValueError(f'Remove external JVM injection before this diagnostic: {key}')
-    started = time.monotonic()
-    report = directory / 'plugins/NN-STAGE-R8-QA/report.json'
-    outcome, forced = 'timeout', False
-    with (directory / 'run.log').open('w') as log:
-        process = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.PIPE,
-                                   stdout=log, stderr=subprocess.STDOUT, text=True)
-        try:
-            while time.monotonic() - started < args.timeout:
-                if process.poll() is not None:
-                    outcome = 'exited_early'
-                    break
-                if report.is_file():
-                    state = json.loads(report.read_text()).get('stage')
-                    if state in ('completed', 'failed'):
-                        outcome = state
-                        break
-                time.sleep(1)
-        finally:
-            if process.poll() is None:
-                try:
-                    process.stdin.write('stop\n')
-                    process.stdin.flush()
-                    process.wait(timeout=90)
-                except (BrokenPipeError, subprocess.TimeoutExpired):
-                    forced = True
-                    process.terminate()
-                    try:
-                        process.wait(timeout=30)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-    _, after = runtime_inventory(runtime)
-    evidence.update(stage=outcome, process_exit_code=process.returncode, forced_stop=forced,
-                    elapsed_seconds=time.monotonic() - started,
-                    runtime_unchanged=after == inventory,
-                    inputs_unchanged=sha(args.pack) == evidence['pack_sha256'] and sha(args.qa_plugin) == evidence['qa_plugin_sha256'])
-    (directory / 'run-evidence.json').write_text(json.dumps(evidence, indent=2) + '\n')
-    print(json.dumps(evidence, indent=2))
-    return 0 if outcome == 'completed' and process.returncode == 0 and not forced and evidence['runtime_unchanged'] and evidence['inputs_unchanged'] else 2
+    evidence['jvm_flags'] = list(SUPERVISOR.JVM_FLAGS)
+    result = SUPERVISOR.execute(command, directory, args.timeout, env=env,
+                                heartbeat=args.heartbeat_seconds, stall_timeout=args.stall_timeout)
+    evidence.update(result)
+    return finish(evidence, directory, runtime, inventory, args.pack, args.qa_plugin)
 
 
 if __name__ == '__main__':
