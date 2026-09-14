@@ -27,12 +27,16 @@ jobs:
           bash scripts/prepare-upstream.sh
           test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
-          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production.log 2>&1
+          set +e
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production.log
+          production_exit=${PIPESTATUS[0]}
+          set -e
+          echo "$production_exit" > artifacts/PRODUCTION-EXIT.txt
           python3 - <<'PY'
           from pathlib import Path
           import hashlib,json,zipfile
           root=Path('.work/Folia/folia-server/src/minecraft/java')
-          names=['world/level/chunk/storage/SerializableChunkData.java','world/level/chunk/LevelChunkSection.java','world/level/chunk/PalettedContainer.java','world/level/chunk/ProtoChunk.java','world/level/chunk/LevelChunk.java','world/level/chunk/status/ChunkStatusTasks.java','world/level/levelgen/feature/MushroomFeature.java','world/level/levelgen/feature/GlowstoneFeature.java','world/level/levelgen/feature/SpringFeature.java']
+          names=['world/level/chunk/storage/SerializableChunkData.java','world/level/chunk/LevelChunkSection.java','world/level/chunk/PalettedContainer.java','world/level/chunk/ProtoChunk.java','world/level/chunk/LevelChunk.java','world/level/chunk/status/ChunkStatusTasks.java','world/level/levelgen/feature/GlowstoneFeature.java','world/level/levelgen/feature/SpringFeature.java']
           hashes={}
           with zipfile.ZipFile('artifacts/storage-api.zip','w',zipfile.ZIP_DEFLATED) as z:
               for name in names:
@@ -43,7 +47,9 @@ jobs:
           Path('artifacts/API-SHA256.json').write_text(json.dumps(hashes,indent=2)+'\n')
           PY
           (cd artifacts && sha256sum *.zip *.txt *.json *.log > SHA256SUMS.txt)
+          exit "$production_exit"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: NeverNether-r11-storage-api-${{ github.sha }}
           path: artifacts/*
