@@ -53,7 +53,7 @@ jobs:
                   server.tasks.register(name, JavaExec) {
                       dependsOn server.tasks.named('classes')
                       classpath = server.sourceSets.main.runtimeClasspath
-                      mainClass = 'net.minecraft.world.level.levelgen.placement.' + name
+                      mainClass = name == 'NeverNetherGuardR11Smoke' ? name : 'net.minecraft.world.level.levelgen.placement.' + name
                       jvmArgs '-ea'
                   }
               }
@@ -72,7 +72,7 @@ jobs:
               if not file.is_file():raise ValueError('Missing compiled class: '+name)
               files.add(file);files.update(file.parent.glob(file.stem+'$*.class'))
           for name in ['NeverNetherCandidateR12Smoke','NeverNetherStorageR11Smoke','NeverNetherGuardR11Smoke']:
-              file=root/'net/minecraft/world/level/levelgen/placement'/f'{name}.class'
+              file=(root if name=='NeverNetherGuardR11Smoke' else root/'net/minecraft/world/level/levelgen/placement')/f'{name}.class'
               files.add(file)
           with zipfile.ZipFile('artifacts/candidate-overlay.zip','w',zipfile.ZIP_DEFLATED) as archive:
               for p in sorted(files):archive.write(p,p.relative_to(root).as_posix())
