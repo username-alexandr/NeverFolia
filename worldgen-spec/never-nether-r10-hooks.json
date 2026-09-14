@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "after": "NN-R8 + NN-R9 opt-in, never normal production",
+  "files": {
+    "net/minecraft/world/level/chunk/status/ChunkStatusTasks.java": {
+      "sha256": "d89862424b978c39ebdac391562f9e282699b736aaa83ceab1c71e89a07e43dd",
+      "replacements": [
+        {
+          "old": "            // It writes only the owning chunk and never observes mutable neighbors.",
+          "new": "            // It writes only the owning chunk and never observes mutable neighbors.\n        net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.capture(level, chunk);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/feature/OreFeature.java": {
+      "sha256": "820308905643442bcfb87d107e59a9684ea83efe414909a952ee1a6270a13e5c",
+      "replacements": [
+        {
+          "old": "        int placed = 0;",
+          "new": "        final boolean nnR10 = net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.oreScope(level,config);\n        int placed = 0;",
+          "count": 1
+        },
+        {
+          "old": "BlockState blockState = section.getBlockState(sectionRelativeX, sectionRelativeY, sectionRelativeZ);",
+          "new": "BlockState blockState = nnR10 ? net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.original(section,orePos) : section.getBlockState(sectionRelativeX, sectionRelativeY, sectionRelativeZ);",
+          "count": 1
+        },
+        {
+          "old": "                                                                section.setBlockState(\n                                                                    sectionRelativeX, sectionRelativeY, sectionRelativeZ, targetState.state, false\n                                                                );",
+          "new": "                                                                if (nnR10) net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.proposeSection(section,orePos,targetState.state);\n                                                                else section.setBlockState(\n                                                                    sectionRelativeX, sectionRelativeY, sectionRelativeZ, targetState.state, false\n                                                                );",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/feature/ReplaceBlobsFeature.java": {
+      "sha256": "0d1eda280f6c3cc27c2344156165290da29bdd77a7cfdcd71e0c6665f1a1267b",
+      "replacements": [
+        {
+          "old": "        RandomSource random = context.random();",
+          "new": "        final boolean nnR10 = net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.blobScope(level,config.targetState,config.replaceState);\n        RandomSource random = context.random();",
+          "count": 1
+        },
+        {
+          "old": "findTarget(level, context.origin()",
+          "new": "findTarget(nnR10 ? net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.originalView(level) : level, context.origin()",
+          "count": 1
+        },
+        {
+          "old": "            BlockState blockState = level.getBlockState(pos);",
+          "new": "            BlockState blockState = nnR10 ? net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.original(level,pos) : level.getBlockState(pos);",
+          "count": 1
+        },
+        {
+          "old": "                    this.setBlock(level, pos, config.replaceState);",
+          "new": "                    if (nnR10) net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.proposeBlock(level,pos,config.replaceState);\n                    else this.setBlock(level, pos, config.replaceState);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/CountOnEveryLayerPlacement.java": {
+      "sha256": "c6fea1d1d169b4a209325494f9101e5ad7400fd93956af78661d2a47f5f35a2d",
+      "replacements": [
+        {
+          "old": "        BlockPos.MutableBlockPos currentPos = new BlockPos.MutableBlockPos(xStart, yStart, zStart);",
+          "new": "        if (context.getLevel() instanceof NeverNetherPlanningViewR9)\n            return NeverNetherSubstrateR10.floor(context,xStart,zStart,layerToPlaceOn);\n        BlockPos.MutableBlockPos currentPos = new BlockPos.MutableBlockPos(xStart, yStart, zStart);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/chunk/LevelChunkSection.java": {
+      "sha256": "67e7976ac94cc0d061cbcccf9a8e48157cb65c297e56878c7eefc9cfcc96a22a",
+      "replacements": [
+        {
+          "old": "public class LevelChunkSection implements ca.spottedleaf.moonrise.patches.block_counting.BlockCountingChunkSection { // Paper - block counting",
+          "new": "public class LevelChunkSection implements ca.spottedleaf.moonrise.patches.block_counting.BlockCountingChunkSection { // Paper - block counting\n    // R10 experiment only: publication at CARVERS, no static world cache and no persistence fallback.\n    public transient volatile net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.SectionData neverNetherR10Data;",
+          "count": 1
+        },
+        {
+          "old": "    public BlockState setBlockState(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {\n        BlockState previous;",
+          "new": "    public BlockState setBlockState(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {\n        // R10: record ALL section-level writers, including direct ore writes and same-state structure writes.\n        if (this.neverNetherR10Data != null) net.minecraft.world.level.levelgen.placement.NeverNetherSubstrateR10.externalWrite(this, sectionX, sectionY, sectionZ);\n        BlockState previous;",
+          "count": 1
+        }
+      ]
+    }
+  }
+}
