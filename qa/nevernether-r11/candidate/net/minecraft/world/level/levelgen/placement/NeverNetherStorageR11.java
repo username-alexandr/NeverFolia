@@ -23,7 +23,7 @@ public final class NeverNetherStorageR11 {
     public static final String KEY = "neverfolia:substrate_r11";
     public static final String PROFILE = "NN-R11-SUBSTRATE-1-REMOTE-R10-PRIORITY";
     private static final int SIZE = 4096;
-    private static IllegalStateException bad(String why) { return new IllegalStateException("NN-R11 substrate: " + why); }
+    private static IllegalStateException bad(String why) { return new NeverNetherLoadGuardR11.InvalidSubstrate("NN-R11 substrate: " + why); }
     private static <T extends Comparable<T>> String value(BlockState s, Property<T> p) { return p.getName(s.getValue(p)); }
     private static String name(BlockState s) {
         var p = new TreeMap<String,String>();

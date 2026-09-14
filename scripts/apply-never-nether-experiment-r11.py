@@ -14,7 +14,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 JAVA=Path('folia-server/src/minecraft/java')
 PROFILE=ROOT/'worldgen-spec/never-nether-r11-hooks.json'
+LOADER_PROFILE=ROOT/'worldgen-spec/never-nether-r11-loader-hooks.json'
 HELPER='net/minecraft/world/level/levelgen/placement/NeverNetherStorageR11.java'
+HELPERS=(HELPER,'net/minecraft/world/level/levelgen/placement/NeverNetherLoadGuardR11.java')
 
 
 def transform(text: str, rule: dict) -> str:
@@ -36,17 +38,21 @@ def transform(text: str, rule: dict) -> str:
 
 def prepare(folia:Path)->dict[Path,str]:
     profile=json.loads(PROFILE.read_text())
-    if profile['schema']!=1:raise ValueError('Unknown hook schema')
+    loader=json.loads(LOADER_PROFILE.read_text())
+    if profile['schema']!=1 or loader['schema']!=1:raise ValueError('Unknown hook schema')
+    if set(profile['files']) & set(loader['files']):raise ValueError('Duplicate engine hook path')
+    profile['files'].update(loader['files'])
     target=folia/JAVA
     staged={target/rel:transform((target/rel).read_text(),rule) for rel,rule in profile['files'].items()}
     source=ROOT/'qa/nevernether-r11/candidate'
-    if {p.relative_to(source).as_posix() for p in source.rglob('*.java')}!={HELPER}:
+    if {p.relative_to(source).as_posix() for p in source.rglob('*.java')}!=set(HELPERS):
         raise ValueError('Unexpected R11 helper inventory')
-    text=(source/HELPER).read_text()
-    if not text.strip():raise ValueError('Empty helper')
-    dest=target/HELPER
-    if dest.exists() and dest.read_text()!=text:raise ValueError('Different installed helper; use a fresh generated build')
-    staged[dest]=text
+    for helper in HELPERS:
+        text=(source/helper).read_text()
+        if not text.strip():raise ValueError('Empty helper')
+        dest=target/helper
+        if dest.exists() and dest.read_text()!=text:raise ValueError('Different installed helper; use a fresh generated build')
+        staged[dest]=text
     return staged
 
 
