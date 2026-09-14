@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "after": "exact optional R11 c0860ee after R8/R9/remote R10",
+  "files": {
+    "net/minecraft/world/level/levelgen/placement/NeverNetherSubstrateR10.java": {
+      "sha256": "c2df48787a6b27610c34893e435f7936183067089e299db9bb3bf6c9b9c13f8a",
+      "replacements": [
+        {
+          "old": "if (priority(target.state) == 0 ||",
+          "new": "if (NeverNetherProposalR12.orePriority(target.state) == 0 ||",
+          "count": 1
+        },
+        {
+          "old": "        if (state.is(Blocks.NETHER_GOLD_ORE)) return 5;\n        if (state.is(Blocks.NETHER_QUARTZ_ORE)) return 4;\n        if (state.is(Blocks.MAGMA_BLOCK)) return 3;\n        if (state.is(Blocks.BLACKSTONE)) return 2;\n        if (state.is(Blocks.BASALT)) return 1;\n        return 0;",
+          "new": "        return NeverNetherProposalR12.priority(state);",
+          "count": 1
+        },
+        {
+          "old": "    public static boolean proposeBlock(WorldGenLevel level, BlockPos p, BlockState proposed) {\n        if (!level.ensureCanWrite(p)) return false;\n        return propose(level, section(level,p), p, proposed);\n    }",
+          "new": "    public static boolean proposeBlock(WorldGenLevel level, BlockPos p, BlockState proposed) {\n        return proposeBlock(level,p,proposed,2,512);\n    }\n    public static boolean proposeBlock(WorldGenLevel level, BlockPos p, BlockState proposed,int flags,int recursionLimit) {\n        if (!level.ensureCanWrite(p)) return false;\n        return propose(level,section(level,p),p,proposed,flags,recursionLimit);\n    }",
+          "count": 1
+        },
+        {
+          "old": "    private static boolean propose(WorldGenLevel level, LevelChunkSection section, BlockPos p, BlockState proposed) {\n        if",
+          "new": "    private static boolean propose(WorldGenLevel level, LevelChunkSection section, BlockPos p, BlockState proposed) {\n        return propose(level,section,p,proposed,2,512);\n    }\n    private static boolean propose(WorldGenLevel level, LevelChunkSection section, BlockPos p, BlockState proposed,int flags,int recursionLimit) {\n        if",
+          "count": 1
+        },
+        {
+          "old": "else if (!level.setBlock(p,proposed,2)) return false;",
+          "new": "else if (!level.setBlock(p,proposed,flags,recursionLimit)) return false;",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherStorageR11.java": {
+      "sha256": "edff588f9d707debc26b8bb012284892e9db8a23839da71133059ab93f8dc52a",
+      "replacements": [
+        {
+          "old": "NN-R11-SUBSTRATE-1-REMOTE-R10-PRIORITY",
+          "new": "NN-R12-SUBSTRATE-1-DECORATION-PROPOSALS",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherFloraCandidateR8.java": {
+      "sha256": "7da330b189790f5d5f496eb556ea2465d30306c0ec969151646d3b400df3eaec",
+      "replacements": [
+        {
+          "old": "BlockState state=snapshotReads?NeverNetherSubstrateR10.original(actual,p):actual.getBlockState(p);",
+          "new": "BlockState state=NeverNetherSubstrateR10.original(actual,p);",
+          "count": 1
+        },
+        {
+          "old": "        void commit() {\n            for(var entry:writes.entrySet()) {\n                BlockPos p=entry.getKey();Write write=entry.getValue();BlockState next=write.state(),current=actual.getBlockState(p);\n                if(next.isAir())continue; // origin clear is a planning operation, not destruction of another tree\n                if(current.hasBlockEntity())continue;\n                if(NeverNetherDecorationR8.isDecoratedPlant(current)) {\n                    if(winner(current,next)==current)continue;\n                } else if(!current.isAir() && (!current.canBeReplaced() || !current.getFluidState().isEmpty()))continue;\n                actual.setBlock(p,next,write.flags(),write.limit());\n            }\n        }",
+          "new": "        void commit() {\n            for(var entry:writes.entrySet()) {\n                Write write=entry.getValue();\n                if(write.state().isAir())continue; // proposal-local clearing only\n                NeverNetherSubstrateR10.proposeBlock(actual,entry.getKey(),write.state(),write.flags(),write.limit());\n            }\n        }",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/feature/GlowstoneFeature.java": {
+      "sha256": "0e54eb597959b4b33aeef80858abd9dfcd05e9aa65913a87d39910614619be63",
+      "replacements": [
+        {
+          "old": "    public boolean place(final FeaturePlaceContext<NoneFeatureConfiguration> context) {",
+          "new": "    public boolean place(final FeaturePlaceContext<NoneFeatureConfiguration> context) {\n        if (net.minecraft.world.level.levelgen.placement.NeverNetherProposalR12.handles(context.level()))\n            return net.minecraft.world.level.levelgen.placement.NeverNetherProposalR12.glowstone(this,context);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/feature/SpringFeature.java": {
+      "sha256": "7ccdeba223ff387265db9935ff217dfbc376dabb9307a64b8e632a0d022cf534",
+      "replacements": [
+        {
+          "old": "    public boolean place(final FeaturePlaceContext<SpringConfiguration> context) {",
+          "new": "    public boolean place(final FeaturePlaceContext<SpringConfiguration> context) {\n        if (net.minecraft.world.level.levelgen.placement.NeverNetherProposalR12.handlesSpring(context))\n            return net.minecraft.world.level.levelgen.placement.NeverNetherProposalR12.spring(this,context);",
+          "count": 1
+        }
+      ]
+    }
+  }
+}
