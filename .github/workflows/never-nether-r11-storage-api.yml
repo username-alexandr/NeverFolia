@@ -43,6 +43,11 @@ jobs:
                   p=Path('net/minecraft')/name
                   if not (root/p).is_file(): continue
                   raw=(root/p).read_bytes();z.writestr(str(p),raw);hashes[str(p)]=hashlib.sha256(raw).hexdigest()
+              for target in ['ChunkLoadTask.java','GenericDataLoadTask.java']:
+                  matches=list(Path('.work/Folia/folia-server/src').rglob(target))
+                  if len(matches)!=1: raise ValueError(f'Expected exactly one generated {target}: {matches}')
+                  p=matches[0];raw=p.read_bytes();name='loader/'+p.relative_to(Path('.work/Folia/folia-server')).as_posix()
+                  z.writestr(name,raw);hashes[name]=hashlib.sha256(raw).hexdigest()
           assert 'net/minecraft/world/level/chunk/storage/SerializableChunkData.java' in hashes
           Path('artifacts/API-SHA256.json').write_text(json.dumps(hashes,indent=2)+'\n')
           PY
