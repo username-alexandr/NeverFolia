@@ -33,7 +33,7 @@ def read_snapshot(path: Path, coordinate: tuple[int,int]) -> np.ndarray:
     return np.frombuffer(raw,dtype='>u4',offset=24)
 
 
-def load(directory: Path) -> dict:
+def load(directory: Path, *, max_chunks: int = 512) -> dict:
     run=json.loads((directory/'run-evidence.json').read_text())
     if run.get('schema')!=2 or run.get('runtime_unchanged') is not True or run.get('inputs_unchanged') is not True or run.get('stage')!='completed' or run.get('process_exit_code')!=0 or run.get('forced_stop') is not False:
         raise ValueError('A failed/timed-out run is not passing stage evidence')
@@ -56,7 +56,7 @@ def load(directory: Path) -> dict:
     if not states or len(states)!=len(set(states.values())): raise ValueError('Invalid state dictionary')
     states={int(i):s for i,s in states.items()}
     chunks=report['plan']['chunks']
-    if not chunks or len(chunks)>512 or len(chunks)!=len({tuple(c) for c in chunks}):
+    if not chunks or len(chunks)>max_chunks or len(chunks)!=len({tuple(c) for c in chunks}):
         raise ValueError('Empty, duplicate or unbounded chunk plan')
     for c in chunks:
         if len(c)!=2 or any(type(n)!=int for n in c):raise ValueError('Invalid chunk coordinate')
@@ -101,8 +101,8 @@ def diff(a: dict,b: dict,phase_a: str,phase_b: str) -> dict:
             'samples':samples}
 
 
-def compare(left: Path,right: Path,relation: str='reverse') -> dict:
-    a=load(left);b=load(right)
+def compare(left: Path,right: Path,relation: str='reverse', *, max_chunks: int = 512) -> dict:
+    a=load(left,max_chunks=max_chunks);b=load(right,max_chunks=max_chunks)
     if relation not in ('reverse','same'):raise ValueError('Unknown request-order relation')
     if a['chunks']!=(list(reversed(b['chunks'])) if relation=='reverse' else b['chunks']):
         raise ValueError('Request order does not match declared relation')

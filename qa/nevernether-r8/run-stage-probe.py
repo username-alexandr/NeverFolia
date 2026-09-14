@@ -64,7 +64,7 @@ def runtime_inventory(runtime: Path) -> tuple[list[str], dict]:
                      'manifest_sha256': sha(runtime / 'classpath.txt')}
 
 
-def main() -> int:
+def main(plan_validator=checked_plan) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--java', type=Path, required=True)
     parser.add_argument('--runtime-dir', type=Path, required=True)
@@ -86,7 +86,7 @@ def main() -> int:
         for path in (args.java, args.pack, args.qa_plugin):
             if not path.is_file():
                 raise ValueError(f'Missing required input: {path}')
-        plan = checked_plan(args.plan, args.seed, args.reverse)
+        plan = plan_validator(args.plan, args.seed, args.reverse)
         runtime = args.runtime_dir.resolve()
         entries, inventory = runtime_inventory(runtime)
     except (OSError, ValueError, TypeError) as error:
