@@ -1,0 +1,5 @@
+name: NN-STAGE-R8-QA
+version: 0.13.1
+main: NeverNetherFullProbeR13
+api-version: '26.2'
+folia-supported: true

@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "stage": "R13 original1599 FULL-only and diagnostic packaging",
+  "base_commit": "9bbd5d3cfcca180669a77de47f42112de187d086",
+  "generator_source_commit": "5c00ef2f56724cde62d7619cab02dae708e775f8",
+  "paperclip_commit": "905363cfaf2d72a14cc277e69314f13902625925",
+  "new_generator_behavior_changes": false,
+  "production_entry_point_changed": false,
+  "seed": 7270913,
+  "chunks": 1599,
+  "range_y": [
+    -128,
+    895
+  ],
+  "exact_r7_coverage_sha256": "cb4f123132048322c8601eaf097ca68679128882a9269f43fe9740dff285d2e6",
+  "compared_block_states_per_phase": 419168256,
+  "full_differences": 3813,
+  "settled_differences": 3813,
+  "different_chunks": 56,
+  "within_run_late_differences": {
+    "forward": 0,
+    "reverse": 0
+  },
+  "persisted_changed_chunk_counts": {
+    "blocks": 56,
+    "biomes": 0,
+    "structures": 0,
+    "heightmaps": 0,
+    "block_entities": 0
+  },
+  "persisted_changed_coordinate_set_matches_snapshots": true,
+  "metadata_observations": 1599,
+  "metadata_sections": 102336,
+  "metadata_different_chunks": 56,
+  "residual_provenance_counts": {
+    "different_blocks": 3813,
+    "original_equal": 3813,
+    "external_0_1": 2274,
+    "external_1_1": 39,
+    "external_1_0": 1500
+  },
+  "provenance_caveat": "External means outside the tracked proposal system, not proof of a plugin or identity of a responsible writer.",
+  "full_runs": {
+    "full-forward": {
+      "stage": "completed",
+      "process_exit_code": 0,
+      "forced_stop": false,
+      "elapsed_seconds": 647.0568658930001,
+      "runtime_unchanged": true,
+      "inputs_unchanged": true,
+      "last_observation_count": 3198
+    },
+    "full-reverse": {
+      "stage": "completed",
+      "process_exit_code": 0,
+      "forced_stop": false,
+      "elapsed_seconds": 634.5525617580001,
+      "runtime_unchanged": true,
+      "inputs_unchanged": true,
+      "last_observation_count": 3198
+    }
+  },
+  "three_stage_gate": "NO_VALID_FORWARD_REVERSE_PAIR; unchanged CARVERS/LIGHT comparator not passed by this protocol",
+  "full_only_equality_gate": "BLOCKED",
+  "persisted_equality_gate": "BLOCKED",
+  "release_ready": false,
+  "new_synthetic_full_protocol_tests_local": 22,
+  "full_structure_pack_sha256": "0cdc620a6a2dc09fa0e3ea2daf0253045345962aa5970494a39847f3c88fcf22",
+  "scope": "Single seed and exact original 1599 coordinates. Frozen FULL snapshots plus real saved Anvil inspection. Not dynamics, fluid stabilization, full structure traversal, original screenshot fixes or general determinism acceptance.",
+  "paperclip_ci": {
+    "run": 34871586469,
+    "status": "success",
+    "jar_sha256": "67de8a381187f05d1748711b52f9bffbe45195027a93ccfcf0dc790eebf0d6da",
+    "artifact_sha256": "70859d8609354cb99c23389f1695799f5d254b153bb511dac408bf1d391b808c",
+    "packaged_jar_startup_passed": true,
+    "scope": "Packaged JAR with Core, not the large full-structure test"
+  },
+  "approved_starts_both": 20,
+  "approved_start_layouts_equal": 20,
+  "donjon_gallery_present": false,
+  "runtime_provenance": {
+    "pack_sha256": "0cdc620a6a2dc09fa0e3ea2daf0253045345962aa5970494a39847f3c88fcf22",
+    "qa_plugin_sha256": "b5dbcdbce6d3cad5e3344befdb3d62c1469c14376ca87661405d32cbc834f47c",
+    "runtime_payload_sha256": "67a977c7bde6bb5695d0562d20820989b46b75af9f187b153e2bfad46327765a",
+    "classpath_manifest_sha256": "409fce09d31e4d26b68a374b4107ec02b2aaef4d2d4f1308aa2012ba2159df2f",
+    "java_executable_sha256": "7380ce48ed5013735d2c8414db54adb8f981e7933ff594bd36f3baccddaafba3",
+    "jvm_flags": [
+      "-Xms512M",
+      "-Xmx3200M",
+      "-XX:ActiveProcessorCount=4",
+      "-Dpaper.disablePluginRemapping=true",
+      "-Dneverfolia.qa.stageProbe=true"
+    ]
+  },
+  "observer_recompilation": {
+    "NeverNetherFullProbeR13.class": {
+      "sha256": "cff6cdb6c6571db2e19784ecf26ea13724bca50a84f6863fa5ded4301508fe70",
+      "identical_to_used_probe": true
+    }
+  }
+}
