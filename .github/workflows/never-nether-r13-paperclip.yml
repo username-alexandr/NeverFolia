@@ -24,6 +24,7 @@ jobs:
           mkdir -p artifacts
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
           git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
+          git archive --format=zip HEAD -o artifacts/source.zip
           git config --global user.email actions@github.com
           git config --global user.name 'NeverFolia CI'
           python3 scripts/prepare-never-nether-r13-upstream.py --check-only
@@ -40,7 +41,7 @@ jobs:
           import hashlib,json,os,shutil,zipfile
           from pathlib import Path
           candidates=[]
-          for p in Path('.work/Folia/folia-server/build/libs').glob('*.jar'):
+          for p in Path('.work/Folia/folia-server/build/libs').glob('folia-paperclip-*.jar'):
               with zipfile.ZipFile(p) as z:
                   if 'META-INF/MANIFEST.MF' not in z.namelist(): continue
                   manifest=z.read('META-INF/MANIFEST.MF').decode('utf-8').replace('\r\n','\n').replace('\n ','')
