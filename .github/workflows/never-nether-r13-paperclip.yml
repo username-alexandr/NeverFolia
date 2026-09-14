@@ -2,7 +2,7 @@ name: NeverNether R13 Diagnostic Paperclip
 on:
   push:
     branches: [wip/nevernether-field-r1]
-    paths: [.github/workflows/never-nether-r13-paperclip.yml]
+    paths: [.github/workflows/never-nether-r13-paperclip.yml, scripts/prepare-never-nether-r13-upstream.py]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,8 @@ jobs:
           git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
           git config --global user.email actions@github.com
           git config --global user.name 'NeverFolia CI'
-          bash scripts/prepare-upstream.sh
+          python3 scripts/prepare-never-nether-r13-upstream.py --check-only
+          python3 scripts/prepare-never-nether-r13-upstream.py
           git -C .work/Folia rev-parse HEAD > artifacts/FOLIA-SHA.txt
           test "$(cat artifacts/FOLIA-SHA.txt)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
