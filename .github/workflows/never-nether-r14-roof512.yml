@@ -1,0 +1,158 @@
+name: NeverNether R14 Roof512 Compile and Diagnostic Jar
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths:
+      - 'scripts/*height*r14.py'
+      - 'scripts/apply-never-nether-experiment-r14.py'
+      - 'worldgen-spec/never-nether* r14.json'
+      - 'worldgen-spec/never-nether-height-r14.json'
+      - 'worldgen-spec/never-nether-r14-hooks.json'
+      - 'qa/nevernether-r14/candidate/**'
+      - 'qa/nevernether-r14/NeverNetherHeightR14Smoke.java'
+      - '.github/workflows/never-nether-r14-roof512.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  roof512:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Height pack and exact source contracts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
+          git archive --format=zip HEAD -o artifacts/source.zip
+          python3 scripts/test-never-nether-height-pack-r14.py 2>&1 | tee artifacts/height-pack-tests.log
+          python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/height-hooks-tests.log
+      - name: Compile pinned full chain and R14, exercise native guards, export diagnostic runtime
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-experiment-r14.py .work/Folia --acknowledge-experimental-worldgen
+          cat > .work/r14.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'r14-qa-classes')
+              def runtimeClasspath = server.sourceSets.main.runtimeClasspath
+              def artifactDir = new File(gradle.rootProject.projectDir, '../../artifacts')
+              def qaCompile = server.tasks.register('neverNetherR14QaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source new File(gradle.rootProject.projectDir, '../../qa/nevernether-r14/NeverNetherHeightR14Smoke.java')
+                  destinationDirectory = qaDir
+                  classpath = runtimeClasspath
+                  options.release = 25
+              }
+              server.tasks.register('neverNetherR14Smoke', JavaExec) {
+                  dependsOn qaCompile
+                  classpath = runtimeClasspath + server.files(qaDir)
+                  mainClass = 'NeverNetherHeightR14Smoke'
+                  jvmArgs '-ea'
+              }
+              server.tasks.register('neverNetherR14OfflineRuntime') {
+                  dependsOn server.tasks.named('classes')
+                  inputs.files(runtimeClasspath)
+                  outputs.file(new File(artifactDir, 'NeverNether-R14-offline-runtime.zip'))
+                  doLast {
+                      def runtime = runtimeClasspath.files.findAll { it.exists() }.toList()
+                      artifactDir.mkdirs()
+                      def manifest = []
+                      new java.util.zip.ZipOutputStream(new FileOutputStream(new File(artifactDir, 'NeverNether-R14-offline-runtime.zip'))).withCloseable { zip ->
+                          runtime.eachWithIndex { f, i ->
+                              manifest.add("cp/${i}" + (f.isFile() ? "/${f.name}" : ''))
+                              def files = f.isFile() ? [f] : server.fileTree(f).files.sort { it.path }
+                              files.each { entry ->
+                                  def path = "cp/${i}/" + (f.isFile() ? f.name : f.toPath().relativize(entry.toPath()).toString())
+                                  zip.putNextEntry(new java.util.zip.ZipEntry(path))
+                                  entry.withInputStream { input -> input.transferTo(zip) }
+                                  zip.closeEntry()
+                              }
+                          }
+                          zip.putNextEntry(new java.util.zip.ZipEntry('classpath.txt'))
+                          zip.write((manifest.join('\n') + '\n').getBytes('UTF-8'))
+                          zip.closeEntry()
+                      }
+                  }
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverNetherR14Smoke :folia-server:neverNetherR14OfflineRuntime :folia-server:createPaperclipJar -I ../r14.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/native-build-smoke.log
+          python3 - <<'PY'
+          import hashlib,json,os,shutil,zipfile
+          from pathlib import Path
+          candidates=list(Path('.work/Folia/folia-server/build/libs').glob('folia-paperclip-*.jar'))
+          if len(candidates)!=1:raise ValueError('Expected one exact Paperclip output')
+          source=candidates[0]
+          with zipfile.ZipFile(source) as z:
+              if z.testzip() is not None:raise ValueError('Corrupt jar')
+              if 'io.papermc.paperclip.Main' not in z.read('META-INF/MANIFEST.MF').decode():raise ValueError('Wrong runnable manifest')
+          dest=Path('artifacts')/f"NeverFolia-NN-R14-ROOF512-DIAGNOSTIC-{os.environ['GITHUB_SHA'][:7]}.jar"
+          shutil.copyfile(source,dest)
+          info={'source_sha':os.environ['GITHUB_SHA'],'jar':dest.name,'jar_sha256':hashlib.sha256(dest.read_bytes()).hexdigest(),'profile':'NN-R14-SUBSTRATE-1-ROOF512','roof_y':512,'build_above_roof':False,'release_ready':False,'scope':'Height512 diagnostic binary. Broad determinism, gameplay, fluids and migration not accepted by this compile job.'}
+          Path('artifacts/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
+          PY
+      - name: Packaged JAR startup with matching new Core
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-nether-core-test1-pack.py --output .work/r13-core.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/r13-core.zip --inject
+          python3 scripts/build-never-nether-height-r14.py --input .work/r13-core.zip --output artifacts/NeverNether-R14-Core-ROOF512.zip > artifacts/height-core.json
+          python3 - <<'PY'
+          import json,shutil,subprocess,time
+          from pathlib import Path
+          root=Path.cwd();info=json.loads((root/'artifacts/BUILD-INFO.json').read_text())
+          world=root/'.work/r14-packaged-smoke';world.mkdir(exist_ok=False)
+          (world/'world/datapacks').mkdir(parents=True)
+          shutil.copyfile(root/'artifacts/NeverNether-R14-Core-ROOF512.zip',world/'world/datapacks/NeverNether.zip')
+          (world/'eula.txt').write_text('eula=true\n')
+          (world/'server.properties').write_text('level-name=world\nlevel-seed=7270913\ninitial-enabled-packs=vanilla,file/NeverNether.zip\nserver-ip=127.0.0.1\nserver-port=25596\nonline-mode=false\nenforce-secure-profile=false\nview-distance=2\nsimulation-distance=2\nenable-status=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n')
+          log=root/'artifacts/jar-startup.log';ready=False;forced=False;start=time.monotonic()
+          with log.open('w') as out:
+              child=subprocess.Popen(['java','-Xms512M','-Xmx2G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts'/info['jar']),'--nogui'],cwd=world,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True)
+              try:
+                  while time.monotonic()-start<180 and child.poll() is None:
+                      if 'Done (' in log.read_text(errors='replace'):ready=True;time.sleep(5);break
+                      time.sleep(1)
+              finally:
+                  if child.poll() is None:
+                      try:child.stdin.write('stop\n');child.stdin.flush();child.wait(timeout=90)
+                      except (OSError,subprocess.TimeoutExpired):
+                          forced=True;child.terminate()
+                          try:child.wait(timeout=20)
+                          except subprocess.TimeoutExpired:child.kill();child.wait(timeout=10)
+          result={'ready':ready,'forced_stop':forced,'process_exit_code':child.returncode,'elapsed_seconds':time.monotonic()-start,'release_ready':False,'scope':'Packaged jar with Core startup only; no external assets or broad equality test.'}
+          (root/'artifacts/jar-process.json').write_text(json.dumps(result,indent=2)+'\n')
+          gate=subprocess.run(['python3','scripts/validate-never-nether-startup-r5.py','--log',str(log),'--exit-code',str(child.returncode),'--pack','artifacts/NeverNether-R14-Core-ROOF512.zip','--output','artifacts/jar-startup-report.json'],cwd=root)
+          if not ready or forced or child.returncode!=0 or gate.returncode!=0:raise SystemExit('Diagnostic R14 startup failed')
+          PY
+      - name: Record provenance and scope
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git ls-files 'qa/nevernether-r14/*' 'scripts/*height*r14.py' 'scripts/apply-never-nether-experiment-r14.py' 'worldgen-spec/*r14*.json' | xargs sha256sum > artifacts/IMPLEMENTATION-SHA256.txt
+          printf '%s\n' 'Diagnostic new-world roof512 only. No old-world migration, broad equality or complete gameplay acceptance. Never remove fingerprint/height locks or enable this on a live world.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-r14-roof512-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

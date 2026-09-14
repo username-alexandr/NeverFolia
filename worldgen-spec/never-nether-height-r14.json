@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "base_commit": "83da441f5e559c8cf23929e3743689e6bb10cfc9",
+  "profile": "NN-R14-SUBSTRATE-1-ROOF512",
+  "dimension": {
+    "min_y": -128,
+    "height": 656,
+    "max_y": 527,
+    "sections": 41,
+    "bedrock_roof_y": 512,
+    "bedrock_envelope": 5,
+    "unbuildable_padding_y": [513, 527],
+    "logical_height": 641
+  },
+  "structure_bbox_y": [-123, 507],
+  "primary_lava_y": 32,
+  "source_contract_sha256": {
+    "data/minecraft/dimension_type/the_nether.json": "c26ce820ecf16835eb2ee76eeeb764cada87e44e17b3d83ae77945f9ff59578b",
+    "data/minecraft/worldgen/noise_settings/nether.json": "01cadee2f81a74aa3600f431b83e095a4b545afb3b737d8ad318b6f608810e59",
+    "data/neverfolia/worldgen/density_function/never_nether/final_density.json": "fb29c5e528c039237a56eb0c866058518b9b4dc78379fe08ded5958ea58ef179",
+    "nevernether-core-manifest.json": "e2e0977239c0a33a975737ef4d3611874ad350ac6140355363b0fcb8a2f93657"
+  }
+}
