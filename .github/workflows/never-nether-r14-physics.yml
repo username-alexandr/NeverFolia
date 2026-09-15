@@ -1,0 +1,75 @@
+name: NeverNether R14 Packaged Roof Physics
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths:
+      - 'qa/nevernether-r14/NeverNetherRoofPhysicsR14.java'
+      - 'qa/nevernether-r14/run-roof-physics-jar.py'
+      - 'qa/nevernether-r14/physics-plugin.yml'
+      - '.github/workflows/never-nether-r14-physics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  physics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Obtain the exact already-built diagnostic artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .work/r14-physics-input artifacts
+          git rev-parse HEAD > artifacts/QA-SOURCE-SHA.txt
+          git archive --format=zip HEAD -o artifacts/qa-source.zip
+          curl --fail --location --retry 2 --max-time 120 --header "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/username-alexandr/NeverFolia/actions/artifacts/10386092675/zip --output .work/r14-native-input.zip
+          echo '26c62a68353b1863e468a831bcb880992a98bb87a25b16911aa576953b176fd4  .work/r14-native-input.zip' | sha256sum --check
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,zipfile
+          with zipfile.ZipFile('.work/r14-native-input.zip') as z:
+              if z.testzip() is not None:raise ValueError('Corrupt pinned artifact')
+              for row in z.read('SHA256SUMS.txt').decode().splitlines():
+                  h,n=row.split(None,1);n=n.strip().removeprefix('./')
+                  if hashlib.sha256(z.read(n)).hexdigest()!=h:raise ValueError('Inner checksum: '+n)
+              if z.read('SOURCE-SHA.txt').decode().strip()!='b4ac445d7495fb4d7189111ae8f8e42428a4a798':raise ValueError('Wrong native source revision')
+              z.extractall('.work/r14-physics-input')
+          with zipfile.ZipFile('.work/r14-physics-input/NeverNether-R14-offline-runtime.zip') as z:z.extractall('.work/r14-physics-runtime')
+          PY
+      - name: Compile QA only and exercise the packaged JAR on a new world
+        run: |
+          set -euo pipefail
+          CP=$(python3 -c 'from pathlib import Path; import os; r=Path(".work/r14-physics-runtime").resolve(); print(os.pathsep.join(str(r/p) for p in (r/"classpath.txt").read_text().splitlines()))')
+          mkdir -p .work/r14-physics-classes
+          javac --release 25 -cp "$CP" -d .work/r14-physics-classes qa/nevernether-r14/NeverNetherRoofPhysicsR14.java 2>&1 | tee artifacts/qa-compile.log
+          cp qa/nevernether-r14/physics-plugin.yml .work/r14-physics-classes/plugin.yml
+          jar --create --file artifacts/roof-physics-qa.jar -C .work/r14-physics-classes .
+          cp .work/r14-physics-input/BUILD-INFO.json artifacts/NATIVE-BUILD-INFO.json
+          JAR=$(python3 -c 'import json; print(json.load(open("artifacts/NATIVE-BUILD-INFO.json"))["jar"])')
+          status=0
+          python3 qa/nevernether-r14/run-roof-physics-jar.py --java "$JAVA_HOME/bin/java" --jar ".work/r14-physics-input/$JAR" --pack .work/r14-physics-input/NeverNether-R14-Core-ROOF512.zip --qa-plugin artifacts/roof-physics-qa.jar --new-directory .work/r14-physics-world --accept-eula > artifacts/driver.log 2>&1 || status=$?
+          for file in run.log physics-execution.json probe-progress.json; do
+            if test -f ".work/r14-physics-world/$file"; then cp ".work/r14-physics-world/$file" "artifacts/$file"; fi
+          done
+          test "$status" = 0
+          python3 scripts/validate-never-nether-startup-r5.py --log artifacts/run.log --exit-code 0 --pack .work/r14-physics-input/NeverNether-R14-Core-ROOF512.zip --output artifacts/startup-report.json
+      - name: Record verification scope
+        if: always()
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' 'Packaged b4ac445 JAR and Core only. One active-physics chunk, actual falling-block placement attempts, piston and lava. No full-structure or 1599-chunk generation acceptance. The pinned input artifact expires; missing or different bytes fail, never substitute latest.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-r14-packaged-physics-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
