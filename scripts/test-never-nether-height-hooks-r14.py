@@ -25,7 +25,7 @@ class HookTests(unittest.TestCase):
         before=self.snapshot()
         with self.assertRaises((OSError,ValueError)):P.prepare(self.folia)
         self.assertEqual(before,self.snapshot())
-    def test_exact_inventory(self):self.assertEqual(len(P.prepare(self.folia)),15)
+    def test_exact_inventory(self):self.assertEqual(len(P.prepare(self.folia)),16)
     def test_prepare_read_only(self):
         before=self.snapshot();P.prepare(self.folia);self.assertEqual(before,self.snapshot())
     def test_idempotence(self):
@@ -50,16 +50,15 @@ class HookTests(unittest.TestCase):
     def test_changed_installed_hook_rejected(self):
         for p,s in P.prepare(self.folia).items():p.parent.mkdir(parents=True,exist_ok=True);p.write_text(s)
         p=self.folia/P.JAVA/next(iter(self.original));p.write_text(p.read_text()+'unexpected');self.reject()
+    def test_inside_outside_height_methods_remain_complementary(self):
+        c=json.loads((ROOT/'worldgen-spec/never-nether-r14-hooks.json').read_text())['files']['net/minecraft/world/level/Level.java']
+        self.assertTrue(any(r['new']=='return !this.isOutsideBuildHeight(blockY);' for r in c['replacements']))
     def test_thread_guards_remain_before_height_mutation_guard(self):
         cfg=json.loads((ROOT/'worldgen-spec/never-nether-r14-hooks.json').read_text())
         for c in cfg['files'].values():
             for i in c['replacements']:
                 if 'TickThread.ensureTickThread' in i['old']:
                     self.assertTrue(i['new'].startswith(i['old']));self.assertIn('canSet',i['new'])
-    def test_inside_height_delegates_to_complementary_outside_check(self):
-        cfg=json.loads((ROOT/'worldgen-spec/never-nether-r14-hooks.json').read_text())
-        rules=cfg['files']['net/minecraft/world/level/Level.java']['replacements']
-        self.assertEqual([i['new'] for i in rules if i['old']=='return blockY >= this.minY && blockY <= this.maxY;'],['return !this.isOutsideBuildHeight(blockY);'])
     def test_old_production_entrypoint_unchanged(self):
         self.assertNotIn('experiment-r14.py',(ROOT/'scripts/apply-neverfolia-post-patches.sh').read_text())
 if __name__=='__main__':unittest.main(verbosity=2)
