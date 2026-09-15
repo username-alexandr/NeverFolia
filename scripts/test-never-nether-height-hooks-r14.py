@@ -56,6 +56,10 @@ class HookTests(unittest.TestCase):
             for i in c['replacements']:
                 if 'TickThread.ensureTickThread' in i['old']:
                     self.assertTrue(i['new'].startswith(i['old']));self.assertIn('canSet',i['new'])
+    def test_inside_height_delegates_to_complementary_outside_check(self):
+        cfg=json.loads((ROOT/'worldgen-spec/never-nether-r14-hooks.json').read_text())
+        rules=cfg['files']['net/minecraft/world/level/Level.java']['replacements']
+        self.assertEqual([i['new'] for i in rules if i['old']=='return blockY >= this.minY && blockY <= this.maxY;'],['return !this.isOutsideBuildHeight(blockY);'])
     def test_old_production_entrypoint_unchanged(self):
         self.assertNotIn('experiment-r14.py',(ROOT/'scripts/apply-neverfolia-post-patches.sh').read_text())
 if __name__=='__main__':unittest.main(verbosity=2)
