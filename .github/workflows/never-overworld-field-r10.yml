@@ -1,0 +1,110 @@
+name: NeverOverworld Field R10 Compile and Test Jar
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'scripts/apply-never-overworld-field-r10.py'
+      - 'scripts/test-never-overworld-field-r10.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - '.github/workflows/never-overworld-field-r10.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  field-r10:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Exact source transformer contracts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
+          python3 scripts/test-never-overworld-field-r10.py 2>&1 | tee artifacts/field-r10-python-tests.log
+      - name: Compile complete NeverFolia chain and run native field tests
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          python3 scripts/apply-never-overworld-field-r10.py .work/Folia --check-only
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          cat > .work/field-r10.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'field-r10-qa-classes')
+              def runtimeClasspath = server.sourceSets.main.runtimeClasspath
+              def qaCompile = server.tasks.register('neverOverworldFieldR10QaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source gradle.rootProject.files(
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r10/FieldChunkSmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r10/VillageFoundationSmoke.java'))
+                  destinationDirectory = qaDir
+                  classpath = runtimeClasspath
+                  options.release = 25
+              }
+              server.tasks.register('neverOverworldFieldR10ChunkSmoke', JavaExec) {
+                  dependsOn qaCompile
+                  classpath = runtimeClasspath + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.chunk.FieldChunkSmoke'
+                  jvmArgs '-ea'
+              }
+              server.tasks.register('neverOverworldFieldR10VillageSmoke', JavaExec) {
+                  dependsOn qaCompile
+                  classpath = runtimeClasspath + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke'
+                  jvmArgs '-ea'
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverOverworldFieldR10ChunkSmoke :folia-server:neverOverworldFieldR10VillageSmoke :folia-server:createPaperclipJar -I ../field-r10.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/native-build-smoke.log
+          python3 - <<'PY'
+          import hashlib,json,os,shutil,zipfile
+          from pathlib import Path
+          candidates=list(Path('.work/Folia/folia-server/build/libs').glob('folia-paperclip-*.jar'))
+          if len(candidates)!=1: raise ValueError(f'Expected one Paperclip output: {candidates}')
+          src=candidates[0]
+          with zipfile.ZipFile(src) as z:
+              if z.testzip() is not None: raise ValueError('Corrupt Paperclip')
+              if 'io.papermc.paperclip.Main' not in z.read('META-INF/MANIFEST.MF').decode(): raise ValueError('Wrong main class')
+          dest=Path('artifacts')/f"NeverFolia-NN-FIELD-R10-TEST-{os.environ['GITHUB_SHA'][:7]}.jar"
+          shutil.copyfile(src,dest)
+          Path('artifacts/BUILD-INFO.json').write_text(json.dumps({
+              'schema':1,'source_sha':os.environ['GITHUB_SHA'],'jar':dest.name,
+              'jar_sha256':hashlib.sha256(dest.read_bytes()).hexdigest(),
+              'overworld_seed_reproduction':-2996952393010080672,
+              'village_policy':'piece-local-supported-foundations',
+              'submerged_cleanup':'buried-snow+water-contact-terrestrial-flora',
+              'ore_final_retention_percent':50,
+              'nether_bug01_retained':True,'release_ready':False,
+              'scope':'Compile/native API candidate. Natural user-seed world acceptance is separate.'},indent=2)+'\n')
+          PY
+      - name: Scope and checksums
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git ls-files 'native/neveroverworld/field-r10/**' 'qa/neveroverworld-field-r10/**' 'scripts/apply-never-overworld-field-r10.py' 'scripts/test-never-overworld-field-r10.py' | xargs sha256sum > artifacts/IMPLEMENTATION-SHA256.txt
+          printf '%s\n' 'TEST CANDIDATE ONLY. CI proves exact-source integration and native fixtures, not natural village/flood/ore visual acceptance on the user seed. Existing worlds are not migrated.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-field-r10-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
