@@ -1,7 +1,5 @@
 package net.minecraft.world.level.chunk;
 
-import java.util.ArrayList;
-import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.tags.BlockTags;
@@ -10,12 +8,14 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.structure.BoundingBox;
-import net.minecraft.world.level.levelgen.structure.StructureStart;
 
 /**
  * Field cleanup for snow buried by post-flood sediment and terrestrial flora
  * that survives inside actual water. No neighbouring chunk is read or written.
+ * Broad structure bounding boxes are deliberately not exclusions: in this
+ * flooded world, snow below Y=128 is invalid terrain and terrestrial flora that
+ * physically touches source water must not survive merely because a large
+ * structure start encloses the coordinate.
  */
 public final class NeverOverworldSubmergedRemnants {
     private static final int EXPECTED_MIN_Y = -512;
@@ -36,7 +36,6 @@ public final class NeverOverworldSubmergedRemnants {
         if (chunk.getMinY() != EXPECTED_MIN_Y || chunk.getHeight() != EXPECTED_HEIGHT) {
             throw new IllegalStateException("NeverOverworld submerged cleanup requires -512..511 chunk envelope");
         }
-        final List<BoundingBox> protectedBoxes = protectionBoxes(chunk);
         final LevelChunkSection[] sections = chunk.getSections();
         final ChunkPos chunkPos = chunk.getPos();
         final int minX = chunkPos.getMinBlockX();
@@ -62,7 +61,6 @@ public final class NeverOverworldSubmergedRemnants {
                         if (!isCandidate(state)) continue;
                         final int x = minX + localX;
                         final int z = minZ + localZ;
-                        if (isProtected(protectedBoxes, x, y, z)) continue;
                         pos.set(x, y, z);
                         if (isFrozenRemnant(state)) {
                             chunk.setBlockState(pos, frozenReplacement(chunk, pos), 0);
@@ -179,22 +177,5 @@ public final class NeverOverworldSubmergedRemnants {
             || state.is(Blocks.GRANITE)
             || state.is(Blocks.DEEPSLATE)
             || state.is(Blocks.TUFF);
-    }
-
-    private static List<BoundingBox> protectionBoxes(final ChunkAccess chunk) {
-        final ArrayList<BoundingBox> result = new ArrayList<>();
-        for (StructureStart start : chunk.getAllStarts().values()) {
-            if (start != null && start.isValid()) result.add(start.getBoundingBox());
-        }
-        return result;
-    }
-
-    private static boolean isProtected(final List<BoundingBox> boxes, final int x, final int y, final int z) {
-        for (BoundingBox box : boxes) {
-            if (x >= box.minX() - 1 && x <= box.maxX() + 1
-                && y >= box.minY() - 1 && y <= box.maxY() + 1
-                && z >= box.minZ() - 1 && z <= box.maxZ() + 1) return true;
-        }
-        return false;
     }
 }
