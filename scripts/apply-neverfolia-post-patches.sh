@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Compatibility entry point retained for workflows and local builds.
 # The historical transformer body is preserved in apply-neverfolia-post-patches-core.sh.
-# This wrapper makes R9 V17 the final authoritative village layer in every normal build.
+# This wrapper makes R9 V17 the final authoritative village base layer, then
+# installs FIELD-R10's exact-source village/flood/ore corrections.
 #
 # Contract forwarding for validate-never-overworld-spec.py: these exact stages
 # are executed by apply-neverfolia-post-patches-core.sh before this wrapper adds
@@ -30,6 +31,10 @@ echo "[NeverFolia] Freezing final R9 V17 village production policy (rings128)"
 python3 "${ROOT_DIR}/scripts/finalize-never-overworld-village-v17.py" "${FOLIA_DIR}"
 
 echo "[NeverFolia] Final R9 V17 village production chain applied"
+
+echo "[NeverFolia] Applying NeverOverworld FIELD-R10 village, submerged-remnant and ore fixes"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-field-r10.py" "${FOLIA_DIR}"
+echo "[NeverFolia] NeverOverworld FIELD-R10 production layer applied"
 
 echo "[NeverFolia] Preparing pinned CC0 noise for native NeverNether R5"
 python3 "${ROOT_DIR}/scripts/prepare-never-nether-noise-r5.py" --install "${FOLIA_DIR}"
