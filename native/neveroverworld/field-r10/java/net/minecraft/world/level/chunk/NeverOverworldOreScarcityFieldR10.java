@@ -1,19 +1,17 @@
 package net.minecraft.world.level.chunk;
 
-import java.util.ArrayList;
-import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.levelgen.structure.BoundingBox;
-import net.minecraft.world.level.levelgen.structure.StructureStart;
 
 /**
  * Additional field-requested 50% deterministic thinning over final generated
  * Overworld resource blocks. It runs only at the existing pre-FULL LIGHT barrier.
+ * Every listed generated resource block is eligible, including blocks generated
+ * by templates; chest loot and later player changes are outside this pass.
  */
 public final class NeverOverworldOreScarcityFieldR10 {
     public static final int KEEP_PERCENT = 50;
@@ -72,7 +70,6 @@ public final class NeverOverworldOreScarcityFieldR10 {
         if (chunk.getMinY() != -512 || chunk.getHeight() != 1024) {
             throw new IllegalStateException("Mismatched NeverOverworld chunk envelope");
         }
-        final List<BoundingBox> protectedBoxes = protectionBoxes(chunk);
         final int minX = chunk.getPos().getMinBlockX();
         final int minZ = chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -87,7 +84,7 @@ public final class NeverOverworldOreScarcityFieldR10 {
                 final int resource = kind(state);
                 if (resource == 0) continue;
                 final int x = minX + lx, y = baseY + ly, z = minZ + lz;
-                if (isProtected(protectedBoxes, x, y, z) || retain(seed, x, y, z, resource, KEEP_PERCENT)) continue;
+                if (retain(seed, x, y, z, resource, KEEP_PERCENT)) continue;
                 chunk.setBlockState(pos.set(x, y, z), host(state), 0);
                 ++changed;
             }
@@ -99,22 +96,5 @@ public final class NeverOverworldOreScarcityFieldR10 {
         n = (n ^ (n >>> 30)) * 0xBF58476D1CE4E5B9L;
         n = (n ^ (n >>> 27)) * 0x94D049BB133111EBL;
         return n ^ (n >>> 31);
-    }
-
-    private static List<BoundingBox> protectionBoxes(final ChunkAccess chunk) {
-        final ArrayList<BoundingBox> result = new ArrayList<>();
-        for (StructureStart start : chunk.getAllStarts().values()) {
-            if (start != null && start.isValid()) result.add(start.getBoundingBox());
-        }
-        return result;
-    }
-
-    private static boolean isProtected(final List<BoundingBox> boxes, final int x, final int y, final int z) {
-        for (BoundingBox box : boxes) {
-            if (x >= box.minX() && x <= box.maxX()
-                && y >= box.minY() && y <= box.maxY()
-                && z >= box.minZ() && z <= box.maxZ()) return true;
-        }
-        return false;
     }
 }
