@@ -6,6 +6,7 @@ on:
       - 'native/neveroverworld/field-r10/**'
       - 'qa/neveroverworld-field-r10/**'
       - 'scripts/apply-never-overworld-field-r10.py'
+      - 'scripts/fix-never-overworld-field-r10-flora-neighborhood.py'
       - 'scripts/test-never-overworld-field-r10.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
       - '.github/workflows/never-overworld-field-r10.yml'
@@ -30,6 +31,7 @@ jobs:
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
           git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
           python3 scripts/test-never-overworld-field-r10.py 2>&1 | tee artifacts/field-r10-python-tests.log
+          python3 scripts/fix-never-overworld-field-r10-flora-neighborhood.py --self-test 2>&1 | tee artifacts/flora-neighborhood-selftest.log
       - name: Compile complete NeverFolia chain and run native field tests
         run: |
           set -euo pipefail
@@ -39,7 +41,7 @@ jobs:
           test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
           bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
-          python3 scripts/apply-never-overworld-field-r10.py .work/Folia --check-only
+          python3 scripts/fix-never-overworld-field-r10-flora-neighborhood.py .work/Folia --self-test
           for stage in 8 9 10 11 12 13 14; do
             python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
           done
@@ -89,7 +91,7 @@ jobs:
               'jar_sha256':hashlib.sha256(dest.read_bytes()).hexdigest(),
               'overworld_seed_reproduction':-2996952393010080672,
               'village_policy':'piece-local-supported-foundations',
-              'submerged_cleanup':'buried-snow+water-contact-terrestrial-flora',
+              'submerged_cleanup':'buried-snow+owning-chunk-3x3x3-water-contact-terrestrial-flora',
               'ore_final_retention_percent':50,
               'nether_bug01_retained':True,'release_ready':False,
               'scope':'Compile/native API candidate. Natural user-seed world acceptance is separate.'},indent=2)+'\n')
@@ -98,7 +100,7 @@ jobs:
         if: always()
         run: |
           mkdir -p artifacts
-          git ls-files 'native/neveroverworld/field-r10/**' 'qa/neveroverworld-field-r10/**' 'scripts/apply-never-overworld-field-r10.py' 'scripts/test-never-overworld-field-r10.py' | xargs sha256sum > artifacts/IMPLEMENTATION-SHA256.txt
+          git ls-files 'native/neveroverworld/field-r10/**' 'qa/neveroverworld-field-r10/**' 'scripts/apply-never-overworld-field-r10.py' 'scripts/fix-never-overworld-field-r10-flora-neighborhood.py' 'scripts/test-never-overworld-field-r10.py' | xargs sha256sum > artifacts/IMPLEMENTATION-SHA256.txt
           printf '%s\n' 'TEST CANDIDATE ONLY. CI proves exact-source integration and native fixtures, not natural village/flood/ore visual acceptance on the user seed. Existing worlds are not migrated.' > artifacts/SCOPE.txt
           (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
