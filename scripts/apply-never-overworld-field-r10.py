@@ -4,6 +4,8 @@
 The transformer is exact-source, atomic and idempotent. It replaces only the
 known final village reclamation helper, inserts two calls into the known final
 flood helper, and installs two new helpers. Existing worlds are not migrated.
+A FULL-status gate prevents the LIGHT runtime hook from re-running worldgen
+mutation when an already saved chunk is merely relit after restart.
 """
 from __future__ import annotations
 import argparse
@@ -23,6 +25,20 @@ ORE_ANCHOR = '        removeUpperLapisDiamondAfterNeighbourFeatures(chunk);\n'
 ORE_CALL = ORE_ANCHOR + '        NeverOverworldOreScarcityFieldR10.apply(level, chunk);\n'
 CLEAN_ANCHOR = '        weatherSubmergedSurface(chunk, minY, FLOOD_LEVEL);\n'
 CLEAN_CALL = CLEAN_ANCHOR + '        NeverOverworldSubmergedRemnants.apply(level, chunk);\n'
+SCOPE_ANCHOR = '''        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != EXPECTED_MIN_Y
+            || level.getHeight() != EXPECTED_HEIGHT) {
+            return;
+        }
+
+'''
+FULL_GUARD = SCOPE_ANCHOR + '''        // LIGHT may also execute while an already persisted FULL chunk is relit.
+        // Never run generation-only flood/cleanup/ore mutation in that path.
+        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FULL)) {
+            return;
+        }
+
+'''
 
 
 def sha(text: str) -> str:
@@ -38,22 +54,25 @@ def canonical(rel: Path) -> str:
 
 
 def patch_flood(text: str) -> str:
-    if ORE_CALL in text or CLEAN_CALL in text:
-        if text.count(ORE_CALL) != 1 or text.count(CLEAN_CALL) != 1:
+    installed = FULL_GUARD in text or ORE_CALL in text or CLEAN_CALL in text
+    if installed:
+        if text.count(FULL_GUARD) != 1 or text.count(ORE_CALL) != 1 or text.count(CLEAN_CALL) != 1:
             raise ValueError('Partial/duplicate field-R10 Flood installation')
-        inverted = text.replace(ORE_CALL, ORE_ANCHOR, 1).replace(CLEAN_CALL, CLEAN_ANCHOR, 1)
+        inverted = text.replace(ORE_CALL, ORE_ANCHOR, 1).replace(CLEAN_CALL, CLEAN_ANCHOR, 1).replace(FULL_GUARD, SCOPE_ANCHOR, 1)
         if sha(inverted) != OLD_FLOOD_SHA:
             raise ValueError('Installed Flood does not invert to inspected R9 source')
         return text
     if sha(text) != OLD_FLOOD_SHA:
         raise ValueError('NeverOverworldFlood differs from inspected R9 final source')
-    if text.count(ORE_ANCHOR) != 1 or text.count(CLEAN_ANCHOR) != 1:
+    if text.count(ORE_ANCHOR) != 1 or text.count(CLEAN_ANCHOR) != 1 or text.count(SCOPE_ANCHOR) != 1:
         raise ValueError('Field-R10 Flood anchors drifted')
-    text = text.replace(ORE_ANCHOR, ORE_CALL, 1).replace(CLEAN_ANCHOR, CLEAN_CALL, 1)
+    text = text.replace(SCOPE_ANCHOR, FULL_GUARD, 1).replace(ORE_ANCHOR, ORE_CALL, 1).replace(CLEAN_ANCHOR, CLEAN_CALL, 1)
     if text.count('NeverOverworldOreScarcityFieldR10.apply(level, chunk);') != 1:
         raise ValueError('Ore call installation failed')
     if text.count('NeverOverworldSubmergedRemnants.apply(level, chunk);') != 1:
         raise ValueError('Cleanup call installation failed')
+    if text.count('chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FULL)') != 1:
+        raise ValueError('FULL relight guard installation failed')
     return text
 
 
@@ -82,7 +101,7 @@ def apply(folia: Path) -> None:
     for path, value in staged.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(value, encoding='utf-8')
-    print('[NeverFolia][NeverOverworld FIELD-R10] local village foundations + submerged remnants + 50% final ore thinning installed')
+    print('[NeverFolia][NeverOverworld FIELD-R10] local village foundations + submerged remnants + 50% final ore thinning + FULL relight guard installed')
 
 
 def main() -> None:
