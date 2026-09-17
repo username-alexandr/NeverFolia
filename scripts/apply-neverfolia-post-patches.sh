@@ -34,6 +34,8 @@ echo "[NeverFolia] Final R9 V17 village production chain applied"
 
 echo "[NeverFolia] Applying NeverOverworld FIELD-R10 village, submerged-remnant and ore fixes"
 python3 "${ROOT_DIR}/scripts/apply-never-overworld-field-r10.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Extending FIELD-R10 flooded flora cleanup to the owning-chunk 3x3x3 neighborhood"
+python3 "${ROOT_DIR}/scripts/fix-never-overworld-field-r10-flora-neighborhood.py" "${FOLIA_DIR}"
 echo "[NeverFolia] NeverOverworld FIELD-R10 production layer applied"
 
 echo "[NeverFolia] Preparing pinned CC0 noise for native NeverNether R5"
