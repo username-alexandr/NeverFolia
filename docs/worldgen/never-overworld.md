@@ -172,6 +172,35 @@ left **0** snow remnants in the audited range. The acceptance run was
 `b5114dcc62773cad67015783e2833925162cdb12` (GitHub Actions run
 `35344437115`).
 
+## DESERT-R1 surface features
+
+DESERT-R1 is an upper-world extension layered after FIELD-R11. It does not replace
+the vanilla desert biome. The current candidate contract is:
+
+- each eligible dry desert chunk has an independent deterministic **1/96** oasis
+  selection chance derived only from world seed and chunk coordinates;
+- an oasis is fully owner-chunk-local: its pond, shore conversion and palms never
+  read or write a neighboring chunk;
+- the selected center is kept inside local X/Z `6..9`, with terrain/structure
+  gates applied before modification;
+- dry desert ground at the flood boundary `Y=128` remains eligible; ground below
+  the flood boundary is rejected;
+- each accepted oasis attempts up to two palms using persistent
+  `jungle_log` / `jungle_leaves`, with all canopy writes clipped to the owning
+  chunk;
+- valid structure starts intersecting the oasis envelope prevent generation.
+
+DESERT-R1 sandstorms are deterministic per world seed and 12,000-tick cycle. The
+candidate enables a storm in 35% of cycles for 2,400 ticks. Affected players must
+be outdoors in the desert. Dust/ash particles reduce visual clarity and the wind
+impulse opposes movement against the wind while assisting movement with the wind.
+Passenger, swimming, spectator, creative-flight and elytra movement are excluded.
+**There is no overheating mechanic.**
+
+Compile/native smoke is green for the surface-height correction. Natural oasis/palm
+acceptance on seed `-2996952393010080672` remains a separate gate until the
+DESERT-R1 natural audit records at least one persisted oasis with its palm blocks.
+
 ## Vanilla and NeverFolia native structures
 
 Vanilla structure registries and upper-world structure behavior remain available.
