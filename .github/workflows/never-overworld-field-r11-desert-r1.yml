@@ -100,14 +100,20 @@ jobs:
               'monument_piece_y':'104..126'
             },
             'overheating':False,
+            'sandstorm_movement_smoke':{
+              'against_wind_impulse':0.0060,
+              'cross_wind_impulse':0.0044,
+              'with_wind_impulse':0.0032,
+              'expected_order':'against > cross > with'
+            },
             'release_ready':False,
-            'remaining_acceptance':'player-facing sandstorm visual/movement acceptance'},indent=2)+'\n')
+            'remaining_acceptance':'player-facing sandstorm visual particle-density acceptance'},indent=2)+'\n')
           PY
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
       - name: Scope and checksums
         if: always()
         run: |
-          printf '%s\n' 'TEST CANDIDATE. Compile/smoke plus recorded natural acceptance: FIELD-R11 seam, DESERT-R1 persisted oasis signatures and raised monument are green on seed -2996952393010080672. Player-facing sandstorm visual/movement acceptance remains separate.' > artifacts/SCOPE.txt
+          printf '%s\n' 'TEST CANDIDATE. Compile/smoke plus recorded natural acceptance: FIELD-R11 seam, DESERT-R1 persisted oasis signatures and raised monument are green on seed -2996952393010080672. Sandstorm movement response is covered by native smoke; only player-facing particle-density/visual acceptance remains separate.' > artifacts/SCOPE.txt
           (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         if: always()
