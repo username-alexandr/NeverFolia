@@ -51,10 +51,13 @@ public final class NeverOverworldDesertR1 {
         final int centerGroundY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, centerLocalX, centerLocalZ));
         final BlockPos center = new BlockPos(centerX, centerGroundY, centerZ);
         final BlockState centerState = chunk.getBlockState(center);
+        final BlockPos floodCenter = new BlockPos(centerX, FLOOD_LEVEL, centerZ);
+        final BlockState floodState = chunk.getBlockState(floodCenter);
         final boolean dryCandidate = isEligibleOasisGroundY(centerGroundY, chunk.getMaxY()) && isDesertSurface(centerState);
-        final boolean floodedCandidate = isFloodedDesertCenter(centerGroundY, centerState);
+        final boolean floodedCandidate = isFloodedAtFloodPlane(floodState);
+        final BlockPos biomeCenter = floodedCandidate ? floodCenter : center;
         if ((!dryCandidate && !floodedCandidate)
-            || !level.getBiome(center).is(Biomes.DESERT)
+            || !level.getBiome(biomeCenter).is(Biomes.DESERT)
             || chunk.hasAnyStructureReferences()
             || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)) {
             return 0;
@@ -312,8 +315,8 @@ public final class NeverOverworldDesertR1 {
         return groundY >= FLOOD_LEVEL && groundY < maxY - 13;
     }
 
-    static boolean isFloodedDesertCenter(final int groundY, final BlockState state) {
-        return groundY == FLOOD_LEVEL && state.is(Blocks.WATER);
+    static boolean isFloodedAtFloodPlane(final BlockState state) {
+        return state.is(Blocks.WATER);
     }
 
     private static boolean isDesertSurface(final BlockState state) {
