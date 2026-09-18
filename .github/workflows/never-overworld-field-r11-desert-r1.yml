@@ -3,10 +3,14 @@ on:
   push:
     branches: [staging/neveroverworld-field-r11]
     paths:
+      - 'native/neveroverworld/field-r10/**'
       - 'native/neveroverworld/field-r11/**'
       - 'native/neveroverworld/desert-r1/**'
+      - 'qa/neveroverworld-field-r10/**'
       - 'qa/neveroverworld-field-r11/**'
       - 'qa/neveroverworld-desert-r1/**'
+      - 'scripts/apply-never-overworld-field-r10.py'
+      - 'scripts/fix-never-overworld-field-r10-flora-neighborhood.py'
       - 'scripts/apply-never-overworld-field-r11.py'
       - 'scripts/apply-never-overworld-monument-r11.py'
       - 'scripts/apply-never-overworld-desert-r1.py'
@@ -54,12 +58,17 @@ jobs:
               def compileQa = server.tasks.register('neverOverworldFieldR11DesertQaCompile', JavaCompile) {
                   dependsOn server.tasks.named('classes')
                   source gradle.rootProject.files(
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r10/VillageFoundationSmoke.java'),
                       new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r11/FloodBoundarySmoke.java'),
                       new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/DesertR1Smoke.java'),
                       new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/SandstormR1Smoke.java'))
                   destinationDirectory = qaDir
                   classpath = cp
                   options.release = 25
+              }
+              server.tasks.register('neverOverworldVillageFoundationSmoke', JavaExec) {
+                  dependsOn compileQa; classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke'; jvmArgs '-ea'
               }
               server.tasks.register('neverOverworldFieldR11Smoke', JavaExec) {
                   dependsOn compileQa; classpath = cp + server.files(qaDir)
@@ -75,7 +84,7 @@ jobs:
               }
           }
           GROOVY
-          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverOverworldFieldR11Smoke :folia-server:neverOverworldDesertSmoke :folia-server:neverOverworldSandstormSmoke :folia-server:createPaperclipJar -I ../field-r11-desert.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverOverworldVillageFoundationSmoke :folia-server:neverOverworldFieldR11Smoke :folia-server:neverOverworldDesertSmoke :folia-server:neverOverworldSandstormSmoke :folia-server:createPaperclipJar -I ../field-r11-desert.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
           python3 - <<'PY'
           import hashlib,json,os,shutil,zipfile
           from pathlib import Path
