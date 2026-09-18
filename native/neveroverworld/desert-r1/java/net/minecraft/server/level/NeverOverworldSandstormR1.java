@@ -45,8 +45,7 @@ public final class NeverOverworldSandstormR1 {
             && !player.isFallFlying()
             && !player.getAbilities().flying) {
             final Vec3 velocity = player.getDeltaMovement();
-            final double dot = velocity.x * storm.windX() + velocity.z * storm.windZ();
-            final double impulse = dot < -0.02D ? 0.0060D : (dot > 0.02D ? 0.0032D : 0.0044D);
+            final double impulse = windImpulse(velocity.x, velocity.z, storm.windX(), storm.windZ());
             player.push(storm.windX() * impulse, 0.0D, storm.windZ() * impulse);
         }
 
@@ -68,6 +67,16 @@ public final class NeverOverworldSandstormR1 {
 
     static boolean isDryDesertSurface(final int firstAvailableOceanFloorY) {
         return firstAvailableOceanFloorY >= MIN_DRY_SURFACE_Y;
+    }
+
+    static double windImpulse(
+        final double velocityX,
+        final double velocityZ,
+        final double windX,
+        final double windZ
+    ) {
+        final double dot = velocityX * windX + velocityZ * windZ;
+        return dot < -0.02D ? 0.0060D : (dot > 0.02D ? 0.0032D : 0.0044D);
     }
 
     static Storm storm(final long seed, final long gameTime) {
