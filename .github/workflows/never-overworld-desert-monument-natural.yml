@@ -124,7 +124,10 @@ jobs:
           from pathlib import Path
           root=Path.cwd();loc=json.loads((root/'artifacts/located-features.json').read_text())
           sp=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py'); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
-          region=root/'.work/desert-monument-natural/world/region'
+          world_root=root/'.work/desert-monument-natural/world'
+          region=world_root/'dimensions/minecraft/overworld/region'
+          if not region.is_dir():
+            raise SystemExit(f'NeverOverworld block-region directory missing: {region}')
           def blocks(rootnbt):
             for s in nbt.section_list(rootnbt):
               y0=s.get('Y');bs=s.get('block_states',s.get('BlockStates'))
