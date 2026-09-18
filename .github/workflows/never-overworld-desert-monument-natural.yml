@@ -108,7 +108,7 @@ jobs:
               mcx=monument[0]//16;mcz=monument[2]//16
               marea=[mcx-4,mcx+4,mcz-4,mcz+4]
               p.stdin.write(f'forceload add {marea[0]*16} {marea[2]*16} {marea[1]*16+15} {marea[3]*16+15}\n');p.stdin.flush();time.sleep(90)
-              p.stdin.write('save-all flush\n');p.stdin.flush();time.sleep(15)
+              p.stdin.write('save-all\n');p.stdin.flush();time.sleep(15)
               p.stdin.write('stop\n');p.stdin.flush();p.wait(timeout=120)
               result={'desert_positions':desert,'desert_chunk_areas':areas,'monument_position':monument,'monument_chunk_area':marea,'exit_code':p.returncode}
               (root/'artifacts/located-features.json').write_text(json.dumps(result,indent=2)+'\n')
@@ -128,21 +128,45 @@ jobs:
           region=world_root/'dimensions/minecraft/overworld/region'
           if not region.is_dir():
             raise SystemExit(f'NeverOverworld block-region directory missing: {region}')
-          def blocks(rootnbt):
+          MASK=(1<<64)-1
+          SEED=-2996952393010080672
+          CELL=8
+          CELL_SALT=0x4E4F574F41534953
+          def s64(v):
+            v &= MASK
+            return v-(1<<64) if v&(1<<63) else v
+          def urshift(v,n): return (v&MASK)>>n
+          def mul64(a,b): return s64((a&MASK)*(b&MASK))
+          def mix(v):
+            v=s64(v ^ urshift(v,30)); v=mul64(v,0xBF58476D1CE4E5B9)
+            v=s64(v ^ urshift(v,27)); v=mul64(v,0x94D049BB133111EB)
+            return s64(v ^ urshift(v,31))
+          def selected(cx,cz):
+            cellx=cx//CELL; cellz=cz//CELL
+            h=mix(s64(SEED ^ CELL_SALT ^ mul64(cellx,0x9E3779B97F4A7C15) ^ mul64(cellz,0xC2B2AE3D27D4EB4F)))
+            if h%3 != 0:return False
+            sx=cellx*CELL + mix(s64(h ^ 0xA24BAED4963EE407))%CELL
+            sz=cellz*CELL + mix(s64(h ^ 0x9FB21C651E98DF25))%CELL
+            return cx==sx and cz==sz
+          def palette_names(rootnbt):
+            names=set()
             for s in nbt.section_list(rootnbt):
-              y0=s.get('Y');bs=s.get('block_states',s.get('BlockStates'))
-              if not isinstance(y0,int) or not isinstance(bs,dict):continue
+              bs=s.get('block_states',s.get('BlockStates'))
+              if not isinstance(bs,dict):continue
               pal=bs.get('palette')
               if not isinstance(pal,list):continue
-              names=[nbt.palette_name(p) for p in pal]
-              if 'minecraft:jungle_log' not in names and 'minecraft:jungle_leaves' not in names:continue
-              yield names
-          palm_chunks=[]
+              names.update(nbt.palette_name(p) for p in pal)
+            return names
+          candidates=[]; candidate_palms=[]
           for mincx,maxcx,mincz,maxcz in loc['desert_chunk_areas']:
             for cz in range(mincz,maxcz+1):
               for cx in range(mincx,maxcx+1):
+                if not selected(cx,cz):continue
+                candidates.append([cx,cz])
                 r=nbt.read_chunk_nbt(region,cx,cz)
-                if any(True for _ in blocks(r)):palm_chunks.append([cx,cz])
+                names=palette_names(r)
+                if 'minecraft:jungle_log' in names and 'minecraft:jungle_leaves' in names:
+                  candidate_palms.append([cx,cz])
           starts=[]
           a=loc['monument_chunk_area']
           for cz in range(a[2],a[3]+1):
@@ -155,12 +179,13 @@ jobs:
                   bb=ch.get('BB') if isinstance(ch,dict) else None
                   if isinstance(bb,list) and len(bb)==6:mins.append(bb[1]);maxs.append(bb[4])
                 starts.append({'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)})
-          result={'schema':1,'palm_chunks':palm_chunks,'palm_chunk_count':len(palm_chunks),'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
+          result={'schema':2,'seed':SEED,'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
           (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
-          if not palm_chunks:raise SystemExit('no natural DESERT-R1 palm observed in four desert areas')
+          if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
+          if not candidate_palms:raise SystemExit('no natural DESERT-R1 palm in deterministic candidate chunks')
           if not starts:raise SystemExit('located monument start not saved')
-          if not any(s['piece_min_y']==104 for s in starts):raise SystemExit('monument base did not follow seaLevel-24')
+          if not any(s['piece_min_y']==104 for s in starts):raise SystemExit('monument base is not Y=104')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
