@@ -208,6 +208,44 @@ jobs:
               if not isinstance(pal,list):continue
               names.update(nbt.palette_name(p) for p in pal)
             return names
+          PALM_OFFSETS=((4,1),(-4,-1),(1,4),(-1,-4),(3,3),(-3,-3),(3,-3),(-3,3))
+          def palm_signature(rootnbt,cx,cz,localx,localz):
+            wx=cx*16+localx; wz=cz*16+localz
+            runs=[]; current=[]
+            for y in range(96,256):
+              if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:jungle_log':
+                if current and y!=current[-1]+1:
+                  runs.append(current); current=[]
+                current.append(y)
+              elif current:
+                runs.append(current); current=[]
+            if current:runs.append(current)
+            for run in runs:
+              if len(run)<5 or len(run)>7:continue
+              top=run[-1]; leaves=0
+              for yy in range(top-1,top+2):
+                for dz in range(-2,3):
+                  for dx in range(-2,3):
+                    if nbt.block_at(rootnbt,wx+dx,yy,wz+dz)=='minecraft:jungle_leaves':leaves+=1
+              if leaves>=5:
+                return {'local':[localx,localz],'world':[wx,wz],'trunk_y':[run[0],run[-1]],'trunk_height':len(run),'near_top_leaf_blocks':leaves}
+            return None
+          def oasis_water_count(rootnbt,cx,cz,centerx,centerz):
+            count=0
+            for dz in range(-3,4):
+              for dx in range(-3,4):
+                wx=cx*16+centerx+dx; wz=cz*16+centerz+dz
+                for y in range(120,193):
+                  if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water':
+                    count+=1; break
+            return count
+          def nonempty_reference_ids(refs):
+            if not isinstance(refs,dict):return []
+            result=[]
+            for k,v in refs.items():
+              values=v.get('$long_array',[]) if isinstance(v,dict) else (v if isinstance(v,list) else [])
+              if values:result.append(str(k))
+            return sorted(result)
           candidates=[]; candidate_palms=[]; candidate_diagnostics=[]; missing_candidates=[]
           for raw in loc['oasis_candidate_chunks']:
             cx,cz=int(raw[0]),int(raw[1])
@@ -222,10 +260,16 @@ jobs:
             names=palette_names(r)
             has_log='minecraft:jungle_log' in names
             has_leaves='minecraft:jungle_leaves' in names
-            if has_log and has_leaves:
-              candidate_palms.append([cx,cz])
             lx,lz=oasis_center(cx,cz)
             wx=cx*16+lx; wz=cz*16+lz
+            detected_palms=[]; center_water_columns=0
+            if has_log and has_leaves:
+              for ox,oz in PALM_OFFSETS:
+                sig=palm_signature(r,cx,cz,lx+ox,lz+oz)
+                if sig is not None:detected_palms.append(sig)
+              center_water_columns=oasis_water_count(r,cx,cz,lx,lz)
+            oasis_signature=bool(detected_palms) and center_water_columns>=4
+            if oasis_signature:candidate_palms.append([cx,cz])
             column=[]
             for y in range(511,119,-1):
               state=nbt.block_at(r,wx,y,wz)
@@ -238,13 +282,16 @@ jobs:
             })
             structures=r.get('structures',r.get('Structures',{}))
             refs=structures.get('references',structures.get('References',{})) if isinstance(structures,dict) else {}
-            reference_ids=sorted(str(k) for k,v in refs.items()) if isinstance(refs,dict) else []
+            reference_ids=nonempty_reference_ids(refs)
             candidate_diagnostics.append({
               'chunk':[cx,cz],'status':r.get('Status',r.get('status')),
               'center_local':[lx,lz],'center_world':[wx,wz],
               'top_non_air_column':column,'markers':markers,
               'structure_reference_ids':reference_ids,
-              'has_jungle_log':has_log,'has_jungle_leaves':has_leaves
+              'has_jungle_log':has_log,'has_jungle_leaves':has_leaves,
+              'detected_expected_palms':detected_palms,
+              'center_radius3_water_columns':center_water_columns,
+              'oasis_signature':oasis_signature
             })
           starts=[]; monument_diagnostics=[]
           monument_cache={}
@@ -302,7 +349,7 @@ jobs:
             'monument_base_y_104':any(v['piece_min_y']==104 for v in starts)
           }
           natural_audit_pass=all(gate_summary.values())
-          result={'schema':5,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
+          result={'schema':6,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
           (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
           if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
@@ -329,7 +376,7 @@ jobs:
           print(f"- Natural audit pass: **{d.get('natural_audit_pass', False)}**")
           print(f"- Located deserts: **{d.get('located_desert_count', 0)}**")
           print(f"- Deterministic oasis candidates: **{d.get('selected_candidate_count', 0)}**")
-          print(f"- Saved natural palm chunks: **{d.get('candidate_palm_count', 0)}**")
+          print(f"- Verified natural oasis/palm signatures: **{d.get('candidate_palm_count', 0)}**")
           print(f"- Missing candidate chunks: **{len(d.get('missing_candidate_chunks', []))}**")
           starts=d.get('monument_starts',[])
           base=min((v.get('piece_min_y') for v in starts if v.get('piece_min_y') is not None),default=None)
@@ -360,4 +407,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-monument-center-diagnostics
+# retrigger-natural-2026-09-18-exact-oasis-signature
