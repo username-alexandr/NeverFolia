@@ -24,6 +24,8 @@ public final class VillageFoundationSmoke {
         check(NeverOverworldVillageReclamation.findNaturalSupport(c,5,5,p)==Integer.MIN_VALUE,"no unconditional y80 fallback");
         var high=new BoundingBox(7,170,7,8,190,8);direct(c,7,175,7,Blocks.OAK_PLANKS.defaultBlockState());
         check(!NeverOverworldVillageReclamation.pieceOccupiesColumn(c,high,7,7,p),"high dry piece gets no y128 platform");
+        check(NeverOverworldVillageReclamation.clippedMaxZ(14,15)==14,"piece maxZ inside chunk");
+        check(NeverOverworldVillageReclamation.clippedMaxZ(40,15)==15,"piece maxZ clips to chunkMaxZ, not chunkMinZ");
         System.out.println("PASS VillageFoundationSmoke checks="+checks);
     }
 }
