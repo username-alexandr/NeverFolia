@@ -177,14 +177,19 @@ left **0** snow remnants in the audited range. The acceptance run was
 DESERT-R1 is an upper-world extension layered after FIELD-R11. It does not replace
 the vanilla desert biome. The current candidate contract is:
 
-- each eligible dry desert chunk has an independent deterministic **1/96** oasis
+- each selected desert chunk has an independent deterministic **1/96** oasis
   selection chance derived only from world seed and chunk coordinates;
-- an oasis is fully owner-chunk-local: its pond, shore conversion and palms never
-  read or write a neighboring chunk;
-- the selected center is kept inside local X/Z `6..9`, with terrain/structure
-  gates applied before modification;
-- dry desert ground at the flood boundary `Y=128` remains eligible; ground below
-  the flood boundary is rejected;
+- dry desert keeps the terrain-following oasis. If the selected desert column is
+  flooded at `Y=128`, DESERT-R1 can instead build a compact sandbar oasis just
+  above the flood plane: sandstone foundation, dry sand/grass shore, a small
+  central pool and palms;
+- both variants are fully owner-chunk-local: pond/island blocks, shore conversion
+  and palms never read or write a neighboring chunk;
+- the selected center is kept inside local X/Z `6..9`, with biome/terrain and
+  structure gates applied before modification;
+- dry desert ground at the flood boundary `Y=128` remains eligible. The flooded
+  variant requires a desert-biome water surface at the same flood level rather
+  than silently accepting arbitrary ocean chunks;
 - each accepted oasis attempts up to two palms using persistent
   `jungle_log` / `jungle_leaves`, with all canopy writes clipped to the owning
   chunk;
@@ -201,9 +206,10 @@ clarity and the wind impulse opposes movement against the wind while assisting
 movement with the wind. Passenger, swimming, spectator, creative-flight and
 elytra movement are excluded. **There is no overheating mechanic.**
 
-Compile/native smoke is green for the surface-height correction. Natural oasis/palm
-acceptance on seed `-2996952393010080672` remains a separate gate. The natural
-audit may count a candidate only after its saved chunk reaches `minecraft:full`.
+Compile/native smoke covers the dry-surface rules and the flooded sandbar builder.
+Natural oasis/palm acceptance on seed `-2996952393010080672` remains a separate
+gate. The natural audit may count a candidate only after its saved chunk reaches
+`minecraft:full`.
 A persisted oasis signature requires water at the deterministic center with sand
 directly below it, plus a 5–7 block `jungle_log` trunk on one of DESERT-R1's
 eight deterministic palm positions and nearby `jungle_leaves` at the trunk top.
