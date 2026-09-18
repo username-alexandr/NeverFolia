@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -18,6 +19,7 @@ public final class NeverOverworldSandstormR1 {
     static final long CYCLE_TICKS = 12_000L;
     static final int STORM_CHANCE_PERCENT = 35;
     static final int STORM_DURATION = 2_400;
+    static final int MIN_DRY_SURFACE_Y = 129;
     private static final long SALT = 0x53414E4453544F52L;
 
     private NeverOverworldSandstormR1() {}
@@ -31,7 +33,11 @@ public final class NeverOverworldSandstormR1 {
         if (!storm.active()) return;
 
         final BlockPos pos = player.blockPosition();
-        if (!level.getBiome(pos).is(Biomes.DESERT) || !level.canSeeSky(pos)) return;
+        if (!level.getBiome(pos).is(Biomes.DESERT)
+            || !level.canSeeSky(pos)
+            || !isDryDesertSurface(level.getHeight(Heightmap.Types.OCEAN_FLOOR, pos.getX(), pos.getZ()))) {
+            return;
+        }
 
         if ((gameTime & 1L) == 0L
             && !player.isPassenger()
@@ -58,6 +64,10 @@ public final class NeverOverworldSandstormR1 {
                 22, 6.5D, 3.0D, 6.5D, 0.02D
             );
         }
+    }
+
+    static boolean isDryDesertSurface(final int firstAvailableOceanFloorY) {
+        return firstAvailableOceanFloorY >= MIN_DRY_SURFACE_Y;
     }
 
     static Storm storm(final long seed, final long gameTime) {
