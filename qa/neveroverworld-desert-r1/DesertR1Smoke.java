@@ -33,8 +33,8 @@ public final class DesertR1Smoke {
         check(!NeverOverworldDesertR1.isEligibleOasisGroundY(127,512),"sub-flood ground must stay ineligible");
         check(NeverOverworldDesertR1.isEligibleOasisGroundY(128,512),"flood-level dry shore must stay eligible");
         check(NeverOverworldDesertR1.isEligibleOasisGroundY(129,512),"dry terrain above flood level must be eligible");
-        check(NeverOverworldDesertR1.isFloodedDesertCenter(128,Blocks.WATER.defaultBlockState()),"flood-level water must select sandbar oasis mode");
-        check(!NeverOverworldDesertR1.isFloodedDesertCenter(128,Blocks.SAND.defaultBlockState()),"dry flood-level sand must not select flooded mode");
+        check(NeverOverworldDesertR1.isFloodedAtFloodPlane(Blocks.WATER.defaultBlockState()),"water at fixed flood plane must select sandbar oasis mode");
+        check(!NeverOverworldDesertR1.isFloodedAtFloodPlane(Blocks.SAND.defaultBlockState()),"dry block at fixed flood plane must not select flooded mode");
         var flooded=fixture();
         long oasisKey=NeverOverworldDesertR1.mix(seed ^ 0x4E4F574F41534953L);
         int floodedChanged=NeverOverworldDesertR1.buildFloodedOasis(flooded,8,8,oasisKey);
