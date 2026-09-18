@@ -163,8 +163,9 @@ public final class NeverOverworldDesertR1 {
         final long key
     ) {
         final int foundationY = FLOOD_LEVEL;
-        final int groundY = FLOOD_LEVEL + 1;
-        final int poolY = FLOOD_LEVEL + 2;
+        final int lowerY = FLOOD_LEVEL + 1;
+        final int surfaceY = FLOOD_LEVEL + 2;
+        final int poolY = surfaceY;
         final ChunkPos cp = chunk.getPos();
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int changed = 0;
@@ -186,17 +187,21 @@ public final class NeverOverworldDesertR1 {
                 changed += setBlock(chunk, pos, worldX, foundationY, worldZ, Blocks.SANDSTONE.defaultBlockState());
 
                 final boolean pond = d2 <= 8.5D + wobble * 3.0D;
+                final boolean raisedShore = d2 <= 22.0D;
                 if (pond) {
-                    changed += setBlock(chunk, pos, worldX, groundY, worldZ, Blocks.SAND.defaultBlockState());
+                    changed += setBlock(chunk, pos, worldX, lowerY, worldZ, Blocks.SAND.defaultBlockState());
                     changed += setBlock(chunk, pos, worldX, poolY, worldZ, Blocks.WATER.defaultBlockState());
+                } else if (raisedShore) {
+                    changed += setBlock(chunk, pos, worldX, lowerY, worldZ, Blocks.SANDSTONE.defaultBlockState());
+                    final BlockState surface = wobble < 0.58D
+                        ? Blocks.GRASS_BLOCK.defaultBlockState()
+                        : (wobble < 0.78D ? Blocks.COARSE_DIRT.defaultBlockState() : Blocks.SAND.defaultBlockState());
+                    changed += setBlock(chunk, pos, worldX, surfaceY, worldZ, surface);
                 } else {
-                    final BlockState surface = d2 <= 22.0D && wobble < 0.72D
-                        ? (wobble < 0.50D ? Blocks.GRASS_BLOCK.defaultBlockState() : Blocks.COARSE_DIRT.defaultBlockState())
-                        : Blocks.SAND.defaultBlockState();
-                    changed += setBlock(chunk, pos, worldX, groundY, worldZ, surface);
-                    changed += clearBlock(chunk, pos, worldX, poolY, worldZ);
+                    changed += setBlock(chunk, pos, worldX, lowerY, worldZ, Blocks.SAND.defaultBlockState());
+                    changed += clearBlock(chunk, pos, worldX, surfaceY, worldZ);
                 }
-                changed += clearBlock(chunk, pos, worldX, poolY + 1, worldZ);
+                changed += clearBlock(chunk, pos, worldX, surfaceY + 1, worldZ);
             }
         }
 
@@ -208,7 +213,7 @@ public final class NeverOverworldDesertR1 {
         final int rotation = (int)Math.floorMod(mix(key ^ 0xDB4F0B9175AE2165L), (long)palmOffsets.length);
         for (int i = 0; i < palmOffsets.length && palms < 2; ++i) {
             final int[] off = palmOffsets[(i + rotation) % palmOffsets.length];
-            if (placePalmAtGround(chunk, centerLocalX + off[0], centerLocalZ + off[1], groundY, key ^ i)) {
+            if (placePalmAtGround(chunk, centerLocalX + off[0], centerLocalZ + off[1], surfaceY, key ^ i)) {
                 ++palms;
             }
         }
