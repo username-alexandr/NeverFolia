@@ -83,6 +83,7 @@ class Volume:
         self.min_y, self.max_y = min_y, max_y
         self.size = (max_y - min_y + 1) * 256
         self.chunks: dict[Chunk, list[str]] = {}
+        self.section_tags: dict[tuple[int, int, int], dict[str, Any]] = {}
         self.boxes: list[Box] = []
         self.roof_non_air = 0
         for (cx, cz), original in sorted(roots.items()):
@@ -101,6 +102,7 @@ class Volume:
                 if not isinstance(sy, int) or sy in seen_sections:
                     raise ValueError(f"Invalid or duplicate section Y in chunk {cx},{cz}")
                 seen_sections.add(sy)
+                self.section_tags[(cx, cz, sy)] = section
                 low, high = sy * 16, sy * 16 + 15
                 # Historical profiles treated Y>=384 as a separate roof zone.
                 # R14 extends generated terrain through Y511 and protects bedrock
@@ -138,6 +140,90 @@ class Volume:
         x, y, z = position
         return any(a <= x <= d and b <= y <= e and c <= z <= f
                    for a, b, c, d, e, f in self.boxes)
+
+    def provenance_at(self, position: Position) -> dict[str, Any]:
+        x, y, z = position
+        current = self.at(position)
+        section = self.section_tags.get((x // 16, z // 16, y // 16))
+        if current is None or not isinstance(section, dict):
+            return {"available": False, "current": current, "classification": "unknown"}
+
+        meta = section.get("neverfolia:substrate_r11")
+        if not isinstance(meta, dict):
+            return {"available": False, "current": current, "classification": "unknown"}
+
+        palette = meta.get("Palette")
+        bits = meta.get("Bits")
+        original_wrapper = meta.get("Original")
+        external_wrapper = meta.get("External")
+        proposal_indices_wrapper = meta.get("ProposalIndices")
+        proposal_states_wrapper = meta.get("ProposalStates")
+        if (
+            not isinstance(palette, list) or not palette
+            or not isinstance(bits, int) or bits < 0 or bits > 12
+            or not isinstance(original_wrapper, dict)
+            or "$long_array" not in original_wrapper
+            or not isinstance(external_wrapper, dict)
+            or "$long_array" not in external_wrapper
+            or not isinstance(proposal_indices_wrapper, dict)
+            or "$int_array" not in proposal_indices_wrapper
+            or not isinstance(proposal_states_wrapper, dict)
+            or "$int_array" not in proposal_states_wrapper
+        ):
+            raise ValueError(f"Malformed neverfolia:substrate_r11 metadata at {position}")
+
+        original_longs = original_wrapper["$long_array"]
+        external_longs = external_wrapper["$long_array"]
+        proposal_indices = proposal_indices_wrapper["$int_array"]
+        proposal_states = proposal_states_wrapper["$int_array"]
+        if len(proposal_indices) != len(proposal_states):
+            raise ValueError(f"Proposal provenance length mismatch at {position}")
+
+        index = ((y & 15) << 8) | ((z & 15) << 4) | (x & 15)
+        if bits == 0:
+            original_index = 0
+        else:
+            per = 64 // bits
+            long_index = index // per
+            if long_index >= len(original_longs):
+                raise ValueError(f"Original provenance packed data too short at {position}")
+            packed = original_longs[long_index] & 0xFFFFFFFFFFFFFFFF
+            original_index = (packed >> ((index % per) * bits)) & ((1 << bits) - 1)
+        if original_index >= len(palette):
+            raise ValueError(f"Original provenance palette index out of range at {position}")
+        original = palette[original_index]
+
+        external = False
+        ext_long = index // 64
+        if ext_long < len(external_longs):
+            external = bool(((external_longs[ext_long] & 0xFFFFFFFFFFFFFFFF) >> (index % 64)) & 1)
+
+        proposal_state = None
+        for raw_index, raw_state in zip(proposal_indices, proposal_states):
+            if raw_index == index:
+                if raw_state < 0 or raw_state >= len(palette):
+                    raise ValueError(f"Proposal palette index out of range at {position}")
+                proposal_state = palette[raw_state]
+                break
+
+        if external:
+            classification = "external"
+        elif proposal_state is not None:
+            classification = "proposal"
+        elif current == original:
+            classification = "original"
+        else:
+            classification = "unrecorded"
+
+        return {
+            "available": True,
+            "profile": meta.get("Profile"),
+            "original": original,
+            "current": current,
+            "external": external,
+            "proposal_state": proposal_state,
+            "classification": classification,
+        }
 
 
 def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> dict[str, Any]:
@@ -188,6 +274,8 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                                 "horizontal_source_lava_neighbors": horizontal_source,
                                 "above": above,
                                 "below": below,
+                                "provenance": volume.provenance_at(position),
+                                "below_provenance": volume.provenance_at((position[0], y - 1, position[2])),
                             })
                     else:
                         counts["source_lava_fall_or_edge_candidates"] += 1
@@ -198,12 +286,14 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                             "horizontal_source_lava_neighbors": horizontal_source,
                             "above": above,
                             "shelf_candidate": shelf_candidate,
+                            "provenance": volume.provenance_at(position),
                         })
             elif block_name(state) == "minecraft:lava":
                 counts["flowing_lava_blocks"] += 1
             if block_name(state) not in AIR or not mark(position):
                 continue
             queue = deque([position])
+            component_positions: list[Position] = []
             size = 0
             unknown = False
             rock_boundary = True
@@ -213,6 +303,8 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
             while queue:
                 current = queue.popleft()
                 size += 1
+                if size <= pocket_limit:
+                    component_positions.append(current)
                 # Once a component exceeds the reporting limit, no more costly
                 # structure-box checks are needed; it cannot become a small pocket.
                 if size <= pocket_limit and not inside_structure:
@@ -251,8 +343,17 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                     else:
                         counts["enclosed_air_components_size_17_64"] += 1
                     if len(pocket_samples) < max_findings:
-                        pocket_samples.append({"size": size, "bbox": minimum + maximum,
-                                               "sample": list(position)})
+                        provenance_counts = Counter(
+                            volume.provenance_at(cell)["classification"]
+                            for cell in component_positions
+                        )
+                        pocket_samples.append({
+                            "size": size,
+                            "bbox": minimum + maximum,
+                            "sample": list(position),
+                            "sample_provenance": volume.provenance_at(position),
+                            "provenance_counts": dict(sorted(provenance_counts.items())),
+                        })
     keys = (
         "source_lava_blocks", "source_lava_support_unknown", "source_lava_with_air_below",
         "hanging_source_lava_shelf_candidates", "source_lava_fall_or_edge_candidates",
