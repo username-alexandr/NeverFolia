@@ -3,11 +3,15 @@ on:
   push:
     branches: [staging/neveroverworld-field-r11]
     paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'native/neveroverworld/field-r11/**'
       - 'native/neveroverworld/desert-r1/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'qa/neveroverworld-field-r11/**'
       - 'qa/neveroverworld-desert-r1/**'
-      - 'scripts/apply-never-overworld-desert-r1.py'
-      - 'scripts/apply-never-overworld-monument-r11.py'
+      - 'scripts/*never-overworld*.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/apply-neverfolia-post-patches-core.sh'
       - '.github/workflows/never-overworld-desert-monument-natural.yml'
   workflow_dispatch:
 concurrency:
