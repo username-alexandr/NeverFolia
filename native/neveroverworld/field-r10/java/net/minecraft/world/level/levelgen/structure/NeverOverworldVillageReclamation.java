@@ -67,7 +67,7 @@ public final class NeverOverworldVillageReclamation {
             final int minX = Math.max(box.minX(), chunkMinX);
             final int maxX = Math.min(box.maxX(), chunkMaxX);
             final int minZ = Math.max(box.minZ(), chunkMinZ);
-            final int maxZ = Math.min(box.maxZ(), chunkMinZ);
+            final int maxZ = clippedMaxZ(box.maxZ(), chunkMaxZ);
             for (int z = minZ; z <= maxZ; ++z) {
                 for (int x = minX; x <= maxX; ++x) {
                     final int index = ((z - chunkMinZ) << 4) | (x - chunkMinX);
@@ -106,6 +106,10 @@ public final class NeverOverworldVillageReclamation {
                     + " blocks=" + changedBlocks
             );
         }
+    }
+
+    static int clippedMaxZ(final int boxMaxZ, final int chunkMaxZ) {
+        return Math.min(boxMaxZ, chunkMaxZ);
     }
 
     static boolean pieceOccupiesColumn(
