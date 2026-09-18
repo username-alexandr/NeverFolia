@@ -202,8 +202,12 @@ movement with the wind. Passenger, swimming, spectator, creative-flight and
 elytra movement are excluded. **There is no overheating mechanic.**
 
 Compile/native smoke is green for the surface-height correction. Natural oasis/palm
-acceptance on seed `-2996952393010080672` remains a separate gate until the
-DESERT-R1 natural audit records at least one persisted oasis with its palm blocks.
+acceptance on seed `-2996952393010080672` remains a separate gate. The natural
+audit may count a candidate only after its saved chunk reaches `minecraft:full`.
+A persisted oasis signature requires water at the deterministic center with sand
+directly below it, plus a 5–7 block `jungle_log` trunk on one of DESERT-R1's
+eight deterministic palm positions and nearby `jungle_leaves` at the trunk top.
+Palette-only jungle-log/leaves matches are explicitly insufficient.
 
 ## Vanilla and NeverFolia native structures
 
