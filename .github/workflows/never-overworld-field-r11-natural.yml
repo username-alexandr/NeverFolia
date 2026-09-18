@@ -2,8 +2,19 @@ name: NeverOverworld FIELD-R11 Natural Seed Audit
 on:
   push:
     branches: [staging/neveroverworld-field-r11]
-    paths: [.github/workflows/never-overworld-field-r11-natural.yml]
+    paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'native/neveroverworld/field-r11/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'qa/neveroverworld-field-r11/**'
+      - 'scripts/*never-overworld*.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/apply-neverfolia-post-patches-core.sh'
+      - '.github/workflows/never-overworld-field-r11-natural.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
