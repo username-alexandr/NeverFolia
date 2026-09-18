@@ -227,10 +227,19 @@ jobs:
               'source_lava_blocks':counts['source_lava_blocks'],
               'flowing_lava_blocks':counts['flowing_lava_blocks'],
               'source_lava_with_air_below':counts['source_lava_with_air_below'],
+              'hanging_source_lava_shelf_candidates':counts['hanging_source_lava_shelf_candidates'],
+              'source_lava_fall_or_edge_candidates':counts['source_lava_fall_or_edge_candidates'],
               'enclosed_small_air_components':counts['enclosed_small_air_components'],
               'enclosed_small_air_blocks':counts['enclosed_small_air_blocks'],
+              'enclosed_air_size_buckets':{
+                  '1':counts['enclosed_air_components_size_1'],
+                  '2-4':counts['enclosed_air_components_size_2_4'],
+                  '5-16':counts['enclosed_air_components_size_5_16'],
+                  '17-64':counts['enclosed_air_components_size_17_64'],
+              },
               'air_components_touching_unknown_boundary':counts['air_components_touching_unknown_boundary'],
               'lava_samples':integrity['source_lava_air_below_samples'],
+              'hanging_lava_shelf_samples':integrity['hanging_lava_shelf_samples'],
               'enclosed_air_samples':integrity['enclosed_air_samples'],
               'field_findings_are_diagnostic':True,
               'natural_integrity_runtime_pass':full==plan['chunk_count'] and not failures,
@@ -259,9 +268,12 @@ jobs:
           print(f"- Roof/padding pass: **{d['roof512_pass']}**")
           print(f"- Source lava blocks: **{d['source_lava_blocks']}**")
           print(f"- Source lava with air below: **{d['source_lava_with_air_below']}**")
+          print(f"- Hanging source-lava shelf candidates: **{d['hanging_source_lava_shelf_candidates']}**")
+          print(f"- Lavafall/edge candidates: **{d['source_lava_fall_or_edge_candidates']}**")
           print(f"- Enclosed small air components ≤64: **{d['enclosed_small_air_components']}**")
+          print(f"- Cavity size buckets: **{d['enclosed_air_size_buckets']}**")
           print()
-          print('Lava/air findings are diagnostic candidates, not automatic failures; roof512/FULL status is a hard gate.')
+          print('Shelf/cavity findings are diagnostic candidates, not automatic failures; roof512/FULL status is a hard gate.')
           PY
 
       - uses: actions/upload-artifact@v4
