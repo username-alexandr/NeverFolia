@@ -37,6 +37,8 @@ public final class NeverOverworldDesertR1 {
         }
 
         final ChunkPos cp = chunk.getPos();
+        if (!selectedChunk(level.getSeed(), cp.x(), cp.z())) return 0;
+
         final long key = mix(level.getSeed() ^ CELL_SALT
             ^ ((long)cp.x() * 0x9E3779B97F4A7C15L)
             ^ ((long)cp.z() * 0xC2B2AE3D27D4EB4FL));
@@ -50,8 +52,7 @@ public final class NeverOverworldDesertR1 {
         final BlockPos center = new BlockPos(centerX, centerGroundY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
             || !isDesertSurface(chunk.getBlockState(center))
-            || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)
-            || !selectedChunk(level.getSeed(), cp.x(), cp.z())) {
+            || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)) {
             return 0;
         }
 
