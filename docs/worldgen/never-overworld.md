@@ -188,7 +188,9 @@ the vanilla desert biome. The current candidate contract is:
 - each accepted oasis attempts up to two palms using persistent
   `jungle_log` / `jungle_leaves`, with all canopy writes clipped to the owning
   chunk;
-- valid structure starts intersecting the oasis envelope prevent generation.
+- any chunk carrying structure references is rejected before oasis writes; the
+  local start/bounding-box check remains as a second guard. This protects pieces
+  whose structure start lives in a neighboring chunk without reading that neighbor.
 
 DESERT-R1 sandstorms are deterministic per world seed and 12,000-tick cycle. The
 candidate enables a storm in 35% of cycles for 2,400 ticks. Affected players must
