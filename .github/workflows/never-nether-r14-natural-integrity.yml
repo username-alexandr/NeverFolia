@@ -1,0 +1,283 @@
+name: NeverNether R14 Natural Integrity Audit
+
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths:
+      - 'native/nevernether/**'
+      - 'qa/nevernether-r14/**'
+      - 'scripts/*never-nether*.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/apply-neverfolia-post-patches-core.sh'
+      - 'worldgen-spec/never-nether*.json'
+      - '.github/workflows/never-nether-r14-natural-integrity.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  natural-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Validate integrity and R14 contracts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/test-never-nether-field-integrity.py 2>&1 | tee artifacts/field-integrity-tests.log
+          python3 scripts/test-never-nether-height-pack-r14.py 2>&1 | tee artifacts/r14-height-pack-tests.log
+          python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/r14-height-hooks-tests.log
+
+      - name: Build exact current Paperclip
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          jars=list(Path('.work/Folia/folia-server/build/libs').glob('folia-paperclip-*.jar'))
+          if len(jars)!=1: raise ValueError(f'expected one Paperclip: {jars}')
+          with zipfile.ZipFile(jars[0]) as z:
+              if z.testzip() is not None: raise ValueError('corrupt Paperclip')
+          shutil.copyfile(jars[0],'artifacts/server.jar')
+          PY
+
+      - name: Build matching FIELD-R1 plus R14 Nether pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13-FieldR1.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13-FieldR1.zip --inject
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13-FieldR1.zip --verify
+          python3 scripts/build-never-nether-height-r14.py             --input .work/NeverNether-R13-FieldR1.zip             --output artifacts/NeverNether-R14-FieldR1.zip | tee artifacts/r14-pack-build.json
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R14-FieldR1.zip --verify
+
+      - name: Generate two bounded FULL Nether areas
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,shutil,subprocess,time
+          from pathlib import Path
+          root=Path.cwd()
+          run=root/'.work/nevernether-natural-integrity'
+          run.mkdir(parents=True,exist_ok=False)
+          (run/'world/datapacks').mkdir(parents=True)
+          shutil.copyfile(root/'artifacts/NeverNether-R14-FieldR1.zip',run/'world/datapacks/NeverNether.zip')
+          (run/'eula.txt').write_text('eula=true\n')
+          (run/'server.properties').write_text(
+              'level-name=world\n'
+              'level-seed=-2996952393010080672\n'
+              'initial-enabled-packs=vanilla,file/NeverNether.zip\n'
+              'online-mode=false\n'
+              'enforce-secure-profile=false\n'
+              'server-ip=127.0.0.1\n'
+              'server-port=25597\n'
+              'view-distance=2\n'
+              'simulation-distance=2\n'
+              'spawn-protection=0\n'
+              'enable-status=false\n'
+              'max-tick-time=-1\n'
+              'pause-when-empty-seconds=-1\n'
+          )
+          log=root/'artifacts/natural-integrity-server.log'
+          def wait_for(pattern,start,timeout):
+              rx=re.compile(pattern);end=time.monotonic()+timeout
+              while time.monotonic()<end:
+                  txt=log.read_text(errors='replace') if log.exists() else ''
+                  for line in txt[start:].splitlines():
+                      m=rx.search(line)
+                      if m:return m
+                  time.sleep(1)
+              raise RuntimeError('timeout waiting for '+pattern)
+          def command(p,text):
+              p.stdin.write(text+'\n');p.stdin.flush()
+          with log.open('w') as out:
+              p=subprocess.Popen(
+                  ['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts/server.jar'),'--nogui'],
+                  cwd=run,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True,bufsize=1)
+              try:
+                  wait_for(r'Done \(',0,240)
+                  before=len(log.read_text(errors='replace'))
+                  command(p,'execute in minecraft:the_nether positioned 0 64 0 run locate biome minecraft:basalt_deltas')
+                  m=wait_for(r'minecraft:basalt_deltas.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+                  basalt_block=[int(m.group(1)),int(m.group(2)),int(m.group(3))]
+                  basalt_chunk=[basalt_block[0]//16,basalt_block[2]//16]
+                  centers=[
+                      {'name':'located_basalt_deltas','chunk':basalt_chunk},
+                      {'name':'bug01_features_area','chunk':[-195,-393]},
+                  ]
+                  selected=[]
+                  areas=[]
+                  for entry in centers:
+                      cx,cz=entry['chunk']
+                      mincx,maxcx=cx-2,cx+2
+                      mincz,maxcz=cz-2,cz+2
+                      areas.append({'name':entry['name'],'center_chunk':[cx,cz],'bounds':[mincx,maxcx,mincz,maxcz]})
+                      for z in range(mincz,maxcz+1):
+                          for x in range(mincx,maxcx+1):
+                              selected.append((x,z))
+                      command(p,f'execute in minecraft:the_nether run forceload add {mincx*16} {mincz*16} {maxcx*16+15} {maxcz*16+15}')
+                      token=f'NN_FULL_{entry["name"]}_{maxcx}_{maxcz}'
+                      loaded=False
+                      for _ in range(180):
+                          command(p,f'execute in minecraft:the_nether if loaded {maxcx*16} 64 {maxcz*16} run say {token}')
+                          time.sleep(1)
+                          if token in log.read_text(errors='replace'):
+                              loaded=True;break
+                          if p.poll() is not None:break
+                      if not loaded:raise RuntimeError('FULL/load barrier timeout '+entry['name'])
+                      command(p,'execute in minecraft:the_nether run forceload remove all')
+                      time.sleep(3)
+                  command(p,'stop')
+                  p.wait(timeout=180)
+                  if p.returncode!=0:raise RuntimeError(f'server exit {p.returncode}')
+                  result={
+                      'schema':1,
+                      'seed':-2996952393010080672,
+                      'located_basalt_deltas_block':basalt_block,
+                      'areas':areas,
+                      'chunks':[list(v) for v in sorted(set(selected))],
+                      'chunk_count':len(set(selected)),
+                      'process_exit_code':p.returncode,
+                      'normal_stop':True,
+                  }
+                  (root/'artifacts/natural-integrity-plan.json').write_text(json.dumps(result,indent=2)+'\n')
+              finally:
+                  if p.poll() is None:
+                      p.terminate();p.wait(timeout=30)
+          PY
+
+      - name: Audit saved lava pockets and roof512
+        run: |
+          set -euo pipefail
+          REGION=.work/nevernether-natural-integrity/world/dimensions/minecraft/the_nether/region
+          test -d "$REGION"
+          mapfile -t CHUNKS < <(python3 - <<'PY'
+          import json
+          d=json.load(open('artifacts/natural-integrity-plan.json'))
+          for x,z in d['chunks']: print(f'--chunk={x},{z}')
+          PY
+          )
+          python3 scripts/audit-never-nether-field-integrity.py             --region-dir "$REGION"             "${CHUNKS[@]}"             --min-y -128             --max-y 511             --pocket-limit 64             --max-findings 200             --output artifacts/nether-field-integrity.json
+          python3 - <<'PY'
+          import importlib.util,json
+          from pathlib import Path
+          root=Path.cwd()
+          plan=json.loads((root/'artifacts/natural-integrity-plan.json').read_text())
+          spec=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py')
+          nbt=importlib.util.module_from_spec(spec);spec.loader.exec_module(nbt)
+          region=root/'.work/nevernether-natural-integrity/world/dimensions/minecraft/the_nether/region'
+          failures=[];full=0;roof=0;padding_non_air=0
+          for cx,cz in map(tuple,plan['chunks']):
+              r=nbt.read_chunk_nbt(region,cx,cz)
+              if r.get('Status')!='minecraft:full':
+                  failures.append({'chunk':[cx,cz],'reason':'not_full','status':r.get('Status')});continue
+              full+=1
+              for x in range(cx*16,cx*16+16):
+                  for z in range(cz*16,cz*16+16):
+                      state=nbt.block_at(r,x,512,z)
+                      roof+=1
+                      if state!='minecraft:bedrock':
+                          failures.append({'chunk':[cx,cz],'position':[x,512,z],'reason':'roof_not_bedrock','state':state})
+              for y in range(513,528):
+                  for x in range(cx*16,cx*16+16):
+                      for z in range(cz*16,cz*16+16):
+                          state=nbt.block_at(r,x,y,z)
+                          if state not in {'minecraft:air','minecraft:cave_air','minecraft:void_air'}:
+                              padding_non_air+=1
+                              if len(failures)<200:
+                                  failures.append({'chunk':[cx,cz],'position':[x,y,z],'reason':'padding_non_air','state':state})
+          integrity=json.loads((root/'artifacts/nether-field-integrity.json').read_text())
+          counts=integrity['counts']
+          summary={
+              'schema':1,
+              'seed':plan['seed'],
+              'chunk_count':plan['chunk_count'],
+              'full_chunks':full,
+              'roof_y':512,
+              'roof_cells_checked':roof,
+              'padding_y':[513,527],
+              'padding_non_air':padding_non_air,
+              'roof_failures':failures,
+              'roof512_pass':not failures,
+              'source_lava_blocks':counts['source_lava_blocks'],
+              'flowing_lava_blocks':counts['flowing_lava_blocks'],
+              'source_lava_with_air_below':counts['source_lava_with_air_below'],
+              'enclosed_small_air_components':counts['enclosed_small_air_components'],
+              'enclosed_small_air_blocks':counts['enclosed_small_air_blocks'],
+              'air_components_touching_unknown_boundary':counts['air_components_touching_unknown_boundary'],
+              'lava_samples':integrity['source_lava_air_below_samples'],
+              'enclosed_air_samples':integrity['enclosed_air_samples'],
+              'field_findings_are_diagnostic':True,
+              'natural_integrity_runtime_pass':full==plan['chunk_count'] and not failures,
+              'release_ready':False,
+          }
+          (root/'artifacts/nevernether-natural-summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          if full!=plan['chunk_count']:raise SystemExit(f'not all selected chunks FULL: {full}/{plan["chunk_count"]}')
+          if failures:raise SystemExit(f'R14 roof/padding failures: {len(failures)}')
+          PY
+
+      - name: Publish integrity summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          print('## NeverNether R14 natural integrity audit')
+          p=Path('artifacts/nevernether-natural-summary.json')
+          if not p.is_file():
+              print();print('Summary not produced.');raise SystemExit(0)
+          d=json.loads(p.read_text())
+          print()
+          print(f"- FULL chunks: **{d['full_chunks']}/{d['chunk_count']}**")
+          print(f"- Roof Y=512 cells checked: **{d['roof_cells_checked']}**")
+          print(f"- Roof/padding pass: **{d['roof512_pass']}**")
+          print(f"- Source lava blocks: **{d['source_lava_blocks']}**")
+          print(f"- Source lava with air below: **{d['source_lava_with_air_below']}**")
+          print(f"- Enclosed small air components ≤64: **{d['enclosed_small_air_components']}**")
+          print()
+          print('Lava/air findings are diagnostic candidates, not automatic failures; roof512/FULL status is a hard gate.')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-r14-natural-integrity-${{ github.sha }}
+          path: |
+            artifacts/natural-integrity-plan.json
+            artifacts/nether-field-integrity.json
+            artifacts/nevernether-natural-summary.json
+            artifacts/natural-integrity-server.log
+            artifacts/r14-pack-build.json
+            artifacts/field-integrity-tests.log
+            artifacts/r14-height-pack-tests.log
+            artifacts/r14-height-hooks-tests.log
+            artifacts/production-chain.log
+            artifacts/build.log
+          if-no-files-found: warn
+          retention-days: 14
