@@ -49,6 +49,35 @@ def report(roots, limit=64, max_findings=200):
     return AUDIT.audit(AUDIT.Volume(roots, 0, 15), limit, max_findings)
 
 
+def attach_substrate_provenance(root, position, *, external=False, proposal=False):
+    x,y,z=position
+    section=next(s for s in root["sections"] if s["Y"] == y//16)
+    palette=["minecraft:netherrack","minecraft:lava[level=0]"]
+    bits=1
+    per=64//bits
+    original=[0]*((4096+per-1)//per)
+    index=((y&15)<<8)|((z&15)<<4)|(x&15)
+    external_longs=[]
+    if external:
+        external_longs=[0]*(index//64+1)
+        external_longs[index//64] |= 1 << (index%64)
+    section["neverfolia:substrate_r11"]={
+        "Schema":1,
+        "Profile":"NN-R11-SUBSTRATE-1-REMOTE-R10-PRIORITY",
+        "Seed":7270913,
+        "ChunkX":root["xPos"],
+        "ChunkZ":root["zPos"],
+        "SectionY":y//16,
+        "Palette":palette,
+        "Bits":bits,
+        "Original":{"$long_array":original},
+        "External":{"$long_array":external_longs},
+        "ProposalIndices":{"$int_array":[index] if proposal else []},
+        "ProposalStates":{"$int_array":[1] if proposal else []},
+    }
+    return index
+
+
 class FieldAuditTests(unittest.TestCase):
     def test_solid_rock_has_no_pockets(self):
         r = report({(0, 0): fixture()})
@@ -124,6 +153,36 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["counts"]["source_lava_fall_or_edge_candidates"], 2)
         self.assertEqual(r["hanging_lava_shelf_samples"][0]["position"], [8, 8, 8])
         self.assertEqual(r["hanging_lava_shelf_samples"][0]["horizontal_source_lava_neighbors"], 2)
+
+    def test_saved_provenance_distinguishes_proposal_and_external(self):
+        position=(8,8,8)
+
+        proposal_root=fixture(changes={position:3})
+        attach_substrate_provenance(proposal_root,position,proposal=True)
+        proposal_volume=AUDIT.Volume({(0,0):proposal_root},0,15)
+        proposal=proposal_volume.provenance_at(position)
+        self.assertTrue(proposal["available"])
+        self.assertEqual(proposal["classification"],"proposal")
+        self.assertEqual(proposal["original"],"minecraft:netherrack")
+        self.assertEqual(proposal["proposal_state"],"minecraft:lava[level=0]")
+        self.assertFalse(proposal["external"])
+
+        external_root=fixture(changes={position:3})
+        attach_substrate_provenance(external_root,position,external=True)
+        external_volume=AUDIT.Volume({(0,0):external_root},0,15)
+        external=external_volume.provenance_at(position)
+        self.assertTrue(external["available"])
+        self.assertEqual(external["classification"],"external")
+        self.assertEqual(external["original"],"minecraft:netherrack")
+        self.assertIsNone(external["proposal_state"])
+        self.assertTrue(external["external"])
+
+        original_root=fixture()
+        attach_substrate_provenance(original_root,position)
+        original_volume=AUDIT.Volume({(0,0):original_root},0,15)
+        original=original_volume.provenance_at(position)
+        self.assertEqual(original["classification"],"original")
+        self.assertEqual(original["current"],"minecraft:netherrack")
 
     def test_roof_player_blocks_only_observed(self):
         root = fixture()
