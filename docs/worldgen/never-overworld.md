@@ -194,10 +194,12 @@ the vanilla desert biome. The current candidate contract is:
 
 DESERT-R1 sandstorms are deterministic per world seed and 12,000-tick cycle. The
 candidate enables a storm in 35% of cycles for 2,400 ticks. Affected players must
-be outdoors in the desert. Dust/ash particles reduce visual clarity and the wind
-impulse opposes movement against the wind while assisting movement with the wind.
-Passenger, swimming, spectator, creative-flight and elytra movement are excluded.
-**There is no overheating mechanic.**
+be outdoors in the desert above dry terrain: the runtime `OCEAN_FLOOR` height
+must be at least first-available `Y=129`, so submerged desert sea below the
+`Y=128` flood plane cannot produce a sandstorm. Dust/ash particles reduce visual
+clarity and the wind impulse opposes movement against the wind while assisting
+movement with the wind. Passenger, swimming, spectator, creative-flight and
+elytra movement are excluded. **There is no overheating mechanic.**
 
 Compile/native smoke is green for the surface-height correction. Natural oasis/palm
 acceptance on seed `-2996952393010080672` remains a separate gate until the
