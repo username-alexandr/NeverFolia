@@ -57,6 +57,7 @@ class FieldAuditTests(unittest.TestCase):
     def test_enclosed_single_voxel(self):
         r = report({(0, 0): fixture(changes={(8, 8, 8): 1})})
         self.assertEqual(r["counts"]["enclosed_small_air_components"], 1)
+        self.assertEqual(r["counts"]["enclosed_air_components_size_1"], 1)
         self.assertEqual(r["enclosed_air_samples"][0]["bbox"], [8, 8, 8, 8, 8, 8])
 
     def test_face_connected_air_variants_are_one_component(self):
@@ -108,7 +109,21 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["counts"]["source_lava_blocks"], 1)
         self.assertEqual(r["counts"]["flowing_lava_blocks"], 1)
         self.assertEqual(r["counts"]["source_lava_with_air_below"], 1)
+        self.assertEqual(r["counts"]["hanging_source_lava_shelf_candidates"], 0)
+        self.assertEqual(r["counts"]["source_lava_fall_or_edge_candidates"], 1)
         self.assertIn("waterfalls", " ".join(r["interpretation"]))
+
+    def test_horizontal_source_lava_cluster_is_shelf_candidate(self):
+        changes = {
+            (7, 8, 8): 3, (8, 8, 8): 3, (9, 8, 8): 3,
+            (7, 7, 8): 1, (8, 7, 8): 1, (9, 7, 8): 1,
+        }
+        r = report({(0, 0): fixture(changes=changes)})
+        self.assertEqual(r["counts"]["source_lava_with_air_below"], 3)
+        self.assertEqual(r["counts"]["hanging_source_lava_shelf_candidates"], 1)
+        self.assertEqual(r["counts"]["source_lava_fall_or_edge_candidates"], 2)
+        self.assertEqual(r["hanging_lava_shelf_samples"][0]["position"], [8, 8, 8])
+        self.assertEqual(r["hanging_lava_shelf_samples"][0]["horizontal_source_lava_neighbors"], 2)
 
     def test_roof_player_blocks_only_observed(self):
         root = fixture()
