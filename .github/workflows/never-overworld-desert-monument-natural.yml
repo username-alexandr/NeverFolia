@@ -212,7 +212,7 @@ jobs:
           def palm_signature(rootnbt,cx,cz,localx,localz):
             wx=cx*16+localx; wz=cz*16+localz
             runs=[]; current=[]
-            for y in range(96,256):
+            for y in range(96,512):
               if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:jungle_log':
                 if current and y!=current[-1]+1:
                   runs.append(current); current=[]
@@ -235,7 +235,7 @@ jobs:
             for dz in range(-3,4):
               for dx in range(-3,4):
                 wx=cx*16+centerx+dx; wz=cz*16+centerz+dz
-                for y in range(120,193):
+                for y in range(120,512):
                   if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water':
                     count+=1; break
             return count
@@ -407,4 +407,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-exact-oasis-signature
+# retrigger-natural-2026-09-18-full-height-oasis-signature
