@@ -10,6 +10,7 @@ on:
       - 'scripts/apply-never-overworld-field-r11.py'
       - 'scripts/apply-never-overworld-monument-r11.py'
       - 'scripts/apply-never-overworld-desert-r1.py'
+      - 'scripts/never-overworld-sandstorm-window.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
       - '.github/workflows/never-overworld-field-r11-desert-r1.yml'
   workflow_dispatch:
@@ -36,6 +37,7 @@ jobs:
           git config --global user.email actions@github.com
           git config --global user.name 'NeverFolia CI'
           python3 scripts/test-never-overworld-field-r11.py 2>&1 | tee artifacts/field-r11-python-tests.log
+          python3 scripts/never-overworld-sandstorm-window.py --self-test 2>&1 | tee artifacts/sandstorm-window-selftest.log
           python3 scripts/prepare-never-nether-r13-upstream.py
           test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
