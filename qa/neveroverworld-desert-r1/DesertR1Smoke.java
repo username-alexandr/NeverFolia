@@ -9,6 +9,8 @@ public final class DesertR1Smoke {
     public static void main(String[] args){
         SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         long seed=-2996952393010080672L;
+        check(NeverOverworldDesertR1.surfaceGroundY(129)==128,"WORLD_SURFACE_WG first-available Y must map to ground Y");
+        check(NeverOverworldDesertR1.surfaceGroundY(130)==129,"surface-ground conversion regressed");
         int selected=0;
         int total=0;
         for(int x=-384;x<=384;x++){
