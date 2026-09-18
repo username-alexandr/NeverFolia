@@ -147,6 +147,7 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
     counts: Counter[str] = Counter()
     pocket_samples: list[dict[str, Any]] = []
     lava_samples: list[dict[str, Any]] = []
+    shelf_samples: list[dict[str, Any]] = []
 
     def mark(position: Position) -> bool:
         x, y, z = position
@@ -168,9 +169,36 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                     counts["source_lava_support_unknown"] += 1
                 elif block_name(below) in AIR:
                     counts["source_lava_with_air_below"] += 1
+                    horizontal = [
+                        volume.at((position[0] + dx, y, position[2] + dz))
+                        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                    ]
+                    horizontal_source = sum(
+                        1 for neighbor in horizontal
+                        if neighbor is not None and source_lava(neighbor)
+                    )
+                    above = volume.at((position[0], y + 1, position[2]))
+                    inside_structure = volume.in_structure(position)
+                    shelf_candidate = horizontal_source >= 2 and not inside_structure
+                    if shelf_candidate:
+                        counts["hanging_source_lava_shelf_candidates"] += 1
+                        if len(shelf_samples) < max_findings:
+                            shelf_samples.append({
+                                "position": list(position),
+                                "horizontal_source_lava_neighbors": horizontal_source,
+                                "above": above,
+                                "below": below,
+                            })
+                    else:
+                        counts["source_lava_fall_or_edge_candidates"] += 1
                     if len(lava_samples) < max_findings:
-                        lava_samples.append({"position": list(position),
-                                             "inside_saved_structure_bbox": volume.in_structure(position)})
+                        lava_samples.append({
+                            "position": list(position),
+                            "inside_saved_structure_bbox": inside_structure,
+                            "horizontal_source_lava_neighbors": horizontal_source,
+                            "above": above,
+                            "shelf_candidate": shelf_candidate,
+                        })
             elif block_name(state) == "minecraft:lava":
                 counts["flowing_lava_blocks"] += 1
             if block_name(state) not in AIR or not mark(position):
@@ -214,25 +242,39 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                 else:
                     counts["enclosed_small_air_components"] += 1
                     counts["enclosed_small_air_blocks"] += size
+                    if size == 1:
+                        counts["enclosed_air_components_size_1"] += 1
+                    elif size <= 4:
+                        counts["enclosed_air_components_size_2_4"] += 1
+                    elif size <= 16:
+                        counts["enclosed_air_components_size_5_16"] += 1
+                    else:
+                        counts["enclosed_air_components_size_17_64"] += 1
                     if len(pocket_samples) < max_findings:
                         pocket_samples.append({"size": size, "bbox": minimum + maximum,
                                                "sample": list(position)})
     keys = (
         "source_lava_blocks", "source_lava_support_unknown", "source_lava_with_air_below",
+        "hanging_source_lava_shelf_candidates", "source_lava_fall_or_edge_candidates",
         "flowing_lava_blocks", "air_components", "air_blocks",
         "air_components_touching_unknown_boundary", "air_components_above_pocket_limit",
         "small_air_components_in_saved_structure_bbox", "enclosed_small_air_components",
-        "enclosed_small_air_blocks",
+        "enclosed_small_air_blocks", "enclosed_air_components_size_1",
+        "enclosed_air_components_size_2_4", "enclosed_air_components_size_5_16",
+        "enclosed_air_components_size_17_64",
     )
     return {
         "schema": 1, "audit": "nevernether-field-integrity-r1", "read_only": True,
         "range_y": [volume.min_y, volume.max_y], "chunk_count": len(volume.chunks),
         "chunks": [list(chunk) for chunk in sorted(volume.chunks)],
         "pocket_limit": pocket_limit, "counts": {key: counts[key] for key in keys},
-        "enclosed_air_samples": pocket_samples, "source_lava_air_below_samples": lava_samples,
+        "enclosed_air_samples": pocket_samples,
+        "source_lava_air_below_samples": lava_samples,
+        "hanging_lava_shelf_samples": shelf_samples,
         "samples_truncated": {
             "enclosed_air": counts["enclosed_small_air_components"] > len(pocket_samples),
             "lava_air_below": counts["source_lava_with_air_below"] > len(lava_samples),
+            "hanging_lava_shelf": counts["hanging_source_lava_shelf_candidates"] > len(shelf_samples),
         },
         "roof_non_air_blocks_observed": volume.roof_non_air,
         "interpretation": [
