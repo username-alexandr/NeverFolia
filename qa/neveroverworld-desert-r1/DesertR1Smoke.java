@@ -7,7 +7,7 @@ public final class DesertR1Smoke {
     private static int checks;
     private static void check(boolean ok,String why){if(!ok)throw new AssertionError(why);checks++;}
     public static void main(String[] args){
-        SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
+        var out=System.out;SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         long seed=-2996952393010080672L;
         check(NeverOverworldDesertR1.surfaceGroundY(129)==128,"WORLD_SURFACE_WG first-available Y must map to ground Y");
         check(NeverOverworldDesertR1.surfaceGroundY(130)==129,"surface-ground conversion regressed");
@@ -31,6 +31,6 @@ public final class DesertR1Smoke {
             "oasis candidate rate out of bounds selected="+selected+" total="+total+" rate="+rate);
         check(!NeverOverworldDesertR1.selectedChunk(seed,0,0)
               || NeverOverworldDesertR1.selectedChunk(seed,0,0),"repeat determinism");
-        System.out.println("PASS DesertR1Smoke checks="+checks+" selected="+selected+" rate="+rate);
+        out.println("PASS DesertR1Smoke checks="+checks+" selected="+selected+" rate="+rate);
     }
 }
