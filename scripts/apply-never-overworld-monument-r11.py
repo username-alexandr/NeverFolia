@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Re-anchor ocean monuments to sea level in NeverOverworld.
+"""Re-anchor ocean monuments to the NeverOverworld flood surface.
 
-Vanilla sea 63 keeps the historical base Y=39. NeverOverworld sea 128 gets
-base Y=104, preserving the same -24 relative offset instead of burying the
-monument roughly 65 blocks too deep. Existing saved starts preserve their
-stored minY when regenerated.
+NeverOverworld intentionally keeps the vanilla noise-settings sea_level=63
+while flooding surface-connected volume to Y=128. Therefore monument placement
+cannot use ChunkGenerator#getSeaLevel as the NeverOverworld flood reference.
+For the -512/1024 NeverOverworld height contract the monument base is Y=104
+(128-24); ordinary dimensions retain their vanilla seaLevel-24 behavior.
+Existing saved starts preserve their stored minY when regenerated.
 """
 from __future__ import annotations
 import argparse
@@ -20,7 +22,7 @@ PIECES_SHA='9099ed9ce958626fcf9f377e2b0931d1aae1083df25b20e6b95d728a0874cb43'
 def sha(s:str)->str:return hashlib.sha256(s.encode()).hexdigest()
 
 def patch_struct(s:str)->str:
-    if 'final int baseY' in s and 'getSeaLevel() - 24' in s:
+    if 'neverOverworldMonumentBaseY' in s:
         return s
     if sha(s)!=STRUCT_SHA: raise ValueError('OceanMonumentStructure source identity changed')
     old='''    private static StructurePiece createTopPiece(final ChunkPos chunkPos, final WorldgenRandom random) {
@@ -34,7 +36,13 @@ def patch_struct(s:str)->str:
         builder.addPiece(createTopPiece(context.chunkPos(), context.random()));
     }
 '''
-    new='''    private static StructurePiece createTopPiece(final ChunkPos chunkPos, final WorldgenRandom random, final int baseY) {
+    new='''    private static int neverOverworldMonumentBaseY(final Structure.GenerationContext context) {
+        return context.heightAccessor().getMinY() == -512 && context.heightAccessor().getHeight() == 1024
+            ? 104
+            : context.chunkGenerator().getSeaLevel() - 24;
+    }
+
+    private static StructurePiece createTopPiece(final ChunkPos chunkPos, final WorldgenRandom random, final int baseY) {
         int west = chunkPos.getMinBlockX() - 29;
         int north = chunkPos.getMinBlockZ() - 29;
         Direction orientation = Direction.Plane.HORIZONTAL.getRandomDirection(random);
@@ -42,7 +50,7 @@ def patch_struct(s:str)->str:
     }
 
     private static void generatePieces(final StructurePiecesBuilder builder, final Structure.GenerationContext context) {
-        builder.addPiece(createTopPiece(context.chunkPos(), context.random(), context.chunkGenerator().getSeaLevel() - 24));
+        builder.addPiece(createTopPiece(context.chunkPos(), context.random(), neverOverworldMonumentBaseY(context)));
     }
 '''
     if s.count(old)!=1: raise ValueError('OceanMonumentStructure creation block drifted')
@@ -84,6 +92,6 @@ def main():
         print('[NeverFolia][NeverOverworld monument R11] preflight OK')
         return
     for path,text in staged.items(): path.write_text(text)
-    print('[NeverFolia][NeverOverworld monument R11] monument base now follows seaLevel-24 (128 -> 104)')
+    print('[NeverFolia][NeverOverworld monument R11] NeverOverworld -512/1024 monument base fixed at Y=104; other worlds use seaLevel-24')
 
 if __name__=='__main__':main()
