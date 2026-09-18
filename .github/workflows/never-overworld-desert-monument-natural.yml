@@ -130,7 +130,7 @@ jobs:
             raise SystemExit(f'NeverOverworld block-region directory missing: {region}')
           MASK=(1<<64)-1
           SEED=-2996952393010080672
-          OASIS_DENOMINATOR=192
+          OASIS_DENOMINATOR=96
           CELL_SALT=0x4E4F574F41534953
           def s64(v):
             v &= MASK
