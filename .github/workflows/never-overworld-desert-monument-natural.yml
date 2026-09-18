@@ -17,19 +17,48 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: Download already compiled combined Paperclip
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build exact current candidate Paperclip and pack-input bundler
         run: |
           set -euo pipefail
-          mkdir -p artifacts .ci
-          gh run download 35321416350 -n NeverOverworld-field-r11-desert-r1-164a4df0c2d2cbd7651e3f70e20bb8425ad4adf4 -D .ci
-          cp .ci/NeverFolia-NN-FIELD-R11-DESERT-R1-TEST-164a4df.jar artifacts/server.jar
-          sha256sum artifacts/server.jar
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production-chain.log 2>&1
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          libs=Path('.work/Folia/folia-server/build/libs')
+          paperclips=list(libs.glob('folia-paperclip-*.jar'))
+          if len(paperclips)!=1:
+              raise ValueError(f'Expected one Paperclip, got {paperclips}')
+          shutil.copyfile(paperclips[0],'artifacts/server.jar')
+          bundlers=[]
+          for p in libs.glob('*.jar'):
+              try:
+                  with zipfile.ZipFile(p) as z:
+                      if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                          bundlers.append(p)
+              except zipfile.BadZipFile:
+                  pass
+          if len(bundlers)!=1:
+              raise ValueError(f'Expected one Folia bundler pack input, got {bundlers}')
+          shutil.copyfile(bundlers[0],'artifacts/pack-input-bundler.jar')
+          print('paperclip:',paperclips[0])
+          print('pack input:',bundlers[0])
+          PY
       - name: Build matching NeverOverworld pack
         run: |
           set -euo pipefail
-          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/server.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
           python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
           python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
           python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
