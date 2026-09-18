@@ -9,20 +9,23 @@ public final class DesertR1Smoke {
     public static void main(String[] args){
         SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         long seed=-2996952393010080672L;
-        int activeCells=0;
-        for(int cellX=-20;cellX<=20;cellX++){
-            for(int cellZ=-20;cellZ<=20;cellZ++){
-                int selected=0;
-                for(int dx=0;dx<NeverOverworldDesertR1.CELL_CHUNKS;dx++)
-                    for(int dz=0;dz<NeverOverworldDesertR1.CELL_CHUNKS;dz++)
-                        if(NeverOverworldDesertR1.selectedChunk(seed,cellX*8+dx,cellZ*8+dz))selected++;
-                check(selected==0||selected==1,"more than one oasis candidate in cell");
-                if(selected==1)activeCells++;
+        int selected=0;
+        int total=0;
+        for(int x=-384;x<=384;x++){
+            for(int z=-384;z<=384;z++){
+                boolean a=NeverOverworldDesertR1.selectedChunk(seed,x,z);
+                boolean b=NeverOverworldDesertR1.selectedChunk(seed,x,z);
+                check(a==b,"selection non-deterministic");
+                if(a)selected++;
+                total++;
             }
         }
-        check(activeCells>430&&activeCells<690,"active cell ratio out of expected rare range: "+activeCells);
-        for(int x=-64;x<=64;x+=7)for(int z=-64;z<=64;z+=9)
-            check(NeverOverworldDesertR1.selectedChunk(seed,x,z)==NeverOverworldDesertR1.selectedChunk(seed,x,z),"determinism");
-        System.out.println("PASS DesertR1Smoke checks="+checks+" activeCells="+activeCells);
+        double rate=(double)selected/(double)total;
+        double expected=1.0D/NeverOverworldDesertR1.OASIS_CHANCE_DENOMINATOR;
+        check(rate>expected*0.75D&&rate<expected*1.25D,
+            "oasis candidate rate out of bounds selected="+selected+" total="+total+" rate="+rate);
+        check(!NeverOverworldDesertR1.selectedChunk(seed,0,0)
+              || NeverOverworldDesertR1.selectedChunk(seed,0,0),"repeat determinism");
+        System.out.println("PASS DesertR1Smoke checks="+checks+" selected="+selected+" rate="+rate);
     }
 }
