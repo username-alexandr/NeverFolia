@@ -199,6 +199,8 @@ jobs:
             artifacts/build.log
             artifacts/production-chain.log
             artifacts/build.log
+            artifacts/production-chain.log
+            artifacts/build.log
           retention-days: 14
           if-no-files-found: warn
 
