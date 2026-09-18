@@ -95,7 +95,14 @@ jobs:
           from pathlib import Path
           root=Path.cwd(); base_path=root/'scripts/hash-never-nether-chunks.py'
           sp=importlib.util.spec_from_file_location('nbt',base_path); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
-          region=root/'.work/natural-field-r11/world/region'
+          world_root=root/'.work/natural-field-r11/world'
+          target='r.24.-22.mca'
+          matches=list(world_root.rglob(target))
+          file_list=sorted(str(p.relative_to(world_root)) for p in world_root.rglob('*') if p.is_file())
+          (root/'artifacts/natural-world-files.json').write_text(json.dumps({'target':target,'matches':[str(p) for p in matches],'files':file_list},indent=2)+'\n')
+          if len(matches)!=1:
+            raise SystemExit(f'Expected one saved {target}, got {matches}')
+          region=matches[0].parent
           class View:
             def __init__(self,r): self.sections={s.get('Y'):s for s in nbt.section_list(r) if isinstance(s.get('Y'),int)}
             def b(self,x,y,z):
@@ -146,6 +153,7 @@ jobs:
           name: NeverOverworld-field-r11-natural-${{ github.sha }}
           path: |
             artifacts/natural-*.json
+            artifacts/natural-world-files.json
             artifacts/natural-server.log
             artifacts/production-chain.log
             artifacts/build.log
