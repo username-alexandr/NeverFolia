@@ -5,6 +5,9 @@ public final class SandstormR1Smoke {
     private static void check(boolean ok,String why){if(!ok)throw new AssertionError(why);checks++;}
     public static void main(String[] args){
         long seed=-2996952393010080672L;
+        check(!NeverOverworldSandstormR1.isDryDesertSurface(128),"flooded desert sea must not run sandstorms");
+        check(NeverOverworldSandstormR1.isDryDesertSurface(129),"dry flood-boundary desert must allow sandstorms");
+        check(NeverOverworldSandstormR1.isDryDesertSurface(180),"high dry desert must allow sandstorms");
         int enabledCycles=0;
         for(long cycle=-100;cycle<100;cycle++){
             long base=cycle*NeverOverworldSandstormR1.CYCLE_TICKS;
