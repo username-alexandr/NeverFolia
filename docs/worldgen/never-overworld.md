@@ -207,13 +207,25 @@ movement with the wind. Passenger, swimming, spectator, creative-flight and
 elytra movement are excluded. **There is no overheating mechanic.**
 
 Compile/native smoke covers the dry-surface rules and the flooded sandbar builder.
-Natural oasis/palm acceptance on seed `-2996952393010080672` remains a separate
-gate. The natural audit may count a candidate only after its saved chunk reaches
-`minecraft:full`.
-A persisted oasis signature requires water at the deterministic center with sand
-directly below it, plus a 5–7 block `jungle_log` trunk on one of DESERT-R1's
-eight deterministic palm positions and nearby `jungle_leaves` at the trunk top.
-Palette-only jungle-log/leaves matches are explicitly insufficient.
+Natural acceptance is also green on seed `-2996952393010080672`: run
+`35383297726` at production commit `f673a3332f453b74e0786c71029ba0837a4fd478`
+saved all **17/17** sampled deterministic candidates as `minecraft:full` and
+verified **3** persisted sandbar-oasis signatures. Each accepted oasis had its
+deterministic center pool at **Y=130**, sand immediately below at Y=129,
+sandstone foundation at Y=128, and 5–7 block `jungle_log` palms on expected
+DESERT-R1 offsets with nearby `jungle_leaves`.
+
+The same run retained the raised ocean monument at **Y=104..126**. Its saved
+union bounding box was `[675,104,-381 .. 732,126,-324]`, geometric center
+`[703,-353]`; `/locate` returned `[704,~,-352]`. The center 5x5 base sample
+at Y=104 contained 25/25 prismarine blocks.
+
+The natural audit only counts a candidate after its saved chunk reaches
+`minecraft:full`. A persisted oasis signature requires water at the
+deterministic center with sand directly below it, plus a 5–7 block
+`jungle_log` trunk on one of DESERT-R1's eight deterministic palm positions
+and nearby `jungle_leaves` at the trunk top. Palette-only jungle-log/leaves
+matches are explicitly insufficient.
 
 ## Vanilla and NeverFolia native structures
 
