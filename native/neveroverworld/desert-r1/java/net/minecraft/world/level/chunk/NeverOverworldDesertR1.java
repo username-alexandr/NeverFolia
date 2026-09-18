@@ -58,7 +58,7 @@ public final class NeverOverworldDesertR1 {
         final BlockPos biomeCenter = floodedCandidate ? floodCenter : center;
         if ((!dryCandidate && !floodedCandidate)
             || !level.getBiome(biomeCenter).is(Biomes.DESERT)
-            || chunk.hasAnyStructureReferences()
+            || hasNonEmptyStructureReferences(chunk)
             || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)) {
             return 0;
         }
@@ -321,6 +321,13 @@ public final class NeverOverworldDesertR1 {
 
     private static boolean isDesertSurface(final BlockState state) {
         return state.is(Blocks.SAND) || state.is(Blocks.SANDSTONE);
+    }
+
+    static boolean hasNonEmptyStructureReferences(final ChunkAccess chunk) {
+        for (var references : chunk.getAllReferences().values()) {
+            if (!references.isEmpty()) return true;
+        }
+        return false;
     }
 
     private static boolean intersectsStructure(final ChunkAccess chunk, final int minX, final int maxX, final int minZ, final int maxZ) {
