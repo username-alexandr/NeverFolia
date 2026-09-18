@@ -239,6 +239,12 @@ jobs:
                   if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water':
                     count+=1; break
             return count
+          def oasis_center_pool_y(rootnbt,cx,cz,centerx,centerz):
+            wx=cx*16+centerx; wz=cz*16+centerz
+            for y in range(120,512):
+              if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water' and nbt.block_at(rootnbt,wx,y-1,wz)=='minecraft:sand':
+                return y
+            return None
           def nonempty_reference_ids(refs):
             if not isinstance(refs,dict):return []
             result=[]
@@ -262,13 +268,14 @@ jobs:
             has_leaves='minecraft:jungle_leaves' in names
             lx,lz=oasis_center(cx,cz)
             wx=cx*16+lx; wz=cz*16+lz
-            detected_palms=[]; center_water_columns=0
+            detected_palms=[]; center_water_columns=0; center_pool_y=None
             if has_log and has_leaves:
               for ox,oz in PALM_OFFSETS:
                 sig=palm_signature(r,cx,cz,lx+ox,lz+oz)
                 if sig is not None:detected_palms.append(sig)
               center_water_columns=oasis_water_count(r,cx,cz,lx,lz)
-            oasis_signature=bool(detected_palms) and center_water_columns>=4
+              center_pool_y=oasis_center_pool_y(r,cx,cz,lx,lz)
+            oasis_signature=bool(detected_palms) and center_pool_y is not None
             if oasis_signature:candidate_palms.append([cx,cz])
             column=[]
             for y in range(511,119,-1):
@@ -290,6 +297,7 @@ jobs:
               'structure_reference_ids':reference_ids,
               'has_jungle_log':has_log,'has_jungle_leaves':has_leaves,
               'detected_expected_palms':detected_palms,
+              'center_pool_y':center_pool_y,
               'center_radius3_water_columns':center_water_columns,
               'oasis_signature':oasis_signature
             })
@@ -349,7 +357,7 @@ jobs:
             'monument_base_y_104':any(v['piece_min_y']==104 for v in starts)
           }
           natural_audit_pass=all(gate_summary.values())
-          result={'schema':6,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
+          result={'schema':7,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
           (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
           if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
@@ -407,4 +415,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-full-height-oasis-signature
+# retrigger-natural-2026-09-18-exact-pool-and-palm-signature
