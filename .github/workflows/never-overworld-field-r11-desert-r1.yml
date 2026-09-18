@@ -13,6 +13,9 @@ on:
       - 'scripts/apply-neverfolia-post-patches.sh'
       - '.github/workflows/never-overworld-field-r11-desert-r1.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
