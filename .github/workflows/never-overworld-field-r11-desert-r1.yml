@@ -87,14 +87,24 @@ jobs:
             'seed':-2996952393010080672,
             'field_r11':'shallow boundary flood continuity Y=-64..127',
             'monument_base':'seaLevel-24 (NeverOverworld 128 -> 104)',
-            'desert_r1':'rare oases + jungle-log/leaves palms + deterministic wind sandstorms',
-            'overheating':False,'release_ready':False},indent=2)+'\n')
+            'desert_r1':'rare dry-terrain oases + flooded sandbar oases + jungle-log/leaves palms + deterministic wind sandstorms',
+            'natural_acceptance':{
+              'seed':-2996952393010080672,
+              'workflow_run':35383297726,
+              'production_sha':'f673a3332f453b74e0786c71029ba0837a4fd478',
+              'sampled_candidates_full':'17/17',
+              'verified_oasis_signatures':3,
+              'monument_piece_y':'104..126'
+            },
+            'overheating':False,
+            'release_ready':False,
+            'remaining_acceptance':'player-facing sandstorm visual/movement acceptance'},indent=2)+'\n')
           PY
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
       - name: Scope and checksums
         if: always()
         run: |
-          printf '%s\n' 'TEST CANDIDATE. Compile/smoke only; natural seam, oasis frequency, monument terrain and player sandstorm acceptance are separate.' > artifacts/SCOPE.txt
+          printf '%s\n' 'TEST CANDIDATE. Compile/smoke plus recorded natural acceptance: FIELD-R11 seam, DESERT-R1 persisted oasis signatures and raised monument are green on seed -2996952393010080672. Player-facing sandstorm visual/movement acceptance remains separate.' > artifacts/SCOPE.txt
           (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         if: always()
