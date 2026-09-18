@@ -45,7 +45,7 @@ public final class NeverOverworldDesertR1 {
         final int centerX = cp.getMinBlockX() + centerLocalX;
         final int centerZ = cp.getMinBlockZ() + centerLocalZ;
         final int centerGroundY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, centerLocalX, centerLocalZ));
-        if (centerGroundY <= FLOOD_LEVEL || centerGroundY >= chunk.getMaxY() - 13) return 0;
+        if (!isEligibleOasisGroundY(centerGroundY, chunk.getMaxY())) return 0;
 
         final BlockPos center = new BlockPos(centerX, centerGroundY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
@@ -178,6 +178,10 @@ public final class NeverOverworldDesertR1 {
 
     static int surfaceGroundY(final int firstAvailableY) {
         return firstAvailableY - 1;
+    }
+
+    static boolean isEligibleOasisGroundY(final int groundY, final int maxY) {
+        return groundY >= FLOOD_LEVEL && groundY < maxY - 13;
     }
 
     private static boolean isDesertSurface(final BlockState state) {
