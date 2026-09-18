@@ -242,6 +242,20 @@ Deep extensions for vanilla mineshafts and Trial Chambers are reserved by the
 structure contract, while Ancient City placement is protected from extending
 below its NR hard limit.
 
+### Raised ocean-monument acceptance
+
+NeverOverworld keeps vanilla ocean monuments, but re-anchors them to the raised
+flood plane. On seed `-2996952393010080672`, natural audit run `35369762820`
+(commit `aa73cedc160c3d39c6e23a7f9e92cec790f9af02`) persisted the located
+monument with one start piece spanning **Y=104..126**. Its union bounding box is
+`[675,104,-381]..[732,126,-324]`, with geometric X/Z center `[703,-353]`.
+Vanilla `/locate structure minecraft:monument` returned `[704,~,-352]`, only
+one block away on each horizontal axis. The audited 5x5 slice at Y=104 was
+**25/25 prismarine**, and the center column contained monument
+prismarine/prismarine-brick blocks below the Y=128 water plane. This closes the
+raised-monument geometry/elevation gate independently of DESERT-R1 oasis
+acceptance.
+
 ## Predictive fast locate
 
 NeverFolia provides a no-generation locate path for its native structures.
