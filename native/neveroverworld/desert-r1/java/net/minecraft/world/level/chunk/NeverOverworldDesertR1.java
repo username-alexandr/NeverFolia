@@ -17,13 +17,13 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
 /**
  * DESERT-R1: rare chunk-owned desert oases.
  *
- * <p>One deterministic candidate chunk is selected per 8x8-chunk cell and only
- * one third of cells are active. The oasis itself is fully contained in the
- * owning chunk, requires a naturally dry desert sand surface, avoids structure
- * starts and never reads/writes a neighbouring chunk.</p>
+ * <p>Each naturally dry desert chunk gets an independent deterministic rare
+ * chance. This avoids losing an entire desert cell when a pre-selected chunk
+ * lands in water or on the biome edge. The oasis stays fully inside the owning
+ * chunk, avoids structure starts and never reads/writes a neighbouring chunk.</p>
  */
 public final class NeverOverworldDesertR1 {
-    static final int CELL_CHUNKS = 8;
+    static final int OASIS_CHANCE_DENOMINATOR = 192;
     static final int FLOOD_LEVEL = 128;
     private static final long CELL_SALT = 0x4E4F574F41534953L;
 
@@ -32,8 +32,7 @@ public final class NeverOverworldDesertR1 {
     public static int generate(final WorldGenLevel level, final ChunkAccess chunk) {
         if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != -512
-            || level.getHeight() != 1024
-            || !selectedChunk(level.getSeed(), chunk.getPos().x(), chunk.getPos().z())) {
+            || level.getHeight() != 1024) {
             return 0;
         }
 
@@ -51,7 +50,8 @@ public final class NeverOverworldDesertR1 {
         final BlockPos center = new BlockPos(centerX, centerSurfaceY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
             || !isDesertSurface(chunk.getBlockState(center))
-            || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)) {
+            || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)
+            || !selectedChunk(level.getSeed(), cp.x(), cp.z())) {
             return 0;
         }
 
@@ -70,7 +70,7 @@ public final class NeverOverworldDesertR1 {
                 if (level.getBiome(pos).is(Biomes.DESERT) && isDesertSurface(chunk.getBlockState(pos))) ++eligible;
             }
         }
-        if (maxSurface - minSurface > 2 || eligible < 58) return 0;
+        if (maxSurface - minSurface > 4 || eligible < 48) return 0;
 
         final int waterY = minSurface;
         int changed = 0;
@@ -131,15 +131,10 @@ public final class NeverOverworldDesertR1 {
     }
 
     static boolean selectedChunk(final long seed, final int chunkX, final int chunkZ) {
-        final int cellX = Math.floorDiv(chunkX, CELL_CHUNKS);
-        final int cellZ = Math.floorDiv(chunkZ, CELL_CHUNKS);
         final long h = mix(seed ^ CELL_SALT
-            ^ ((long)cellX * 0x9E3779B97F4A7C15L)
-            ^ ((long)cellZ * 0xC2B2AE3D27D4EB4FL));
-        if (Math.floorMod(h, 3L) != 0L) return false;
-        final int selectedX = cellX * CELL_CHUNKS + (int)Math.floorMod(mix(h ^ 0xA24BAED4963EE407L), CELL_CHUNKS);
-        final int selectedZ = cellZ * CELL_CHUNKS + (int)Math.floorMod(mix(h ^ 0x9FB21C651E98DF25L), CELL_CHUNKS);
-        return chunkX == selectedX && chunkZ == selectedZ;
+            ^ ((long)chunkX * 0x9E3779B97F4A7C15L)
+            ^ ((long)chunkZ * 0xC2B2AE3D27D4EB4FL));
+        return Math.floorMod(h, OASIS_CHANCE_DENOMINATOR) == 0L;
     }
 
     private static boolean placePalm(final ChunkAccess chunk, final int localX, final int localZ, final long key) {
