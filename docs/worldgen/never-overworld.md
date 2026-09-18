@@ -163,6 +163,15 @@ boundary-connected dry cavern components (145,960 dry-air blocks; worst componen
 the same large-cavern criterion. This evidence is diagnostic for the flooded-world
 visual regression and does not replace strict chunk-order determinism testing.
 
+FIELD-R11 adds a final owner-chunk shallow boundary-component continuity pass over
+`Y=-64..127`. It never reads or writes a neighboring chunk and preserves valid
+structure-start bounding boxes. On seed `-2996952393010080672`, the natural
+15x15 audit completed with 225/225 FULL chunks, reduced saved cross-chunk
+water/air boundary mismatches from the FIELD-R10 baseline of 2,555 to **0**, and
+left **0** snow remnants in the audited range. The acceptance run was
+`b5114dcc62773cad67015783e2833925162cdb12` (GitHub Actions run
+`35344437115`).
+
 ## Vanilla and NeverFolia native structures
 
 Vanilla structure registries and upper-world structure behavior remain available.
