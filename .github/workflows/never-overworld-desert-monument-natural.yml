@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,re,shutil,subprocess,time
+          import importlib.util,json,re,shutil,subprocess,time
           from pathlib import Path
           root=Path.cwd(); run=root/'.work/desert-monument-natural';run.mkdir(parents=True,exist_ok=False)
           (run/'world/datapacks').mkdir(parents=True)
@@ -75,6 +75,9 @@ jobs:
           (run/'eula.txt').write_text('eula=true\n')
           (run/'server.properties').write_text('level-name=world\nlevel-seed=-2996952393010080672\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip\nonline-mode=false\nenforce-secure-profile=false\nserver-ip=127.0.0.1\nserver-port=25598\nview-distance=2\nsimulation-distance=2\nspawn-protection=0\nenable-status=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n')
           log=root/'artifacts/feature-natural.log'
+          sp=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py')
+          nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
+          region=run/'world/dimensions/minecraft/overworld/region'
           def wait_for(pattern,start_pos,timeout=90):
             end=time.monotonic()+timeout
             rx=re.compile(pattern)
@@ -85,6 +88,29 @@ jobs:
                 if m:return m
               time.sleep(1)
             raise RuntimeError('timeout waiting for '+pattern)
+          def saved_statuses(chunks):
+            result={}
+            for cx,cz in chunks:
+              key=f'{cx},{cz}'
+              try:
+                r=nbt.read_chunk_nbt(region,cx,cz)
+                result[key]=r.get('Status',r.get('status'))
+              except Exception as exc:
+                result[key]='missing:'+str(exc)
+            return result
+          def flush_and_status(chunks):
+            before=len(log.read_text(errors='replace')) if log.exists() else 0
+            p.stdin.write('save-all flush\n');p.stdin.flush()
+            wait_for(r'ThreadedAnvilChunkStorage: All dimensions are saved',before,90)
+            return saved_statuses(chunks)
+          def wait_full(chunks,label,timeout=90):
+            end=time.monotonic()+timeout;last={}
+            while time.monotonic()<end:
+              time.sleep(15)
+              last=flush_and_status(chunks)
+              if all(v=='minecraft:full' for v in last.values()):
+                return {'label':label,'chunks':[list(v) for v in chunks],'statuses':last,'full':True}
+            raise RuntimeError(f'{label} did not reach minecraft:full before timeout: {last}')
           with log.open('w') as out:
             p=subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts/server.jar'),'--nogui'],cwd=run,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True,bufsize=1)
             try:
@@ -127,7 +153,7 @@ jobs:
 
               candidate_set=set()
               search_radius=15
-              per_desert_limit=8
+              per_desert_limit=3
               for x,y,z in desert:
                 dcx=x//16;dcz=z//16
                 local=[]
@@ -144,20 +170,31 @@ jobs:
               if len(candidates)>192:
                 raise RuntimeError(f'too many force-load candidates: {len(candidates)}')
 
-              for cx,cz in candidates:
-                p.stdin.write(f'forceload add {cx*16} {cz*16}\n')
-              p.stdin.flush();time.sleep(180)
-              p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(4)
+              batch_size=8
+              batch_reports=[]
+              for batch_index,start in enumerate(range(0,len(candidates),batch_size),1):
+                batch=candidates[start:start+batch_size]
+                for cx,cz in batch:
+                  p.stdin.write(f'forceload add {cx*16} {cz*16}\n')
+                p.stdin.flush()
+                report=wait_full(batch,f'oasis-batch-{batch_index}',90)
+                batch_reports.append(report)
+                p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(2)
 
               mcx=monument[0]//16;mcz=monument[2]//16
               marea=[mcx-4,mcx+4,mcz-4,mcz+4]
-              p.stdin.write(f'forceload add {marea[0]*16} {marea[2]*16} {marea[1]*16+15} {marea[3]*16+15}\n');p.stdin.flush();time.sleep(90)
+              p.stdin.write(f'forceload add {marea[0]*16} {marea[2]*16} {marea[1]*16+15} {marea[3]*16+15}\n');p.stdin.flush()
+              monument_report=wait_full([(mcx,mcz)],'monument-center',120)
+              p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(2)
               p.stdin.write('stop\n');p.stdin.flush();p.wait(timeout=120)
               result={
                 'desert_positions':desert,
                 'oasis_candidate_chunks':[list(v) for v in candidates],
                 'candidate_search_radius_chunks':search_radius,
                 'candidate_limit_per_desert':per_desert_limit,
+                'candidate_batch_size':batch_size,
+                'candidate_generation_batches':batch_reports,
+                'monument_generation':monument_report,
                 'monument_position':monument,'monument_chunk_area':marea,'exit_code':p.returncode
               }
               (root/'artifacts/located-features.json').write_text(json.dumps(result,indent=2)+'\n')
@@ -415,4 +452,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-exact-pool-and-palm-signature
+# retrigger-natural-2026-09-18-full-status-batches
