@@ -52,6 +52,7 @@ public final class NeverOverworldDesertR1 {
         final BlockPos center = new BlockPos(centerX, centerGroundY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
             || !isDesertSurface(chunk.getBlockState(center))
+            || chunk.hasAnyStructureReferences()
             || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)) {
             return 0;
         }
