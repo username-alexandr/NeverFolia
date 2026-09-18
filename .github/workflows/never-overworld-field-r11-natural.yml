@@ -1,0 +1,137 @@
+name: NeverOverworld FIELD-R11 Natural Seed Audit
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths: [.github/workflows/never-overworld-field-r11-natural.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  natural:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build exact combined candidate and NeverOverworld pack
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production-chain.log 2>&1
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          JAR=$(find .work/Folia/folia-server/build/libs -maxdepth 1 -name 'folia-paperclip-*.jar' | head -1)
+          test -f "$JAR"; cp "$JAR" artifacts/server.jar
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/server.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+      - name: Generate exact 15x15 field area on user seed
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,shutil,subprocess,time
+          from pathlib import Path
+          root=Path.cwd(); run=root/'.work/natural-field-r11'; run.mkdir(parents=True,exist_ok=False)
+          (run/'world/datapacks').mkdir(parents=True)
+          shutil.copyfile(root/'artifacts/NeverOverworld.zip',run/'world/datapacks/NeverOverworld.zip')
+          (run/'eula.txt').write_text('eula=true\n')
+          (run/'server.properties').write_text('level-name=world\nlevel-seed=-2996952393010080672\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip\nonline-mode=false\nenforce-secure-profile=false\nserver-ip=127.0.0.1\nserver-port=25597\nview-distance=2\nsimulation-distance=2\nspawn-protection=0\nenable-status=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n')
+          log=root/'artifacts/natural-server.log'; start=time.monotonic(); ready=False
+          with log.open('w') as out:
+            p=subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts/server.jar'),'--nogui'],cwd=run,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True,bufsize=1)
+            try:
+              while time.monotonic()-start<240 and p.poll() is None:
+                if 'Done (' in log.read_text(errors='replace'): ready=True; break
+                time.sleep(1)
+              if not ready: raise RuntimeError('server did not become ready')
+              p.stdin.write('forceload add 12496 -11216 12735 -10977\n'); p.stdin.flush()
+              time.sleep(150)
+              p.stdin.write('save-all flush\n'); p.stdin.flush(); time.sleep(15)
+              p.stdin.write('stop\n'); p.stdin.flush(); p.wait(timeout=120)
+            finally:
+              if p.poll() is None:
+                p.terminate()
+                try:p.wait(timeout=20)
+                except subprocess.TimeoutExpired:p.kill();p.wait(timeout=10)
+          result={'ready':ready,'exit_code':p.returncode,'elapsed_seconds':time.monotonic()-start}
+          (root/'artifacts/natural-process.json').write_text(json.dumps(result,indent=2)+'\n')
+          if p.returncode!=0: raise SystemExit('natural server exit '+str(p.returncode))
+          PY
+      - name: Audit FULL chunks and saved cross-chunk water seams
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,json
+          from collections import Counter
+          from pathlib import Path
+          root=Path.cwd(); base_path=root/'scripts/hash-never-nether-chunks.py'
+          sp=importlib.util.spec_from_file_location('nbt',base_path); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
+          region=root/'.work/natural-field-r11/world/region'
+          class View:
+            def __init__(self,r): self.sections={s.get('Y'):s for s in nbt.section_list(r) if isinstance(s.get('Y'),int)}
+            def b(self,x,y,z):
+              s=self.sections.get(y//16)
+              if s is None:return 'minecraft:air'
+              st=s.get('block_states',s.get('BlockStates'))
+              if not isinstance(st,dict):return 'minecraft:air'
+              pal=st.get('palette')
+              if not isinstance(pal,list) or not pal:return 'minecraft:air'
+              if len(pal)==1:return nbt.palette_name(pal[0])
+              w=st.get('data'); longs=w.get('$long_array',[]) if isinstance(w,dict) else []
+              bits=max(4,(len(pal)-1).bit_length()); per=64//bits; idx=((y&15)<<8)|((z&15)<<4)|(x&15); li=idx//per; off=(idx%per)*bits
+              pi=((longs[li]&0xffffffffffffffff)>>off)&((1<<bits)-1)
+              return nbt.palette_name(pal[pi])
+          views={}; snow=0
+          for cz in range(-701,-686):
+            for cx in range(781,796):
+              r=nbt.read_chunk_nbt(region,cx,cz); status=r.get('Status',r.get('status'))
+              if status!='minecraft:full': raise ValueError(f'not FULL {cx},{cz}: {status}')
+              v=View(r); views[(cx,cz)]=v
+              for y in range(-64,128):
+                for z in range(16):
+                  for x in range(16):
+                    if v.b(x,y,z) in ('minecraft:snow','minecraft:snow_block','minecraft:powder_snow'): snow+=1
+          mism=0; by=Counter(); samples=[]
+          def face(a,b,axis):
+            global mism
+            va,vb=views[a],views[b]
+            for y in range(-64,128):
+              for i in range(16):
+                sa,sb=(va.b(15,y,i),vb.b(0,y,i)) if axis=='x' else (va.b(i,y,15),vb.b(i,y,0))
+                if {sa,sb}=={'minecraft:water','minecraft:air'}:
+                  mism+=1;by[y]+=1
+                  if len(samples)<48:samples.append([a,b,axis,i,y,sa,sb])
+          for z in range(-701,-686):
+            for x in range(781,795):face((x,z),(x+1,z),'x')
+          for z in range(-701,-687):
+            for x in range(781,796):face((x,z),(x,z+1),'z')
+          result={'schema':1,'seed':-2996952393010080672,'chunks_full':len(views),'range_y':[-64,127],'water_air_boundary_mismatches':mism,'baseline_field_r10_mismatches':2555,'snow_remnants':snow,'samples':samples,'by_y':dict(sorted(by.items())),'release_ready':False}
+          (root/'artifacts/natural-seam-audit.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps({k:v for k,v in result.items() if k not in ('samples','by_y')},indent=2))
+          if snow!=0: raise SystemExit('snow regression')
+          if mism>=256: raise SystemExit(f'FIELD-R11 seam count too high: {mism}')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-field-r11-natural-${{ github.sha }}
+          path: |
+            artifacts/natural-*.json
+            artifacts/natural-server.log
+            artifacts/production-chain.log
+            artifacts/build.log
+          retention-days: 14
+          if-no-files-found: warn
