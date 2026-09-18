@@ -8,6 +8,13 @@ public final class SandstormR1Smoke {
         check(!NeverOverworldSandstormR1.isDryDesertSurface(128),"flooded desert sea must not run sandstorms");
         check(NeverOverworldSandstormR1.isDryDesertSurface(129),"dry flood-boundary desert must allow sandstorms");
         check(NeverOverworldSandstormR1.isDryDesertSurface(180),"high dry desert must allow sandstorms");
+        double against=NeverOverworldSandstormR1.windImpulse(-0.10D,0.0D,1.0D,0.0D);
+        double neutral=NeverOverworldSandstormR1.windImpulse(0.0D,0.10D,1.0D,0.0D);
+        double with=NeverOverworldSandstormR1.windImpulse(0.10D,0.0D,1.0D,0.0D);
+        check(Math.abs(against-0.0060D)<1.0e-12,"against-wind impulse "+against);
+        check(Math.abs(neutral-0.0044D)<1.0e-12,"cross-wind impulse "+neutral);
+        check(Math.abs(with-0.0032D)<1.0e-12,"with-wind impulse "+with);
+        check(against>neutral&&neutral>with,"wind response ordering");
         int enabledCycles=0;
         for(long cycle=-100;cycle<100;cycle++){
             long base=cycle*NeverOverworldSandstormR1.CYCLE_TICKS;
