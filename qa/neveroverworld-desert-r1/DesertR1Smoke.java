@@ -42,6 +42,9 @@ public final class DesertR1Smoke {
         check(flooded.getBlockState(new BlockPos(8,128,8)).is(Blocks.SANDSTONE),"flooded oasis center foundation");
         check(flooded.getBlockState(new BlockPos(8,129,8)).is(Blocks.SAND),"flooded oasis center sand");
         check(flooded.getBlockState(new BlockPos(8,130,8)).is(Blocks.WATER),"flooded oasis center pool");
+        var raisedShore=flooded.getBlockState(new BlockPos(12,130,8));
+        check(raisedShore.is(Blocks.GRASS_BLOCK)||raisedShore.is(Blocks.COARSE_DIRT)||raisedShore.is(Blocks.SAND),
+            "flooded oasis raised shore missing: "+raisedShore);
         check(flooded.getBlockState(new BlockPos(0,128,0)).is(Blocks.WATER),"flooded oasis must stay local and compact");
         int logs=0,leaves=0;
         for(int y=129;y<=140;y++)for(int z=0;z<16;z++)for(int x=0;x<16;x++){
