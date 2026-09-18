@@ -23,7 +23,7 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
  * chunk, avoids structure starts and never reads/writes a neighbouring chunk.</p>
  */
 public final class NeverOverworldDesertR1 {
-    static final int OASIS_CHANCE_DENOMINATOR = 192;
+    static final int OASIS_CHANCE_DENOMINATOR = 96;
     static final int FLOOD_LEVEL = 128;
     private static final long CELL_SALT = 0x4E4F574F41534953L;
 
@@ -45,7 +45,7 @@ public final class NeverOverworldDesertR1 {
         final int centerX = cp.getMinBlockX() + centerLocalX;
         final int centerZ = cp.getMinBlockZ() + centerLocalZ;
         final int centerSurfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, centerLocalX, centerLocalZ);
-        if (centerSurfaceY <= FLOOD_LEVEL + 2 || centerSurfaceY >= chunk.getMaxY() - 12) return 0;
+        if (centerSurfaceY <= FLOOD_LEVEL || centerSurfaceY >= chunk.getMaxY() - 12) return 0;
 
         final BlockPos center = new BlockPos(centerX, centerSurfaceY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
@@ -70,7 +70,7 @@ public final class NeverOverworldDesertR1 {
                 if (level.getBiome(pos).is(Biomes.DESERT) && isDesertSurface(chunk.getBlockState(pos))) ++eligible;
             }
         }
-        if (maxSurface - minSurface > 4 || eligible < 48) return 0;
+        if (maxSurface - minSurface > 5 || eligible < 40) return 0;
 
         final int waterY = minSurface;
         int changed = 0;
@@ -117,7 +117,8 @@ public final class NeverOverworldDesertR1 {
         }
 
         final int[][] palmOffsets = {
-            {4, 1}, {-4, -1}, {1, 4}, {-1, -4}
+            {4, 1}, {-4, -1}, {1, 4}, {-1, -4},
+            {3, 3}, {-3, -3}, {3, -3}, {-3, 3}
         };
         int palms = 0;
         final int rotation = (int)Math.floorMod(mix(key ^ 0xDB4F0B9175AE2165L), 4L);
