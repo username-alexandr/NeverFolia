@@ -17,46 +17,65 @@ Initial worldgen version: `NN-DEV-1`
 - Generation must be deterministic regardless of chunk order and worldgen thread count.
 - Fast Locate, diagnostics, pregen and Dimension Lifecycle Manager must be dimension-aware.
 
-## Vertical geometry — approved
+## Vertical geometry — current R14 contract
 
-NeverNether uses two vertically distinct spaces inside one `minecraft:the_nether` dimension:
+NeverNether keeps the vanilla dimension key `minecraft:the_nether`, but the current
+height profile is **NN-R14-SUBSTRATE-1-ROOF512**.
 
-1. **Generated Nether body:** 512 blocks from the lower bedrock boundary to the upper bedrock roof.
-2. **Roof construction zone:** another 512 buildable blocks above the upper bedrock roof.
+Current coordinate contract:
 
-Initial coordinate layout:
+- dimension `min_y`: **-128**;
+- logical upper bedrock roof block: **Y=512**;
+- building above the roof: **disabled**;
+- technical storage height: **656** blocks;
+- technical stored range: **Y=-128..527**;
+- technical padding: **Y=513..527**;
+- the padding range is required only so the section containing Y=512 can be stored;
+- Y=513..527 must remain air and is **not** a second buildable roof zone.
 
-- Dimension `min_y`: `-128`
-- Total dimension height: `1024`
-- Highest buildable Y: `895`
-- Generated Nether body: `Y=-128..383` (512 blocks total)
-- Roof construction zone: `Y=384..895` (512 blocks total)
+The previous experimental layout with a buildable roof space through Y=895 is
+obsolete and must not be used for new NeverNether worlds.
 
-The roof construction zone is part of the same Nether dimension; NeverFolia must not create a second dimension for it.
+## Bedrock boundaries — current
 
-## Bedrock boundaries — approved
+The lower boundary remains at the translated NeverNether minimum. The upper
+boundary uses the R14 roof envelope terminating at **bedrock Y=512**.
 
-Both lower and upper bedrock boundaries keep the **vanilla Nether bedrock profile** rather than using a custom uniform slab.
+- Upper-roof density ramps are moved to the R14 ceiling.
+- The upper bedrock envelope is anchored at Y=512.
+- Non-air writes above Y=512 are rejected by the checked native mutation paths.
+- Replacing the protected roof block with another material or air is rejected.
+- Terrain, features and structures must not populate Y=513..527.
+- Existing R13 worlds are not implicitly migrated to R14; a matching new-world
+  pack/runtime profile is required.
 
-- Lower boundary uses the same irregular vanilla-style bedrock thickness/distribution pattern, translated to the NeverNether lower world boundary.
-- Upper roof uses the same irregular vanilla-style bedrock thickness/distribution pattern, translated to the NeverNether roof boundary.
-- The roof must remain recognizably vanilla-like: an irregular bedrock layer rather than a perfectly flat solid plate.
-- NeverFolia must not increase the bedrock layer solely because the generated Nether body is taller.
-- Bedrock placement is deterministic from the dimension seed/worldgen version.
-- Normal Nether terrain must terminate against the lower/upper bedrock boundaries without leaking terrain/features into the roof construction zone.
+### R14 verification already recorded
 
-### Generation rules above the roof
+The bounded R14 acceptance recorded in
+`docs/worldgen/never-nether-r14-bounded-height-results.md` includes:
 
-- Normal Nether terrain generation stops at the upper bedrock roof.
-- `Y=384..895` is intentionally empty/buildable space by default.
-- Players may place blocks throughout the roof construction zone up to the dimension build limit.
-- Normal terrain features, ores, caves, lava seas and standard Nether structures must not generate in the roof construction zone unless a future NeverLand feature explicitly opts into roof placement.
-- The roof area must survive normal JAR updates and Nether worldgen revisions exactly like any other already-generated player-built area.
-- A Nether reset deletes both the generated body and roof player construction area because both belong to the same dimension; reset therefore requires explicit destructive confirmation and backup policy.
+- **248** real API height/boundary checks with zero failures;
+- seed `7270913`: **81 chunks**, forward/reverse FULL + settled equality with
+  zero different blocks;
+- seed `123456789`: **25 chunks**, the same zero-difference result;
+- a true additional JVM restart of the 81-chunk world with zero block or metadata
+  differences;
+- **106** selected saved FULL chunks independently audited from Anvil;
+- **4,346** saved section records validated;
+- **27,136** Y=512 roof cells checked as bedrock;
+- **407,040** Y=513..527 padding cells checked as air;
+- no accepted process required a forced stop.
 
-### Pending portal decision
+The attempted 1,599-chunk R14 stress run exhausted its 2304 MiB Java heap and is
+not counted as a PASS. Large-area completion, long-lived memory behavior, dynamic
+fluids, falling-block/piston behavior, portal/client interaction and full dungeon
+playability remain separate release gates.
 
-Portal search/creation behavior above the upper bedrock roof must be specified separately. Build permission above the roof does not automatically imply that Nether portals should naturally target or spawn in the roof construction zone.
+### Portal behavior
+
+Portal search/creation around the protected roof still requires explicit gameplay
+acceptance. The existence of technical padding above Y=512 does not grant a valid
+portal or building area there.
 
 ## External worldgen/content sources — approved direction
 
