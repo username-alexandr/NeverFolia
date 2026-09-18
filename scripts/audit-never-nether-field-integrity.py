@@ -76,8 +76,8 @@ def structure_boxes(root: dict[str, Any]) -> list[Box]:
 
 class Volume:
     def __init__(self, roots: dict[Chunk, dict[str, Any]], min_y: int, max_y: int) -> None:
-        if not -128 <= min_y <= max_y <= 383:
-            raise ValueError("Audit range must be inside the generated body Y=-128..383")
+        if not -128 <= min_y <= max_y <= 511:
+            raise ValueError("Audit range must be inside the current generated body below roof512: Y=-128..511")
         if not roots:
             raise ValueError("No FULL chunks supplied; an empty sample is not a passing audit")
         self.min_y, self.max_y = min_y, max_y
@@ -102,7 +102,11 @@ class Volume:
                     raise ValueError(f"Invalid or duplicate section Y in chunk {cx},{cz}")
                 seen_sections.add(sy)
                 low, high = sy * 16, sy * 16 + 15
-                is_roof = 24 <= sy <= 55
+                # Historical profiles treated Y>=384 as a separate roof zone.
+                # R14 extends generated terrain through Y511 and protects bedrock
+                # at Y512. Only sections outside the requested audit range are
+                # counted as auxiliary roof/padding observations.
+                is_roof = 24 <= sy <= 55 and (high < min_y or low > max_y)
                 if (high < min_y or low > max_y) and not is_roof:
                     continue
                 container = section.get("block_states", section.get("BlockStates"))
