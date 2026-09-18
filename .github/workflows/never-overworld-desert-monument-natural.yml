@@ -2,7 +2,13 @@ name: NeverOverworld DESERT-R1 + Monument Natural Audit
 on:
   push:
     branches: [staging/neveroverworld-field-r11]
-    paths: [.github/workflows/never-overworld-desert-monument-natural.yml]
+    paths:
+      - 'native/neveroverworld/desert-r1/**'
+      - 'qa/neveroverworld-desert-r1/**'
+      - 'scripts/apply-never-overworld-desert-r1.py'
+      - 'scripts/apply-never-overworld-monument-r11.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - '.github/workflows/never-overworld-desert-monument-natural.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -145,7 +151,7 @@ jobs:
 
               candidate_set=set()
               search_radius=15
-              per_desert_limit=3
+              per_desert_limit=1
               for x,y,z in desert:
                 dcx=x//16;dcz=z//16
                 local=[]
@@ -461,4 +467,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-graceful-stop-full-gate
+# retrigger-natural-2026-09-18-flooded-oasis-sample
