@@ -97,7 +97,7 @@ jobs:
           sp=importlib.util.spec_from_file_location('nbt',base_path); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
           world_root=root/'.work/natural-field-r11/world'
           target='r.24.-22.mca'
-          matches=list(world_root.rglob(target))
+          matches=[p for p in world_root.rglob(target) if p.parent.name=='region']
           file_list=sorted(str(p.relative_to(world_root)) for p in world_root.rglob('*') if p.is_file())
           (root/'artifacts/natural-world-files.json').write_text(json.dumps({'target':target,'matches':[str(p) for p in matches],'files':file_list},indent=2)+'\n')
           if len(matches)!=1:
