@@ -59,6 +59,39 @@ initial-enabled-packs=vanilla,file/NeverOverworld-Core-NR-DEV-1-native-structure
 - emerald balance v2 работает в диапазоне примерно `Y=-384..-96`;
 - worldgen fingerprint создаётся отдельно от Nether.
 
+### FIELD-R11 + DESERT-R1 — актуальное дополнение
+
+Для текущего кандидата `staging/neveroverworld-field-r11` поверх базового TEST1 добавлены:
+
+- FIELD-R11 continuity-pass для мелких затопленных полостей в `Y=-64..127`;
+- устранение сохранённых water/air швов между чанками; acceptance на основном seed дал `2555 → 0`;
+- редкие DESERT-R1 оазисы с детерминированным шансом `1/96`;
+- на сухой пустыне используется обычный terrain-following oasis;
+- в затопленной пустыне создаётся компактный sandbar-oasis:
+  - sandstone-основание на Y=128;
+  - сухая береговая поверхность над водой;
+  - центральный пруд на Y=130;
+  - до двух пальм из `jungle_log` / persistent `jungle_leaves`;
+- ocean monument в NeverOverworld привязан к поднятому уровню моря и начинается на Y=104;
+- песчаные бури работают только над сухой desert-поверхностью, не над открытым затопленным desert sea;
+- перегрева/урона от жары нет.
+
+Natural acceptance для seed `-2996952393010080672` уже подтвердил 17/17 FULL candidate chunks, 3 точных persisted oasis signatures и монумент Y=104..126.
+
+Для ручной проверки окна песчаной бури:
+
+```text
+/time query gametime
+```
+
+Затем на машине с репозиторием:
+
+```bash
+python3 scripts/never-overworld-sandstorm-window.py --game-time <ticks>
+```
+
+Скрипт покажет, активна ли буря, ближайшее окно и направление ветра.
+
 ### Нативные структуры Overworld
 
 В TEST1 включены восемь NeverFolia-структур:
