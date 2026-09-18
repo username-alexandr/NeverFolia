@@ -141,9 +141,15 @@ jobs:
             v=s64(v ^ urshift(v,30)); v=mul64(v,0xBF58476D1CE4E5B9)
             v=s64(v ^ urshift(v,27)); v=mul64(v,0x94D049BB133111EB)
             return s64(v ^ urshift(v,31))
+          def chunk_key(cx,cz):
+            return mix(s64(SEED ^ CELL_SALT ^ mul64(cx,0x9E3779B97F4A7C15) ^ mul64(cz,0xC2B2AE3D27D4EB4F)))
           def selected(cx,cz):
-            h=mix(s64(SEED ^ CELL_SALT ^ mul64(cx,0x9E3779B97F4A7C15) ^ mul64(cz,0xC2B2AE3D27D4EB4F)))
-            return h%OASIS_DENOMINATOR == 0
+            return chunk_key(cx,cz)%OASIS_DENOMINATOR == 0
+          def oasis_center(cx,cz):
+            key=chunk_key(cx,cz)
+            lx=6 + mix(s64(key ^ 0x632BE59BD9B4E019))%4
+            lz=6 + mix(s64(key ^ 0x94D049BB133111EB))%4
+            return lx,lz
           def palette_names(rootnbt):
             names=set()
             for s in nbt.section_list(rootnbt):
@@ -153,7 +159,7 @@ jobs:
               if not isinstance(pal,list):continue
               names.update(nbt.palette_name(p) for p in pal)
             return names
-          candidates=[]; candidate_palms=[]
+          candidates=[]; candidate_palms=[]; candidate_diagnostics=[]
           for mincx,maxcx,mincz,maxcz in loc['desert_chunk_areas']:
             for cz in range(mincz,maxcz+1):
               for cx in range(mincx,maxcx+1):
@@ -161,8 +167,27 @@ jobs:
                 candidates.append([cx,cz])
                 r=nbt.read_chunk_nbt(region,cx,cz)
                 names=palette_names(r)
-                if 'minecraft:jungle_log' in names and 'minecraft:jungle_leaves' in names:
+                has_log='minecraft:jungle_log' in names
+                has_leaves='minecraft:jungle_leaves' in names
+                if has_log and has_leaves:
                   candidate_palms.append([cx,cz])
+                lx,lz=oasis_center(cx,cz)
+                wx=cx*16+lx; wz=cz*16+lz
+                column=[]
+                for y in range(511,119,-1):
+                  state=nbt.block_at(r,wx,y,wz)
+                  if state!='minecraft:air':
+                    column.append([y,state])
+                    if len(column)>=12:break
+                markers=sorted(n for n in names if n in {
+                  'minecraft:jungle_log','minecraft:jungle_leaves','minecraft:grass_block',
+                  'minecraft:coarse_dirt','minecraft:sand','minecraft:sandstone','minecraft:water'
+                })
+                candidate_diagnostics.append({
+                  'chunk':[cx,cz],'center_local':[lx,lz],'center_world':[wx,wz],
+                  'top_non_air_column':column,'markers':markers,
+                  'has_jungle_log':has_log,'has_jungle_leaves':has_leaves
+                })
           starts=[]
           a=loc['monument_chunk_area']
           for cz in range(a[2],a[3]+1):
@@ -176,7 +201,7 @@ jobs:
                   if isinstance(bb,dict):bb=bb.get('$int_array')
                   if isinstance(bb,list) and len(bb)==6:mins.append(bb[1]);maxs.append(bb[4])
                 starts.append({'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)})
-          result={'schema':2,'seed':SEED,'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
+          result={'schema':3,'seed':SEED,'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
           (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
           if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
@@ -197,4 +222,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-surface-fix
+# retrigger-natural-2026-09-18-candidate-diagnostics
