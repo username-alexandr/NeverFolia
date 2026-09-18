@@ -97,8 +97,8 @@ jobs:
                 desert.append([int(m.group(1)),int(m.group(2)),int(m.group(3))])
               before=len(log.read_text(errors='replace'))
               p.stdin.write('execute in minecraft:overworld positioned 0 200 0 run locate structure minecraft:monument\n');p.stdin.flush()
-              m=wait_for(r'minecraft:monument.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
-              monument=[int(m.group(1)),int(m.group(2)),int(m.group(3))]
+              m=wait_for(r'minecraft:monument.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+              monument=[int(m.group(1)),m.group(2),int(m.group(3))]
               areas=[]
               for x,y,z in desert:
                 cx=x//16;cz=z//16;mincx,maxcx=cx-7,cx+7;mincz,maxcz=cz-7,cz+7
