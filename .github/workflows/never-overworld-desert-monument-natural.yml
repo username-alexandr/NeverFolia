@@ -98,16 +98,25 @@ jobs:
               except Exception as exc:
                 result[key]='missing:'+str(exc)
             return result
-          def flush_and_status(chunks):
+          progress_path=root/'artifacts/generation-progress.json'
+          generation_progress=[]
+          def record_progress(label,statuses,full):
+            entry={'label':label,'statuses':statuses,'full':full,'time_monotonic':time.monotonic()}
+            generation_progress.append(entry)
+            progress_path.write_text(json.dumps({'schema':1,'entries':generation_progress},indent=2)+'\n')
+          def flush_and_status(chunks,label):
             before=len(log.read_text(errors='replace')) if log.exists() else 0
-            p.stdin.write('save-all flush\n');p.stdin.flush()
-            wait_for(r'ThreadedAnvilChunkStorage: All dimensions are saved',before,90)
-            return saved_statuses(chunks)
-          def wait_full(chunks,label,timeout=90):
+            p.stdin.write('save-all\n');p.stdin.flush()
+            wait_for(r'(?:ThreadedAnvilChunkStorage: All dimensions are saved|Saved the game)',before,90)
+            time.sleep(2)
+            statuses=saved_statuses(chunks)
+            record_progress(label,statuses,all(v=='minecraft:full' for v in statuses.values()))
+            return statuses
+          def wait_full(chunks,label,timeout=120):
             end=time.monotonic()+timeout;last={}
             while time.monotonic()<end:
               time.sleep(15)
-              last=flush_and_status(chunks)
+              last=flush_and_status(chunks,label)
               if all(v=='minecraft:full' for v in last.values()):
                 return {'label':label,'chunks':[list(v) for v in chunks],'statuses':last,'full':True}
             raise RuntimeError(f'{label} did not reach minecraft:full before timeout: {last}')
@@ -177,7 +186,7 @@ jobs:
                 for cx,cz in batch:
                   p.stdin.write(f'forceload add {cx*16} {cz*16}\n')
                 p.stdin.flush()
-                report=wait_full(batch,f'oasis-batch-{batch_index}',90)
+                report=wait_full(batch,f'oasis-batch-{batch_index}',120)
                 batch_reports.append(report)
                 p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(2)
 
@@ -445,6 +454,7 @@ jobs:
           name: NeverOverworld-desert-monument-natural-${{ github.sha }}
           path: |
             artifacts/located-features.json
+            artifacts/generation-progress.json
             artifacts/natural-feature-audit.json
             artifacts/feature-natural.log
             artifacts/production-chain.log
@@ -452,4 +462,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-full-status-batches
+# retrigger-natural-2026-09-18-supported-save-all
