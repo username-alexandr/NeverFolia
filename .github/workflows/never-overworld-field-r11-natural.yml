@@ -33,7 +33,23 @@ jobs:
           (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
           JAR=$(find .work/Folia/folia-server/build/libs -maxdepth 1 -name 'folia-paperclip-*.jar' | head -1)
           test -f "$JAR"; cp "$JAR" artifacts/server.jar
-          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/server.jar --output artifacts/NeverOverworld.zip
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          candidates=[]
+          for p in Path('.work/Folia/folia-server/build/libs').glob('*.jar'):
+              try:
+                  with zipfile.ZipFile(p) as z:
+                      if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                          candidates.append(p)
+              except zipfile.BadZipFile:
+                  pass
+          if len(candidates)!=1:
+              raise ValueError(f'Expected one Folia bundler pack input, got {candidates}')
+          shutil.copyfile(candidates[0],'artifacts/pack-input-bundler.jar')
+          print('pack input:',candidates[0])
+          PY
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
           python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
           python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
           python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
