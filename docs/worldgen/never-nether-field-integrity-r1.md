@@ -60,14 +60,28 @@ report records the inspected chunks and Y range; it is not a whole-world scan.
 
 The report distinguishes:
 
+For the current R14 profile the read-only body scan may cover `Y=-128..511`.
+The protected bedrock roof at Y=512 and the empty technical padding Y=513..527
+are verified separately by the R14 roof audit; they are not treated as cave
+volume.
+
 - Small six-connected air components fully surrounded by recognized natural
   rock within the inspected volume, with positions, sizes and bounding boxes.
+  Enclosed components up to the configured limit are also bucketed as
+  `1`, `2–4`, `5–16` and `17–64` blocks so single-voxel and tiny cavity
+  regressions are visible separately from larger intentional cave pockets.
 - Components touching missing chunks or the inspected Y boundary: coverage is
   **unknown**, not assumed solid or empty.
 - Components intersecting saved structure start/piece bounding boxes from the
   selected chunks: reported separately, not treated as geological defects.
 - Source and flowing lava; sources with air underneath are inspection candidates,
   **not automatically bugs**, because legitimate lavafalls can look like this.
+- A stricter `hanging_source_lava_shelf_candidates` metric marks a source-lava
+  block only when it has air below and at least two horizontal source-lava
+  neighbours outside saved structure boxes. This is intended to surface the
+  reported hanging horizontal lava shelves while leaving isolated lavafall/edge
+  sources in a separate diagnostic count. It is still a heuristic, not an
+  automatic proof of a generation defect.
 - Non-air blocks in the roof zone: observations only, possibly player builds.
 
 There is no blanket air-filling pass. Small enclosed caves can be intentional;
