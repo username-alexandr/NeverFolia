@@ -1,0 +1,142 @@
+name: NeverOverworld DESERT-R1 + Monument Natural Audit
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths: [.github/workflows/never-overworld-desert-monument-natural.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  natural-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download already compiled combined Paperclip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts .ci
+          gh run download 35321416350 -n NeverOverworld-field-r11-desert-r1-164a4df0c2d2cbd7651e3f70e20bb8425ad4adf4 -D .ci
+          cp .ci/NeverFolia-NN-FIELD-R11-DESERT-R1-TEST-164a4df.jar artifacts/server.jar
+          sha256sum artifacts/server.jar
+      - name: Build matching NeverOverworld pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/server.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+      - name: Locate and generate four desert areas plus one monument
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,shutil,subprocess,time
+          from pathlib import Path
+          root=Path.cwd(); run=root/'.work/desert-monument-natural';run.mkdir(parents=True,exist_ok=False)
+          (run/'world/datapacks').mkdir(parents=True)
+          shutil.copyfile(root/'artifacts/NeverOverworld.zip',run/'world/datapacks/NeverOverworld.zip')
+          (run/'eula.txt').write_text('eula=true\n')
+          (run/'server.properties').write_text('level-name=world\nlevel-seed=-2996952393010080672\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip\nonline-mode=false\nenforce-secure-profile=false\nserver-ip=127.0.0.1\nserver-port=25598\nview-distance=2\nsimulation-distance=2\nspawn-protection=0\nenable-status=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n')
+          log=root/'artifacts/feature-natural.log'
+          def wait_for(pattern,start_pos,timeout=90):
+            end=time.monotonic()+timeout
+            rx=re.compile(pattern)
+            while time.monotonic()<end:
+              txt=log.read_text(errors='replace') if log.exists() else ''
+              for line in txt[start_pos:].splitlines():
+                m=rx.search(line)
+                if m:return m
+              time.sleep(1)
+            raise RuntimeError('timeout waiting for '+pattern)
+          with log.open('w') as out:
+            p=subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts/server.jar'),'--nogui'],cwd=run,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True,bufsize=1)
+            try:
+              wait_for(r'Done \(',0,240)
+              desert=[]
+              for sx,sz in [(0,0),(12000,12000),(-12000,12000),(12000,-12000)]:
+                before=len(log.read_text(errors='replace'))
+                p.stdin.write(f'execute in minecraft:overworld positioned {sx} 200 {sz} run locate biome minecraft:desert\n');p.stdin.flush()
+                m=wait_for(r'minecraft:desert.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+                desert.append([int(m.group(1)),int(m.group(2)),int(m.group(3))])
+              before=len(log.read_text(errors='replace'))
+              p.stdin.write('execute in minecraft:overworld positioned 0 200 0 run locate structure minecraft:monument\n');p.stdin.flush()
+              m=wait_for(r'minecraft:monument.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+              monument=[int(m.group(1)),int(m.group(2)),int(m.group(3))]
+              areas=[]
+              for x,y,z in desert:
+                cx=x//16;cz=z//16;mincx,maxcx=cx-7,cx+7;mincz,maxcz=cz-7,cz+7
+                areas.append([mincx,maxcx,mincz,maxcz])
+                p.stdin.write(f'forceload add {mincx*16} {mincz*16} {maxcx*16+15} {maxcz*16+15}\n');p.stdin.flush();time.sleep(80)
+                p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(4)
+              mcx=monument[0]//16;mcz=monument[2]//16
+              marea=[mcx-4,mcx+4,mcz-4,mcz+4]
+              p.stdin.write(f'forceload add {marea[0]*16} {marea[2]*16} {marea[1]*16+15} {marea[3]*16+15}\n');p.stdin.flush();time.sleep(90)
+              p.stdin.write('save-all flush\n');p.stdin.flush();time.sleep(15)
+              p.stdin.write('stop\n');p.stdin.flush();p.wait(timeout=120)
+              result={'desert_positions':desert,'desert_chunk_areas':areas,'monument_position':monument,'monument_chunk_area':marea,'exit_code':p.returncode}
+              (root/'artifacts/located-features.json').write_text(json.dumps(result,indent=2)+'\n')
+              if p.returncode!=0:raise RuntimeError('server exit '+str(p.returncode))
+            finally:
+              if p.poll() is None:p.terminate();p.wait(timeout=30)
+          PY
+      - name: Audit saved palms and monument elevation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,json
+          from pathlib import Path
+          root=Path.cwd();loc=json.loads((root/'artifacts/located-features.json').read_text())
+          sp=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py'); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
+          region=root/'.work/desert-monument-natural/world/region'
+          def blocks(rootnbt):
+            for s in nbt.section_list(rootnbt):
+              y0=s.get('Y');bs=s.get('block_states',s.get('BlockStates'))
+              if not isinstance(y0,int) or not isinstance(bs,dict):continue
+              pal=bs.get('palette')
+              if not isinstance(pal,list):continue
+              names=[nbt.palette_name(p) for p in pal]
+              if 'minecraft:jungle_log' not in names and 'minecraft:jungle_leaves' not in names:continue
+              yield names
+          palm_chunks=[]
+          for mincx,maxcx,mincz,maxcz in loc['desert_chunk_areas']:
+            for cz in range(mincz,maxcz+1):
+              for cx in range(mincx,maxcx+1):
+                r=nbt.read_chunk_nbt(region,cx,cz)
+                if any(True for _ in blocks(r)):palm_chunks.append([cx,cz])
+          starts=[]
+          a=loc['monument_chunk_area']
+          for cz in range(a[2],a[3]+1):
+            for cx in range(a[0],a[1]+1):
+              r=nbt.read_chunk_nbt(region,cx,cz)
+              raw=r.get('structures',{}).get('starts',{}).get('minecraft:monument')
+              if isinstance(raw,dict) and raw.get('id')=='minecraft:monument':
+                children=raw.get('Children',[]);mins=[];maxs=[]
+                for ch in children:
+                  bb=ch.get('BB') if isinstance(ch,dict) else None
+                  if isinstance(bb,list) and len(bb)==6:mins.append(bb[1]);maxs.append(bb[4])
+                starts.append({'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)})
+          result={'schema':1,'palm_chunks':palm_chunks,'palm_chunk_count':len(palm_chunks),'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
+          (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          if not palm_chunks:raise SystemExit('no natural DESERT-R1 palm observed in four desert areas')
+          if not starts:raise SystemExit('located monument start not saved')
+          if not any(s['piece_min_y']==104 for s in starts):raise SystemExit('monument base did not follow seaLevel-24')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-desert-monument-natural-${{ github.sha }}
+          path: |
+            artifacts/located-features.json
+            artifacts/natural-feature-audit.json
+            artifacts/feature-natural.log
+          retention-days: 14
+          if-no-files-found: warn
