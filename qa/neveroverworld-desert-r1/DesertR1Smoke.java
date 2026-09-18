@@ -11,6 +11,9 @@ public final class DesertR1Smoke {
         long seed=-2996952393010080672L;
         check(NeverOverworldDesertR1.surfaceGroundY(129)==128,"WORLD_SURFACE_WG first-available Y must map to ground Y");
         check(NeverOverworldDesertR1.surfaceGroundY(130)==129,"surface-ground conversion regressed");
+        check(!NeverOverworldDesertR1.isEligibleOasisGroundY(127,512),"sub-flood ground must stay ineligible");
+        check(NeverOverworldDesertR1.isEligibleOasisGroundY(128,512),"flood-level dry shore must stay eligible");
+        check(NeverOverworldDesertR1.isEligibleOasisGroundY(129,512),"dry terrain above flood level must be eligible");
         int selected=0;
         int total=0;
         for(int x=-384;x<=384;x++){
