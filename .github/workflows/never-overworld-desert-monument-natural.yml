@@ -246,27 +246,106 @@ jobs:
               'structure_reference_ids':reference_ids,
               'has_jungle_log':has_log,'has_jungle_leaves':has_leaves
             })
-          starts=[]
+          starts=[]; monument_diagnostics=[]
+          monument_cache={}
+          def monument_chunk(cx,cz):
+            key=(cx,cz)
+            if key not in monument_cache:
+              monument_cache[key]=nbt.read_chunk_nbt(region,cx,cz)
+            return monument_cache[key]
+          def block_world(x,y,z):
+            return nbt.block_at(monument_chunk(x//16,z//16),x,y,z)
           a=loc['monument_chunk_area']
           for cz in range(a[2],a[3]+1):
             for cx in range(a[0],a[1]+1):
-              r=nbt.read_chunk_nbt(region,cx,cz)
+              r=monument_chunk(cx,cz)
               raw=r.get('structures',{}).get('starts',{}).get('minecraft:monument')
               if isinstance(raw,dict) and raw.get('id')=='minecraft:monument':
-                children=raw.get('Children',[]);mins=[];maxs=[]
+                children=raw.get('Children',[]);mins=[];maxs=[];boxes=[]
                 for ch in children:
                   bb=ch.get('BB') if isinstance(ch,dict) else None
                   if isinstance(bb,dict):bb=bb.get('$int_array')
-                  if isinstance(bb,list) and len(bb)==6:mins.append(bb[1]);maxs.append(bb[4])
-                starts.append({'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)})
-          result={'schema':4,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'expected_monument_base_y':104,'release_ready':False}
+                  if isinstance(bb,list) and len(bb)==6:
+                    box=[int(v) for v in bb]
+                    boxes.append(box);mins.append(box[1]);maxs.append(box[4])
+                start_info={'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)}
+                starts.append(start_info)
+                if boxes:
+                  minx=min(v[0] for v in boxes); miny=min(v[1] for v in boxes); minz=min(v[2] for v in boxes)
+                  maxx=max(v[3] for v in boxes); maxy=max(v[4] for v in boxes); maxz=max(v[5] for v in boxes)
+                  centerx=(minx+maxx)//2; centerz=(minz+maxz)//2
+                  center_column=[[y,block_world(centerx,y,centerz)] for y in range(132,95,-1)]
+                  base_counts={}
+                  for dz in range(-2,3):
+                    for dx in range(-2,3):
+                      state=block_world(centerx+dx,104,centerz+dz)
+                      base_counts[state]=base_counts.get(state,0)+1
+                  located=loc.get('monument_position',[None,None,None])
+                  dx=None if located[0] is None else centerx-int(located[0])
+                  dz=None if located[2] is None else centerz-int(located[2])
+                  monument_diagnostics.append({
+                    'start_chunk':[cx,cz],
+                    'piece_boxes':boxes,
+                    'union_bbox':[minx,miny,minz,maxx,maxy,maxz],
+                    'center_world':[centerx,centerz],
+                    'center_chunk':[centerx//16,centerz//16],
+                    'located_position':located,
+                    'located_to_center_delta_xz':[dx,dz],
+                    'center_column_y132_to_96':center_column,
+                    'base_y104_5x5_block_counts':dict(sorted(base_counts.items()))
+                  })
+          gate_summary={
+            'desert_candidates_present':bool(candidates),
+            'candidate_chunks_saved':not missing_candidates,
+            'natural_palms_present':bool(candidate_palms),
+            'monument_saved':bool(starts),
+            'monument_base_y_104':any(v['piece_min_y']==104 for v in starts)
+          }
+          natural_audit_pass=all(gate_summary.values())
+          result={'schema':5,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
           (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
           if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
           if missing_candidates:raise SystemExit(f'DESERT-R1 candidate chunks missing from saved world: {len(missing_candidates)}')
           if not candidate_palms:raise SystemExit('no natural DESERT-R1 palm in deterministic candidate chunks')
           if not starts:raise SystemExit('located monument start not saved')
-          if not any(s['piece_min_y']==104 for s in starts):raise SystemExit('monument base is not Y=104')
+          if not any(v['piece_min_y']==104 for v in starts):raise SystemExit('monument base is not Y=104')
+          PY
+      - name: Publish natural audit summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p=Path('artifacts/natural-feature-audit.json')
+          print('## NeverOverworld DESERT-R1 + Monument natural audit')
+          if not p.is_file():
+            print()
+            print('Audit JSON was not produced.')
+            raise SystemExit(0)
+          d=json.loads(p.read_text())
+          gates=d.get('gate_summary',{})
+          print()
+          print(f"- Natural audit pass: **{d.get('natural_audit_pass', False)}**")
+          print(f"- Located deserts: **{d.get('located_desert_count', 0)}**")
+          print(f"- Deterministic oasis candidates: **{d.get('selected_candidate_count', 0)}**")
+          print(f"- Saved natural palm chunks: **{d.get('candidate_palm_count', 0)}**")
+          print(f"- Missing candidate chunks: **{len(d.get('missing_candidate_chunks', []))}**")
+          starts=d.get('monument_starts',[])
+          base=min((v.get('piece_min_y') for v in starts if v.get('piece_min_y') is not None),default=None)
+          print(f"- Monument starts: **{len(starts)}**")
+          print(f"- Monument minimum piece Y: **{base}** (expected 104)")
+          md=d.get('monument_diagnostics',[])
+          if md:
+            m=md[0]
+            print(f"- Monument center X/Z: **{m.get('center_world')}**")
+            print(f"- Monument union bbox: **{m.get('union_bbox')}**")
+            print(f"- Locate→center delta X/Z: **{m.get('located_to_center_delta_xz')}**")
+          print()
+          print('### Gates')
+          for name,value in gates.items():
+            icon='✅' if value else '❌'
+            print(f"- {icon} {name}")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -281,4 +360,4 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-# retrigger-natural-2026-09-18-targeted-dry-desert-sample
+# retrigger-natural-2026-09-18-monument-center-diagnostics
