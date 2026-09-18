@@ -44,10 +44,10 @@ public final class NeverOverworldDesertR1 {
         final int centerLocalZ = 6 + (int)Math.floorMod(mix(key ^ 0x94D049BB133111EBL), 4L);
         final int centerX = cp.getMinBlockX() + centerLocalX;
         final int centerZ = cp.getMinBlockZ() + centerLocalZ;
-        final int centerSurfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, centerLocalX, centerLocalZ);
-        if (centerSurfaceY <= FLOOD_LEVEL || centerSurfaceY >= chunk.getMaxY() - 12) return 0;
+        final int centerGroundY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, centerLocalX, centerLocalZ));
+        if (centerGroundY <= FLOOD_LEVEL || centerGroundY >= chunk.getMaxY() - 13) return 0;
 
-        final BlockPos center = new BlockPos(centerX, centerSurfaceY, centerZ);
+        final BlockPos center = new BlockPos(centerX, centerGroundY, centerZ);
         if (!level.getBiome(center).is(Biomes.DESERT)
             || !isDesertSurface(chunk.getBlockState(center))
             || intersectsStructure(chunk, centerX - 7, centerX + 7, centerZ - 7, centerZ + 7)
@@ -63,7 +63,7 @@ public final class NeverOverworldDesertR1 {
             for (int dx = -4; dx <= 4; ++dx) {
                 final int lx = centerLocalX + dx;
                 final int lz = centerLocalZ + dz;
-                final int y = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
+                final int y = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz));
                 minSurface = Math.min(minSurface, y);
                 maxSurface = Math.max(maxSurface, y);
                 pos.set(cp.getMinBlockX() + lx, y, cp.getMinBlockZ() + lz);
@@ -72,7 +72,7 @@ public final class NeverOverworldDesertR1 {
         }
         if (maxSurface - minSurface > 5 || eligible < 40) return 0;
 
-        final int waterY = minSurface;
+        final int waterY = minSurface + 1;
         int changed = 0;
         for (int dz = -5; dz <= 5; ++dz) {
             for (int dx = -5; dx <= 5; ++dx) {
@@ -86,8 +86,8 @@ public final class NeverOverworldDesertR1 {
                 final double wobble = Math.floorMod(cell, 1000L) / 1000.0D;
 
                 if (d2 <= 8.5D + wobble * 3.0D) {
-                    final int surfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
-                    for (int y = waterY + 1; y <= surfaceY + 1; ++y) {
+                    final int surfaceY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz));
+                    for (int y = waterY + 1; y <= surfaceY; ++y) {
                         pos.set(worldX, y, worldZ);
                         final BlockState state = chunk.getBlockState(pos);
                         if (!state.isAir() && !state.canBeReplaced()) {
@@ -106,7 +106,7 @@ public final class NeverOverworldDesertR1 {
                         ++changed;
                     }
                 } else if (d2 <= 24.0D && wobble < 0.76D) {
-                    final int surfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
+                    final int surfaceY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz));
                     pos.set(worldX, surfaceY, worldZ);
                     if (chunk.getBlockState(pos).is(Blocks.SAND)) {
                         chunk.setBlockState(pos, wobble < 0.58D ? Blocks.GRASS_BLOCK.defaultBlockState() : Blocks.COARSE_DIRT.defaultBlockState(), 0);
@@ -121,9 +121,9 @@ public final class NeverOverworldDesertR1 {
             {3, 3}, {-3, -3}, {3, -3}, {-3, 3}
         };
         int palms = 0;
-        final int rotation = (int)Math.floorMod(mix(key ^ 0xDB4F0B9175AE2165L), 4L);
+        final int rotation = (int)Math.floorMod(mix(key ^ 0xDB4F0B9175AE2165L), (long)palmOffsets.length);
         for (int i = 0; i < palmOffsets.length && palms < 2; ++i) {
-            final int[] off = palmOffsets[(i + rotation) & 3];
+            final int[] off = palmOffsets[(i + rotation) % palmOffsets.length];
             if (placePalm(chunk, centerLocalX + off[0], centerLocalZ + off[1], key ^ i)) {
                 ++palms;
             }
@@ -140,7 +140,7 @@ public final class NeverOverworldDesertR1 {
 
     private static boolean placePalm(final ChunkAccess chunk, final int localX, final int localZ, final long key) {
         if (localX < 2 || localX > 13 || localZ < 2 || localZ > 13) return false;
-        final int groundY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, localX, localZ);
+        final int groundY = surfaceGroundY(chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, localX, localZ));
         final int worldX = chunk.getPos().getMinBlockX() + localX;
         final int worldZ = chunk.getPos().getMinBlockZ() + localZ;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(worldX, groundY, worldZ);
@@ -174,6 +174,10 @@ public final class NeverOverworldDesertR1 {
             if (state.isAir() || state.canBeReplaced()) chunk.setBlockState(pos, leaves, 0);
         }
         return true;
+    }
+
+    static int surfaceGroundY(final int firstAvailableY) {
+        return firstAvailableY - 1;
     }
 
     private static boolean isDesertSurface(final BlockState state) {
