@@ -206,6 +206,19 @@ clarity and the wind impulse opposes movement against the wind while assisting
 movement with the wind. Passenger, swimming, spectator, creative-flight and
 elytra movement are excluded. **There is no overheating mechanic.**
 
+For player-facing sandstorm QA, query the world's monotonic game time with
+`/time query gametime`, then run:
+
+```bash
+python3 scripts/never-overworld-sandstorm-window.py --game-time <ticks>
+```
+
+The helper mirrors the production seed/cycle hash and reports whether the storm
+is active, the next deterministic storm window and the wind direction. Use
+`--json` for machine-readable output and `--self-test` to verify the helper's
+known-seed contract. This avoids waiting blindly through inactive 12,000-tick
+cycles and does not add a debug override to the production server.
+
 Compile/native smoke covers the dry-surface rules and the flooded sandbar builder.
 Natural acceptance is also green on seed `-2996952393010080672`: run
 `35383297726` at production commit `f673a3332f453b74e0786c71029ba0837a4fd478`
