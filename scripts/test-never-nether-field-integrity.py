@@ -117,6 +117,21 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["roof_non_air_blocks_observed"], 4096)
         self.assertTrue(r["read_only"])
 
+    def test_r14_upper_generated_body_range_is_auditable(self):
+        root = fixture()
+        root["sections"].append({"Y": 31, "block_states": {"palette": [{"Name": "minecraft:netherrack"}]}})
+        volume = AUDIT.Volume({(0, 0): root}, 384, 511)
+        self.assertEqual(volume.min_y, 384)
+        self.assertEqual(volume.max_y, 511)
+        self.assertEqual(volume.at((0, 511, 0)), "minecraft:netherrack")
+        self.assertEqual(volume.roof_non_air, 0)
+
+    def test_r14_roof_section_remains_auxiliary_outside_body_audit(self):
+        root = fixture()
+        root["sections"].append({"Y": 32, "block_states": {"palette": [{"Name": "minecraft:bedrock"}]}})
+        volume = AUDIT.Volume({(0, 0): root}, 384, 511)
+        self.assertEqual(volume.roof_non_air, 4096)
+
     def test_empty_sample_is_not_success(self):
         with self.assertRaises(ValueError):
             report({})
