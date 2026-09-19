@@ -1,5 +1,8 @@
 package net.minecraft.world.level.levelgen.placement;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.serialization.MapCodec;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -8,14 +11,19 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.ZipFile;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessor;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 /**
  * R15 field cleanup for defects proven to exist in the immutable CARVERS
@@ -35,6 +43,8 @@ public final class NeverNetherFieldCleanupR15 {
     static final String NATIVE_PROFILE = "NN-R15-FIELD-CLEANUP-1";
     private static final String HEIGHT_LOCK = ".neverfolia-nevernether-height.lock";
     private static final String NATIVE_LOCK = ".neverfolia-nevernether-native.lock";
+    private static final String PACK_FINGERPRINT = "nevernether-worldgen-fingerprint.json";
+    private static final String NATIVE_MARKER = "data/neverfolia/nevernether/native_profile.json";
     private static final int[][] DIRECTIONS = {
         {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
     };
@@ -63,7 +73,7 @@ public final class NeverNetherFieldCleanupR15 {
         return new Result(fillMicroPockets(chunk, true), 0);
     }
 
-    public static void verifyNativeRevision(final Path worldRoot) {
+    public static void verifyNativeRevision(final Path worldRoot, final Path datapackDir) {
         try {
             final Path heightLock = worldRoot.resolve(HEIGHT_LOCK);
             final Path nativeLock = worldRoot.resolve(NATIVE_LOCK);
@@ -83,6 +93,7 @@ public final class NeverNetherFieldCleanupR15 {
                     "NeverNether R15 requires the exact active R14 height profile"
                 );
             }
+            verifyNativeDatapacks(datapackDir);
 
             if (Files.exists(nativeLock)) {
                 final String locked = Files.readString(nativeLock);
@@ -115,6 +126,56 @@ public final class NeverNetherFieldCleanupR15 {
             }
         } catch (IOException ex) {
             throw new IllegalStateException("NeverNether R15 native revision lock verification failed", ex);
+        }
+    }
+
+    private static void verifyNativeDatapacks(final Path datapackDir) throws IOException {
+        if (!Files.isDirectory(datapackDir)) {
+            throw new IllegalStateException("NeverNether R15 matching datapack directory is missing");
+        }
+        boolean found = false;
+        try (var paths = Files.list(datapackDir)) {
+            for (Path pack : paths.sorted().toList()) {
+                if (Files.isDirectory(pack)) {
+                    if (!Files.isRegularFile(pack.resolve(PACK_FINGERPRINT))) continue;
+                    final Path marker = pack.resolve(NATIVE_MARKER.replace('/', java.io.File.separatorChar));
+                    if (!Files.isRegularFile(marker)) {
+                        throw new IllegalStateException("R15 native profile marker missing from " + pack.getFileName());
+                    }
+                    validateNativeProfile(Files.readAllBytes(marker), pack.toString());
+                    found = true;
+                } else if (Files.isRegularFile(pack)
+                    && pack.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".zip")) {
+                    try (ZipFile zip = new ZipFile(pack.toFile())) {
+                        if (zip.getEntry(PACK_FINGERPRINT) == null) continue;
+                        final var marker = zip.getEntry(NATIVE_MARKER);
+                        if (marker == null) {
+                            throw new IllegalStateException("R15 native profile marker missing from " + pack.getFileName());
+                        }
+                        validateNativeProfile(zip.getInputStream(marker).readAllBytes(), pack.toString());
+                        found = true;
+                    }
+                }
+            }
+        }
+        if (!found) {
+            throw new IllegalStateException("NeverNether R15 matching native-profile datapack is not installed");
+        }
+    }
+
+    private static void validateNativeProfile(final byte[] payload, final String source) {
+        if (payload.length > 65536) {
+            throw new IllegalStateException("Oversized R15 native profile in " + source);
+        }
+        final JsonObject value = JsonParser.parseString(
+            new String(payload, java.nio.charset.StandardCharsets.UTF_8)
+        ).getAsJsonObject();
+        if (!value.has("schema") || value.get("schema").getAsInt() != 1
+            || !value.has("profile") || !NATIVE_PROFILE.equals(value.get("profile").getAsString())
+            || !value.has("requires_height_profile")
+            || !NeverNetherHeightR14.PROFILE.equals(value.get("requires_height_profile").getAsString())
+            || !value.has("new_world_required") || !value.get("new_world_required").getAsBoolean()) {
+            throw new IllegalStateException("Invalid R15 native profile in " + source);
         }
     }
 
@@ -406,4 +467,22 @@ public final class NeverNetherFieldCleanupR15 {
 
     private record Cell(int x,int y,int z) {}
     public record Result(int microPocketBlocksFilled,int hangingLavaCellsSolidified) {}
+
+    /** Datapack/runtime marker: an R15 pack must not decode on an older R14 runtime. */
+    public record RequiredProcessor() implements StructureProcessor {
+        public static final RequiredProcessor INSTANCE = new RequiredProcessor();
+        public static final MapCodec<RequiredProcessor> CODEC = MapCodec.unit(INSTANCE);
+        @Override
+        public StructureTemplate.StructureBlockInfo processBlock(
+            LevelReader level,
+            BlockPos pos,
+            BlockPos ref,
+            BlockPos relative,
+            StructureTemplate.StructureBlockInfo info,
+            StructurePlaceSettings settings
+        ) {
+            return info;
+        }
+        @Override public MapCodec<RequiredProcessor> codec() { return CODEC; }
+    }
 }
