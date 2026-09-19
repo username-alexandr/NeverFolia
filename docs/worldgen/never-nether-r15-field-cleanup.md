@@ -118,7 +118,10 @@ Before R15 may be treated as accepted:
 - owner-chunk-contained size<=4 enclosed cavity findings whose persisted provenance is entirely `original` must fall to zero;
 - tiny components created later by `external`/`proposal` writers remain diagnostic rather than being misattributed to CARVERS substrate;
 - boundary-touching and size>=5 cavity findings remain diagnostic, not failure conditions;
-- all existing NeverOverworld FIELD-R11 / DESERT-R1 / village gates must remain green.
+- all existing NeverOverworld FIELD-R11 / DESERT-R1 / village gates must remain green;
+- before production promotion, the native R15 generator revision must participate in a persisted NeverNether worldgen/native lock or matching fingerprint marker. The unchanged R14 datapack content fingerprint alone must not be used to imply that pre-R15 and R15 native generation are the same profile.
 
 R15 is not an existing-world repair. Existing generated Nether chunks require a
-separate migration/reset decision.
+separate migration/reset decision. Until the native-revision lock is added, use
+R15 only with a NEW disposable/test Nether and do not mix R14-only and R15-generated
+chunks under the same production world identity.
