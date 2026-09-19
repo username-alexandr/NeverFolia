@@ -128,6 +128,23 @@ class FieldAuditTests(unittest.TestCase):
         self.assertTrue(sample["original_only"])
         self.assertFalse(sample["touches_owner_chunk_boundary"])
 
+    def test_r15_original_owner_micro_tracks_structure_references(self):
+        root=fixture(changes={(8,8,8):1})
+        attach_original_state(root,(8,8,8),"minecraft:air")
+        root["structures"]={
+            "references":{
+                "minecraft:fortress":{"$long_array":[123456789]}
+            }
+        }
+        r=report({(0,0):root})
+        self.assertEqual(r["counts"]["r15_original_owner_micro_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_referenced_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_unreferenced_components"],0)
+        self.assertEqual(
+            r["enclosed_air_samples"][0]["chunk_structure_reference_ids"],
+            ["minecraft:fortress"],
+        )
+
     def test_r15_chunk_edge_micro_is_diagnostic_not_owner_gate(self):
         roots={
             (-1,0):fixture(-1,0,{(15,8,8):1}),
