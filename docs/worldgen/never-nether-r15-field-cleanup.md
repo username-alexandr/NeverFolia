@@ -77,16 +77,24 @@ valid cave or introducing chunk-order dependence.
 
 ### Hanging source-lava shelves
 
-R15 may solidify a source-lava cell only when:
+R15 may solidify a source-lava cell only when the block below is air/cave-air
+and the owning-chunk evidence matches one of two deterministic shapes:
 
-1. the block below is air/cave-air;
-2. at least two available horizontal cells in the owning chunk are also source lava;
-3. the replacement is derived from nearby recognized natural rock;
-4. no neighbouring chunk is loaded or read.
+- interior shelf: no horizontal side leaves the owning chunk and at least two
+  horizontal owning-chunk neighbours are source lava;
+- chunk-edge shelf: exactly one horizontal side leaves the owning chunk, at
+  least one available owning-chunk horizontal neighbour is source lava, at least
+  two available horizontal neighbours are recognized natural rock, and the
+  block directly above is source lava.
 
-The rule targets a horizontal unsupported shelf, not a single source at a
-lavafall/edge. The known baseline candidate is on local Z=15, so edge ownership
-is explicitly covered without reading the adjacent chunk.
+The replacement is derived only from nearby recognized natural rock. No
+neighbouring chunk is loaded or read.
+
+The edge rule was derived from the persisted baseline candidate at
+`[-3109,10,-6289]`: west was source lava, south crossed the chunk boundary and
+was source lava in the stopped-world audit, east/north were crimson nylium,
+above was source lava and below was cave air. Runtime R15 uses only the owning
+chunk portion of that signature.
 
 ## Ordering and persistence
 
@@ -101,9 +109,16 @@ Inside `NeverNetherSubstrateR10.capture()`:
 3. capture section states as the immutable original substrate;
 4. bind/persist R11+ metadata.
 
-Therefore R15 changes become part of the recorded original substrate. They are
-not marked as external/proposal writes and cannot run on a previously decorated
-saved chunk.
+Therefore pre-capture R15 changes become part of the recorded original
+substrate. They are not marked as external/proposal writes and cannot run on a
+previously decorated saved chunk.
+
+A second conservative R15 pass runs in Moonrise LIGHT after FEATURES and before
+Starlight reads section emptiness. It operates only on air/cave-air that was
+already air in the immutable R10 substrate, skips chunks with structure
+references, never reads neighbouring chunks, and records every changed cell as
+an `external` write before mutating the palette. This pass repairs tiny
+components that become isolated only after later FEATURES writes.
 
 ## First natural R15 result — partial, not accepted
 
@@ -185,13 +200,27 @@ Before R15 may be treated as accepted:
 - the same two-area 50-chunk natural-integrity sample must reach FULL and stop normally;
 - Roof512/padding must remain exact;
 - the baseline hanging shelf must no longer appear;
-- owner-chunk-contained size<=4 enclosed cavity findings whose persisted provenance is entirely `original` must fall to zero;
+- owner-chunk-contained size<=4 enclosed cavity findings whose persisted provenance is entirely `original` must be zero in the generated body Y=-128..506;
+- original tiny components entirely inside the R14 randomized roof envelope Y=507..511 remain a separate diagnostic class; Y=512 is governed by the hard solid-bedrock roof gate;
 - tiny components created later by `external`/`proposal` writers remain diagnostic rather than being misattributed to CARVERS substrate;
 - boundary-touching and size>=5 cavity findings remain diagnostic, not failure conditions;
 - all existing NeverOverworld FIELD-R11 / DESERT-R1 / village gates must remain green;
-- before production promotion, the native R15 generator revision must participate in a persisted NeverNether worldgen/native lock or matching fingerprint marker. The unchanged R14 datapack content fingerprint alone must not be used to imply that pre-R15 and R15 native generation are the same profile.
+- the persisted native revision lock and matching R15 pack/runtime marker must pass startup and restart tests.
+
+## Native revision lock and matching pack
+
+R15 now uses the explicit native profile `NN-R15-FIELD-CLEANUP-1`.
+
+The matching R15 datapack contains
+`data/neverfolia/nevernether/native_profile.json` and the required R15
+processor marker. Startup verifies that the pack and native runtime agree.
+
+A separate persisted native lock prevents a world that already contains
+R14-only Nether regions from being silently adopted by an R15 runtime. A new
+R15 world records the R15 native revision and subsequent restarts must match it.
+The native-lock + matching-pack lifecycle was accepted by workflow run
+`35467126678` on source `3bf4199688a76d23678c0cc068a663d1bd4f8c04`.
 
 R15 is not an existing-world repair. Existing generated Nether chunks require a
-separate migration/reset decision. Until the native-revision lock is added, use
-R15 only with a NEW disposable/test Nether and do not mix R14-only and R15-generated
-chunks under the same production world identity.
+separate migration/reset decision; do not mix R14-only and R15-generated chunks
+under one production world identity.
