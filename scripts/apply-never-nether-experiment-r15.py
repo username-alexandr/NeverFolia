@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Install R15 CARVERS-substrate field cleanup after the exact R14 chain.
+"""Install R15 pre-capture and post-FEATURES field cleanup after exact R14+BUG01.
 
-New chunks only. The helper runs immediately before R10 captures its immutable
-CARVERS substrate, so corrected states become the persisted original substrate.
+New chunks only. The pre-capture pass runs immediately before R10 snapshots the
+immutable CARVERS substrate. A second conservative pass runs in Moonrise LIGHT,
+after FEATURES have finished and before Starlight reads section emptiness.
 No datapack/profile migration and no existing-world rewrite is performed.
 """
 from __future__ import annotations
@@ -14,6 +15,11 @@ JAVA=Path('folia-server/src/minecraft/java')
 TARGET=Path('net/minecraft/world/level/levelgen/placement/NeverNetherSubstrateR10.java')
 HELPER=Path('net/minecraft/world/level/levelgen/placement/NeverNetherFieldCleanupR15.java')
 SOURCE=ROOT/'qa/nevernether-r15/candidate'/HELPER
+MOONRISE=Path('ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java')
+OVERWORLD_LIGHT_CALL='net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);'
+POST_MARKER='// NEVERFOLIA: NeverNether R15 post-FEATURES cleanup'
+POST_CALL='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.afterFeatures(task.world, task.fromChunk);'
+STARLIGHT='StarLightEngine.getEmptySectionsForChunk(task.fromChunk)'
 OLD='''        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
             throw new IllegalStateException("R10 cannot capture an already decorated chunk");
         LevelChunkSection[] sections = chunk.getSections();
@@ -47,10 +53,31 @@ def patch(text:str)->str:
     if not guard < hook < sections: fail('cleanup must run after persisted-status guard and before snapshot')
     return out
 
+def patch_light(text:str)->str:
+    if POST_CALL in text or POST_MARKER in text:
+        if text.count(POST_CALL)!=1 or text.count(POST_MARKER)!=1:
+            fail('partial/duplicate R15 LIGHT installation')
+        if text.index(POST_CALL)>text.index(STARLIGHT):
+            fail('R15 LIGHT cleanup must run before Starlight')
+        return text
+    if text.count(OVERWORLD_LIGHT_CALL)!=1:
+        fail('expected exactly one installed NeverOverworld Moonrise LIGHT call')
+    if text.count(STARLIGHT)!=1:
+        fail('expected exactly one Starlight empty-section anchor')
+    replacement=(
+        OVERWORLD_LIGHT_CALL+'\n'
+        '                '+POST_MARKER+'\n'
+        '                '+POST_CALL
+    )
+    out=text.replace(OVERWORLD_LIGHT_CALL,replacement,1)
+    if not out.index(OVERWORLD_LIGHT_CALL)<out.index(POST_CALL)<out.index(STARLIGHT):
+        fail('R15 LIGHT ordering invalid')
+    return out
+
 def helper()->str:
     if not SOURCE.is_file(): fail('helper source missing: '+str(SOURCE))
     value=SOURCE.read_text()
-    for marker in ('MAX_MICRO_POCKET = 4','solidifyHangingLava','isNaturalRock','owner-chunk'):
+    for marker in ('MAX_MICRO_POCKET = 4','solidifyHangingLava','afterFeatures','hasAnyStructureReferences','isNaturalRock','owner-chunk'):
         if marker not in value: fail('helper contract marker missing: '+marker)
     return value
 
@@ -68,6 +95,18 @@ def self_test()->None:
 '''
     out=patch(fixture)
     if patch(out)!=out: fail('transformer not idempotent')
+    light_fixture='''class ChunkLightTask {
+        boolean run() {
+            net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);
+            final Boolean[] emptySections = StarLightEngine.getEmptySectionsForChunk(task.fromChunk);
+            return true;
+        }
+    }
+'''
+    light=patch_light(light_fixture)
+    if patch_light(light)!=light: fail('LIGHT transformer not idempotent')
+    if not light.index(OVERWORLD_LIGHT_CALL)<light.index(POST_CALL)<light.index(STARLIGHT):
+        fail('SELF-TEST: LIGHT ordering invalid')
     helper()
     print('[NeverFolia][NN-R15 field cleanup] SELF-TEST OK')
 
@@ -76,9 +115,11 @@ def prepare(folia:Path)->dict[Path,str]:
     target=folia/JAVA/TARGET
     if not target.is_file(): fail('materialized R14 substrate helper missing: '+str(target))
     dest=folia/JAVA/HELPER
+    light=folia/JAVA/MOONRISE
     payload=helper()
     if dest.exists() and dest.read_text()!=payload: fail('conflicting R15 helper')
-    return {target:patch(target.read_text()),dest:payload}
+    if not light.is_file(): fail('materialized Moonrise ChunkLightTask missing: '+str(light))
+    return {target:patch(target.read_text()),dest:payload,light:patch_light(light.read_text())}
 
 def main()->None:
     p=argparse.ArgumentParser(description=__doc__)
@@ -93,6 +134,6 @@ def main()->None:
     staged=prepare(a.folia.resolve())
     for path,value in staged.items():
         path.parent.mkdir(parents=True,exist_ok=True);path.write_text(value,encoding='utf-8')
-    print('[NeverFolia][NN-R15 field cleanup] installed: '+str(len(staged))+' files')
+    print('[NeverFolia][NN-R15 field cleanup] installed: '+str(len(staged))+' files (pre-capture + LIGHT post-FEATURES)')
 
 if __name__=='__main__':main()
