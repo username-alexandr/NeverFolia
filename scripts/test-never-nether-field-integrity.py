@@ -49,6 +49,32 @@ def report(roots, limit=64, max_findings=200):
     return AUDIT.audit(AUDIT.Volume(roots, 0, 15), limit, max_findings)
 
 
+def attach_original_state(root, position, state_name):
+    x,y,z=position
+    section=next(s for s in root["sections"] if s["Y"] == y//16)
+    palette=["minecraft:netherrack",state_name]
+    bits=1
+    per=64//bits
+    original=[0]*((4096+per-1)//per)
+    index=((y&15)<<8)|((z&15)<<4)|(x&15)
+    original[index//per] |= 1 << (index%per)
+    section["neverfolia:substrate_r11"]={
+        "Schema":1,
+        "Profile":"NN-R14-SUBSTRATE-1-ROOF512",
+        "Seed":7270913,
+        "ChunkX":root["xPos"],
+        "ChunkZ":root["zPos"],
+        "SectionY":y//16,
+        "Palette":palette,
+        "Bits":bits,
+        "Original":{"$long_array":original},
+        "External":{"$long_array":[]},
+        "ProposalIndices":{"$int_array":[]},
+        "ProposalStates":{"$int_array":[]},
+    }
+    return index
+
+
 def attach_substrate_provenance(root, position, *, external=False, proposal=False):
     x,y,z=position
     section=next(s for s in root["sections"] if s["Y"] == y//16)
@@ -88,6 +114,31 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["counts"]["enclosed_small_air_components"], 1)
         self.assertEqual(r["counts"]["enclosed_air_components_size_1"], 1)
         self.assertEqual(r["enclosed_air_samples"][0]["bbox"], [8, 8, 8, 8, 8, 8])
+
+    def test_r15_original_owner_micro_counter(self):
+        root=fixture(changes={(8,8,8):1})
+        attach_original_state(root,(8,8,8),"minecraft:air")
+        r=report({(0,0):root})
+        self.assertEqual(r["counts"]["enclosed_micro_components"],1)
+        self.assertEqual(r["counts"]["enclosed_micro_owner_components"],1)
+        self.assertEqual(r["counts"]["enclosed_micro_edge_components"],0)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_blocks"],1)
+        sample=r["enclosed_air_samples"][0]
+        self.assertTrue(sample["original_only"])
+        self.assertFalse(sample["touches_owner_chunk_boundary"])
+
+    def test_r15_chunk_edge_micro_is_diagnostic_not_owner_gate(self):
+        roots={
+            (-1,0):fixture(-1,0,{(15,8,8):1}),
+            (0,0):fixture(0,0,{(0,8,8):1}),
+        }
+        r=report(roots)
+        self.assertEqual(r["counts"]["enclosed_micro_components"],1)
+        self.assertEqual(r["counts"]["enclosed_micro_owner_components"],0)
+        self.assertEqual(r["counts"]["enclosed_micro_edge_components"],1)
+        self.assertEqual(r["counts"]["enclosed_micro_edge_blocks"],2)
+        self.assertTrue(r["enclosed_air_samples"][0]["touches_owner_chunk_boundary"])
 
     def test_face_connected_air_variants_are_one_component(self):
         r = report({(0, 0): fixture(changes={(8, 8, 8): 1, (9, 8, 8): 2})})
@@ -153,6 +204,25 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["counts"]["source_lava_fall_or_edge_candidates"], 2)
         self.assertEqual(r["hanging_lava_shelf_samples"][0]["position"], [8, 8, 8])
         self.assertEqual(r["hanging_lava_shelf_samples"][0]["horizontal_source_lava_neighbors"], 2)
+
+    def test_chunk_edge_shelf_reports_cross_chunk_neighbor(self):
+        left=fixture(0,0,{
+            (8,8,15):3,
+            (7,8,15):3,
+            (8,7,15):1,
+        })
+        right=fixture(0,1,{(8,8,0):3})
+        attach_original_state(left,(8,8,15),"minecraft:lava[level=0]")
+        r=report({(0,0):left,(0,1):right})
+        self.assertEqual(r["counts"]["source_lava_with_air_below"],1)
+        self.assertEqual(r["counts"]["hanging_source_lava_shelf_candidates"],1)
+        self.assertEqual(r["counts"]["hanging_source_lava_shelf_original_candidates"],1)
+        sample=r["hanging_lava_shelf_samples"][0]
+        self.assertEqual(sample["position"],[8,8,15])
+        sources=[n for n in sample["horizontal_neighbors"] if n["source_lava"]]
+        self.assertEqual(len(sources),2)
+        self.assertEqual(sum(1 for n in sources if n["same_chunk"]),1)
+        self.assertEqual(sum(1 for n in sources if not n["same_chunk"]),1)
 
     def test_saved_provenance_distinguishes_proposal_and_external(self):
         position=(8,8,8)
