@@ -124,9 +124,39 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(r["counts"]["enclosed_micro_edge_components"],0)
         self.assertEqual(r["counts"]["r15_original_owner_micro_components"],1)
         self.assertEqual(r["counts"]["r15_original_owner_micro_blocks"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_body_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_roof_envelope_components"],0)
         sample=r["enclosed_air_samples"][0]
         self.assertTrue(sample["original_only"])
         self.assertFalse(sample["touches_owner_chunk_boundary"])
+
+    def test_r15_original_owner_micro_tracks_structure_references(self):
+        root=fixture(changes={(8,8,8):1})
+        attach_original_state(root,(8,8,8),"minecraft:air")
+        root["structures"]={
+            "references":{
+                "minecraft:fortress":{"$long_array":[123456789]}
+            }
+        }
+        r=report({(0,0):root})
+        self.assertEqual(r["counts"]["r15_original_owner_micro_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_referenced_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_unreferenced_components"],0)
+        self.assertEqual(
+            r["enclosed_air_samples"][0]["chunk_structure_reference_ids"],
+            ["minecraft:fortress"],
+        )
+
+    def test_r15_roof_envelope_micro_is_separate_from_body_gate(self):
+        root=fixture(changes={(8,14,8):1})
+        root["sections"][0]["Y"]=31
+        attach_original_state(root,(8,510,8),"minecraft:air")
+        r=AUDIT.audit(AUDIT.Volume({(0,0):root},496,511),64,200)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_body_components"],0)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_roof_envelope_components"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_roof_envelope_blocks"],1)
+        self.assertEqual(r["counts"]["r15_original_owner_micro_mixed_height_components"],0)
 
     def test_r15_chunk_edge_micro_is_diagnostic_not_owner_gate(self):
         roots={
