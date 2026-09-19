@@ -25,7 +25,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
         c.setLightEngine(LevelLightEngine.EMPTY);return c;
     }
     private static void set(ProtoChunk c,int x,int y,int z,Block block){
-        c.setBlockState(new BlockPos(x,y,z),block.defaultBlockState(),0);
+        c.getSection(c.getSectionIndex(y)).setBlockState(x&15,y&15,z&15,block.defaultBlockState(),false);
     }
 
     public static void main(String[] args){
@@ -56,6 +56,12 @@ public final class NeverNetherFieldCleanupR15Smoke {
         set(c,11,19,15,Blocks.CAVE_AIR);
 
         set(c,8,512,8,Blocks.BEDROCK);
+
+        check(c.getBlockState(new BlockPos(8,100,8)).isAir(),"fixture air 1");
+        check(c.getBlockState(new BlockPos(9,100,8)).isAir(),"fixture cave_air");
+        check(c.getBlockState(new BlockPos(8,101,8)).isAir(),"fixture air 2");
+        check(c.getBlockState(new BlockPos(4,120,5)).isAir(),"fixture 5-block cavity");
+        check(c.getBlockState(new BlockPos(11,19,15)).isAir(),"fixture edge shelf support");
 
         var result=NeverNetherFieldCleanupR15.clean(c);
         check(result.microPocketBlocksFilled()==3,"micro pocket changed="+result.microPocketBlocksFilled());
