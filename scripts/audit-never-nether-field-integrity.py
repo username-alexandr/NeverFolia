@@ -407,6 +407,15 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                                 else:
                                     counts["r15_original_owner_micro_unreferenced_components"] += 1
                                     counts["r15_original_owner_micro_unreferenced_blocks"] += size
+                                if maximum[1] <= 506:
+                                    counts["r15_original_owner_micro_body_components"] += 1
+                                    counts["r15_original_owner_micro_body_blocks"] += size
+                                elif minimum[1] >= 507:
+                                    counts["r15_original_owner_micro_roof_envelope_components"] += 1
+                                    counts["r15_original_owner_micro_roof_envelope_blocks"] += size
+                                else:
+                                    counts["r15_original_owner_micro_mixed_height_components"] += 1
+                                    counts["r15_original_owner_micro_mixed_height_blocks"] += size
                     if len(pocket_samples) < max_findings:
                         pocket_samples.append({
                             "size": size,
@@ -439,6 +448,9 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
         "r15_original_owner_micro_components", "r15_original_owner_micro_blocks",
         "r15_original_owner_micro_referenced_components", "r15_original_owner_micro_referenced_blocks",
         "r15_original_owner_micro_unreferenced_components", "r15_original_owner_micro_unreferenced_blocks",
+        "r15_original_owner_micro_body_components", "r15_original_owner_micro_body_blocks",
+        "r15_original_owner_micro_roof_envelope_components", "r15_original_owner_micro_roof_envelope_blocks",
+        "r15_original_owner_micro_mixed_height_components", "r15_original_owner_micro_mixed_height_blocks",
     )
     return {
         "schema": 1, "audit": "nevernether-field-integrity-r1", "read_only": True,
