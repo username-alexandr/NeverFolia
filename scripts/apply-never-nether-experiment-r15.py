@@ -14,12 +14,14 @@ JAVA=Path('folia-server/src/minecraft/java')
 TARGET=Path('net/minecraft/world/level/levelgen/placement/NeverNetherSubstrateR10.java')
 HELPER=Path('net/minecraft/world/level/levelgen/placement/NeverNetherFieldCleanupR15.java')
 SOURCE=ROOT/'qa/nevernether-r15/candidate'/HELPER
-OLD='''        if (!scope(level)) return;
-        // This method is called before publishing the CARVERS barrier; neighbor
+OLD='''        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
+            throw new IllegalStateException("R10 cannot capture an already decorated chunk");
+        LevelChunkSection[] sections = chunk.getSections();
 '''
-NEW='''        if (!scope(level)) return;
+NEW='''        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
+            throw new IllegalStateException("R10 cannot capture an already decorated chunk");
         NeverNetherFieldCleanupR15.clean(chunk);
-        // This method is called before publishing the CARVERS barrier; neighbor
+        LevelChunkSection[] sections = chunk.getSections();
 '''
 MARKER='NeverNetherFieldCleanupR15.clean(chunk);'
 
@@ -39,6 +41,10 @@ def patch(text:str)->str:
     if text.count(OLD)!=1: fail('expected one R10 capture anchor, got '+str(text.count(OLD)))
     out=text.replace(OLD,NEW,1)
     if out.count(MARKER)!=1: fail('cleanup hook installation failed')
+    guard=out.index('chunk.getPersistedStatus().isOrAfter')
+    hook=out.index(MARKER)
+    sections=out.index('LevelChunkSection[] sections')
+    if not guard < hook < sections: fail('cleanup must run after persisted-status guard and before snapshot')
     return out
 
 def helper()->str:
@@ -54,7 +60,9 @@ def self_test()->None:
     // NeverNetherHeightR14.HEIGHT NeverNetherHeightR14.MAX_Y
     public static void capture(ServerLevel level, ChunkAccess chunk) {
         if (!scope(level)) return;
-        // This method is called before publishing the CARVERS barrier; neighbor
+        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
+            throw new IllegalStateException("R10 cannot capture an already decorated chunk");
+        LevelChunkSection[] sections = chunk.getSections();
     }
 }
 '''
