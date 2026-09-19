@@ -49,17 +49,24 @@ public final class NeverNetherFieldCleanupR15Smoke {
         set(c,11,10,12,Blocks.LAVA);
         set(c,13,10,12,Blocks.LAVA);
 
+        set(c,11,20,15,Blocks.LAVA);
+        set(c,10,20,15,Blocks.LAVA);
+        set(c,12,20,15,Blocks.LAVA);
+        set(c,11,21,15,Blocks.LAVA);
+        set(c,11,19,15,Blocks.CAVE_AIR);
+
         set(c,8,512,8,Blocks.BEDROCK);
 
         var result=NeverNetherFieldCleanupR15.clean(c);
         check(result.microPocketBlocksFilled()==3,"micro pocket changed="+result.microPocketBlocksFilled());
-        check(result.hangingLavaCellsSolidified()==1,"shelf changed="+result.hangingLavaCellsSolidified());
+        check(result.hangingLavaCellsSolidified()==2,"shelf changed="+result.hangingLavaCellsSolidified());
         check(c.getBlockState(new BlockPos(8,100,8)).is(Blocks.NETHERRACK),"micro pocket fill");
         check(c.getBlockState(new BlockPos(9,100,8)).is(Blocks.NETHERRACK),"micro cave_air fill");
         check(c.getBlockState(new BlockPos(8,101,8)).is(Blocks.NETHERRACK),"micro vertical fill");
         check(c.getBlockState(new BlockPos(4,120,5)).isAir(),"5-block cavity preserved");
         check(c.getBlockState(new BlockPos(0,140,8)).isAir(),"edge cavity preserved");
         check(c.getBlockState(new BlockPos(8,10,8)).is(Blocks.NETHERRACK),"hanging shelf solidified");
+        check(c.getBlockState(new BlockPos(11,20,15)).is(Blocks.NETHERRACK),"edge hanging shelf solidified");
         check(c.getBlockState(new BlockPos(12,10,12)).is(Blocks.LAVA),"supported lava preserved");
         check(c.getBlockState(new BlockPos(8,512,8)).is(Blocks.BEDROCK),"roof untouched");
         check(NeverNetherFieldCleanupR15.sourceLava(Blocks.LAVA.defaultBlockState()),"source lava classifier");
