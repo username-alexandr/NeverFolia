@@ -22,7 +22,10 @@ POST_CALL='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR
 STARLIGHT='StarLightEngine.getEmptySectionsForChunk(task.fromChunk)'
 FINGERPRINT_GUARD=Path('net/minecraft/server/NeverNetherFingerprintGuard.java')
 R14_VERIFY='net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.verifyDatapacks(worldRoot,datapackDir);'
-R15_VERIFY='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.verifyNativeRevision(worldRoot);'
+R15_VERIFY='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.verifyNativeRevision(worldRoot,datapackDir);'
+PROCESSORS=Path('net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherNativeProcessors.java')
+R14_PROCESSOR='Registry.register(registry, Identifier.fromNamespaceAndPath("neverfolia", "height_r14_required"), net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.RequiredProcessor.CODEC);'
+R15_PROCESSOR='Registry.register(registry, Identifier.fromNamespaceAndPath("neverfolia", "field_r15_required"), net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.RequiredProcessor.CODEC);'
 OLD='''        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
             throw new IllegalStateException("R10 cannot capture an already decorated chunk");
         LevelChunkSection[] sections = chunk.getSections();
@@ -88,6 +91,17 @@ def patch_fingerprint_guard(text:str)->str:
         fail('expected exactly one R14 fingerprint-guard verification hook')
     return text.replace(R14_VERIFY,R14_VERIFY+'\n        '+R15_VERIFY,1)
 
+def patch_processors(text:str)->str:
+    if R15_PROCESSOR in text:
+        if text.count(R15_PROCESSOR)!=1:
+            fail('duplicate R15 required processor registration')
+        if text.index(R15_PROCESSOR)<text.index(R14_PROCESSOR):
+            fail('R15 required processor must register after R14 marker')
+        return text
+    if text.count(R14_PROCESSOR)!=1:
+        fail('expected exactly one R14 required processor registration')
+    return text.replace(R14_PROCESSOR,R14_PROCESSOR+'\n        '+R15_PROCESSOR,1)
+
 def helper()->str:
     if not SOURCE.is_file(): fail('helper source missing: '+str(SOURCE))
     value=SOURCE.read_text()
@@ -131,6 +145,16 @@ def self_test()->None:
     if patch_fingerprint_guard(guard)!=guard: fail('fingerprint transformer not idempotent')
     if not guard.index(R14_VERIFY)<guard.index(R15_VERIFY):
         fail('SELF-TEST: native lock verifier ordering invalid')
+    processor_fixture='''class NeverNetherNativeProcessors {
+    void register() {
+        Registry.register(registry, Identifier.fromNamespaceAndPath("neverfolia", "height_r14_required"), net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.RequiredProcessor.CODEC);
+    }
+}
+'''
+    processors=patch_processors(processor_fixture)
+    if patch_processors(processors)!=processors: fail('processor transformer not idempotent')
+    if not processors.index(R14_PROCESSOR)<processors.index(R15_PROCESSOR):
+        fail('SELF-TEST: processor registration ordering invalid')
     helper()
     print('[NeverFolia][NN-R15 field cleanup] SELF-TEST OK')
 
@@ -141,15 +165,18 @@ def prepare(folia:Path)->dict[Path,str]:
     dest=folia/JAVA/HELPER
     light=folia/JAVA/MOONRISE
     guard=folia/JAVA/FINGERPRINT_GUARD
+    processors=folia/JAVA/PROCESSORS
     payload=helper()
     if dest.exists() and dest.read_text()!=payload: fail('conflicting R15 helper')
     if not light.is_file(): fail('materialized Moonrise ChunkLightTask missing: '+str(light))
     if not guard.is_file(): fail('materialized NeverNetherFingerprintGuard missing: '+str(guard))
+    if not processors.is_file(): fail('materialized NeverNetherNativeProcessors missing: '+str(processors))
     return {
         target:patch(target.read_text()),
         dest:payload,
         light:patch_light(light.read_text()),
         guard:patch_fingerprint_guard(guard.read_text()),
+        processors:patch_processors(processors.read_text()),
     }
 
 def main()->None:
