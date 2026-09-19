@@ -9,6 +9,8 @@ on:
       - 'scripts/*village*.py'
       - 'scripts/*village*.sh'
       - 'scripts/apply-never-overworld-field-r10.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
       - 'scripts/apply-neverfolia-post-patches-core.sh'
       - '.github/workflows/never-overworld-village-natural.yml'
