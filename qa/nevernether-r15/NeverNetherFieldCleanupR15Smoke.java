@@ -51,9 +51,11 @@ public final class NeverNetherFieldCleanupR15Smoke {
         set(c,11,10,12,Blocks.LAVA);
         set(c,13,10,12,Blocks.LAVA);
 
+        // Exact owning-chunk shape from persisted shelf [-3109,10,-6289]:
+        // one same-chunk source-lava neighbour, one missing cross-chunk side,
+        // two same-chunk natural-rock sides, source lava above and air below.
         set(c,11,20,15,Blocks.LAVA);
         set(c,10,20,15,Blocks.LAVA);
-        set(c,12,20,15,Blocks.LAVA);
         set(c,11,21,15,Blocks.LAVA);
         set(c,11,19,15,Blocks.CAVE_AIR);
 
