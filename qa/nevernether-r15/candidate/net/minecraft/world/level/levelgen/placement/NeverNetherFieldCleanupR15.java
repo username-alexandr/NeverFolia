@@ -143,8 +143,9 @@ public final class NeverNetherFieldCleanupR15 {
         final int localZ,
         final BlockState state
     ) {
-        chunk.getSection(chunk.getSectionIndex(y))
-            .setBlockState(localX & 15, y & 15, localZ & 15, state, false);
+        final var section = chunk.getSection(chunk.getSectionIndex(y));
+        section.getStates().set(localX & 15, y & 15, localZ & 15, state);
+        section.recalcBlockCounts();
     }
 
     static boolean sourceLava(final BlockState state) {
