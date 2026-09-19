@@ -30,6 +30,9 @@ public final class NeverNetherFieldCleanupR15 {
     private static final int[][] DIRECTIONS = {
         {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
     };
+    private static final int[][] HORIZONTAL = {
+        {1,0},{-1,0},{0,1},{0,-1}
+    };
 
     private NeverNetherFieldCleanupR15() {}
 
@@ -122,6 +125,7 @@ public final class NeverNetherFieldCleanupR15 {
 
                     if (!safe || cells.isEmpty() || cells.size() > MAX_MICRO_POCKET) continue;
                     final BlockState replacement = chooseFill(boundary);
+                    if (replacement == null) continue;
                     for (Cell cell : cells) {
                         write(chunk, cell.x, cell.y, cell.z, replacement, published, pos);
                         ++changed;
@@ -145,16 +149,29 @@ public final class NeverNetherFieldCleanupR15 {
                     if (!sourceLava(state)) continue;
                     pos.set(baseX + lx, y - 1, baseZ + lz);
                     if (!chunk.getBlockState(pos).isAir()) continue;
-                    int horizontal = 0;
-                    for (int[] d : new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) {
+                    int horizontalSource = 0;
+                    int horizontalRock = 0;
+                    int missingHorizontal = 0;
+                    for (int[] d : HORIZONTAL) {
                         final int nx = lx + d[0];
                         final int nz = lz + d[1];
-                        if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
+                        if (nx < 0 || nx > 15 || nz < 0 || nz > 15) {
+                            ++missingHorizontal;
+                            continue;
+                        }
                         pos.set(baseX + nx, y, baseZ + nz);
-                        if (sourceLava(chunk.getBlockState(pos))) ++horizontal;
+                        final BlockState neighbor = chunk.getBlockState(pos);
+                        if (sourceLava(neighbor)) ++horizontalSource;
+                        else if (isNaturalRock(neighbor)) ++horizontalRock;
                     }
-                    if (horizontal < 2) continue;
+                    final boolean interiorShelf = missingHorizontal == 0 && horizontalSource >= 2;
+                    final boolean edgeShelf = missingHorizontal == 1
+                        && horizontalSource >= 1
+                        && horizontalRock >= 2
+                        && sourceLava(stateAt(chunk, lx, y + 1, lz, pos));
+                    if (!interiorShelf && !edgeShelf) continue;
                     final BlockState replacement = surroundingRock(chunk, lx, y, lz, pos);
+                    if (replacement == null) continue;
                     directSet(chunk, lx, y, lz, replacement);
                     ++changed;
                 }
@@ -221,7 +238,8 @@ public final class NeverNetherFieldCleanupR15 {
     }
 
     private static BlockState chooseFill(final Map<BlockState,Integer> counts) {
-        BlockState best = Blocks.NETHERRACK.defaultBlockState();
+        if (counts.isEmpty()) return null;
+        BlockState best = null;
         int bestCount = -1;
         int bestId = Integer.MAX_VALUE;
         for (var entry : counts.entrySet()) {
@@ -234,6 +252,20 @@ public final class NeverNetherFieldCleanupR15 {
             }
         }
         return best;
+    }
+
+    private static BlockState stateAt(
+        final ChunkAccess chunk,
+        final int localX,
+        final int y,
+        final int localZ,
+        final BlockPos.MutableBlockPos pos
+    ) {
+        if (localX < 0 || localX > 15 || localZ < 0 || localZ > 15 || y < MIN_Y || y > MAX_Y) {
+            return Blocks.BEDROCK.defaultBlockState();
+        }
+        pos.set(chunk.getPos().getMinBlockX() + localX, y, chunk.getPos().getMinBlockZ() + localZ);
+        return chunk.getBlockState(pos);
     }
 
     private static BlockState surroundingRock(
