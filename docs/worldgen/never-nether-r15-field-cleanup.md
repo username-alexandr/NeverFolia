@@ -105,6 +105,46 @@ Therefore R15 changes become part of the recorded original substrate. They are
 not marked as external/proposal writes and cannot run on a previously decorated
 saved chunk.
 
+## First natural R15 result — partial, not accepted
+
+Run `35453824789`, source `13644025bd063ee75d98c688d2610055c1f9c772`,
+used the same seed and 50-chunk two-area plan as the pre-R15 baseline.
+
+Confirmed:
+
+- native R15 smoke: **PASS**, 19 checks;
+- generated/saved chunks: **50/50 FULL**;
+- Roof512 cells: **12,800 checked**, no failures;
+- technical padding Y=513..527: **0 non-air**;
+- natural-integrity runtime gate: **PASS**.
+
+Cavity comparison against baseline `57aa2bc`:
+
+- all enclosed components <=64: **68 -> 45**;
+- enclosed blocks: **335 -> 303**;
+- tiny size<=4 components: **57 -> 34**;
+- tiny blocks: **79 -> 47**;
+- owner-chunk-contained original tiny components: **50 -> 27**;
+- owner-chunk-contained original tiny blocks: **69 -> 37**;
+- chunk-edge tiny components remained **7 / 10 blocks**, which is expected because
+  pre-capture R15 deliberately performs no neighbour-chunk reads.
+
+Exactly 23 tiny components disappeared and the audit found **0 newly-added tiny
+components** at new sample coordinates. This proves the pre-capture cleanup is
+effective but insufficient: some small residual cavities become isolated only
+after later FEATURES writes surround portions of a larger CARVERS cavity.
+
+Lava comparison:
+
+- source lava blocks: **1,429,816 -> 1,429,816**;
+- source lava with air below: **1 -> 1**;
+- hanging shelf candidates: **1 -> 1**;
+- the same original-provenance candidate remains at
+  `[-3109, 10, -6289]`.
+
+Therefore R15 is still a candidate. The next correction needs a conservative
+post-FEATURES owner-chunk cleanup and an evidence-based chunk-edge shelf rule.
+
 ## Acceptance gates
 
 Before R15 may be treated as accepted:
