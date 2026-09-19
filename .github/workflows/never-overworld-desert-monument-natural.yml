@@ -10,6 +10,8 @@ on:
       - 'qa/neveroverworld-field-r11/**'
       - 'qa/neveroverworld-desert-r1/**'
       - 'scripts/*never-overworld*.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
       - 'scripts/apply-neverfolia-post-patches-core.sh'
       - '.github/workflows/never-overworld-desert-monument-natural.yml'
