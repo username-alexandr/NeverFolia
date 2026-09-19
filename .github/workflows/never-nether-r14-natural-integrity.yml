@@ -44,6 +44,7 @@ jobs:
           python3 scripts/test-never-nether-height-pack-r14.py 2>&1 | tee artifacts/r14-height-pack-tests.log
           python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/r14-height-hooks-tests.log
           python3 scripts/apply-never-nether-experiment-r15.py --self-test 2>&1 | tee artifacts/r15-cleanup-selftest.log
+          python3 scripts/build-never-nether-field-r15.py --self-test 2>&1 | tee artifacts/r15-pack-tests.log
 
       - name: Build exact current Paperclip
         run: |
@@ -90,14 +91,20 @@ jobs:
           shutil.copyfile(jars[0],'artifacts/server.jar')
           PY
 
-      - name: Build matching FIELD-R1 plus R14 Nether pack
+      - name: Build matching FIELD-R1 plus R14/R15 Nether pack
         run: |
           set -euo pipefail
           python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13-FieldR1.zip
           python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13-FieldR1.zip --inject
           python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13-FieldR1.zip --verify
-          python3 scripts/build-never-nether-height-r14.py             --input .work/NeverNether-R13-FieldR1.zip             --output artifacts/NeverNether-R14-FieldR1.zip | tee artifacts/r14-pack-build.json
+          python3 scripts/build-never-nether-height-r14.py \
+            --input .work/NeverNether-R13-FieldR1.zip \
+            --output artifacts/NeverNether-R14-FieldR1.zip | tee artifacts/r14-pack-build.json
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R14-FieldR1.zip --verify
+          python3 scripts/build-never-nether-field-r15.py \
+            --input artifacts/NeverNether-R14-FieldR1.zip \
+            --output artifacts/NeverNether-R15-FieldR1.zip | tee artifacts/r15-pack-build.json
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R15-FieldR1.zip --verify
 
       - name: Generate two bounded FULL Nether areas
         run: |
@@ -109,7 +116,7 @@ jobs:
           run=root/'.work/nevernether-natural-integrity'
           run.mkdir(parents=True,exist_ok=False)
           (run/'world/datapacks').mkdir(parents=True)
-          shutil.copyfile(root/'artifacts/NeverNether-R14-FieldR1.zip',run/'world/datapacks/NeverNether.zip')
+          shutil.copyfile(root/'artifacts/NeverNether-R15-FieldR1.zip',run/'world/datapacks/NeverNether.zip')
           (run/'eula.txt').write_text('eula=true\n')
           (run/'server.properties').write_text(
               'level-name=world\n'
@@ -309,6 +316,8 @@ jobs:
             artifacts/nevernether-natural-summary.json
             artifacts/natural-integrity-server.log
             artifacts/r14-pack-build.json
+            artifacts/r15-pack-build.json
+            artifacts/r15-pack-tests.log
             artifacts/field-integrity-tests.log
             artifacts/r14-height-pack-tests.log
             artifacts/r14-height-hooks-tests.log
