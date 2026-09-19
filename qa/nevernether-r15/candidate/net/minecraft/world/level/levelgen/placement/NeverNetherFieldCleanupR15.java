@@ -96,8 +96,7 @@ public final class NeverNetherFieldCleanupR15 {
                     if (!safe || cells.isEmpty() || cells.size() > MAX_MICRO_POCKET) continue;
                     final BlockState replacement = chooseFill(boundary);
                     for (Cell cell : cells) {
-                        pos.set(baseX + cell.x, cell.y, baseZ + cell.z);
-                        chunk.setBlockState(pos, replacement, 0);
+                        directSet(chunk, cell.x, cell.y, cell.z, replacement);
                         ++changed;
                     }
                 }
@@ -129,13 +128,23 @@ public final class NeverNetherFieldCleanupR15 {
                     }
                     if (horizontal < 2) continue;
                     final BlockState replacement = surroundingRock(chunk, lx, y, lz, pos);
-                    pos.set(baseX + lx, y, baseZ + lz);
-                    chunk.setBlockState(pos, replacement, 0);
+                    directSet(chunk, lx, y, lz, replacement);
                     ++changed;
                 }
             }
         }
         return changed;
+    }
+
+    private static void directSet(
+        final ChunkAccess chunk,
+        final int localX,
+        final int y,
+        final int localZ,
+        final BlockState state
+    ) {
+        chunk.getSection(chunk.getSectionIndex(y))
+            .setBlockState(localX & 15, y & 15, localZ & 15, state, false);
     }
 
     static boolean sourceLava(final BlockState state) {
