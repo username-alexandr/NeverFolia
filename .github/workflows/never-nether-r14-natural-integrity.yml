@@ -43,6 +43,7 @@ jobs:
           python3 scripts/test-never-nether-field-integrity.py 2>&1 | tee artifacts/field-integrity-tests.log
           python3 scripts/test-never-nether-height-pack-r14.py 2>&1 | tee artifacts/r14-height-pack-tests.log
           python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/r14-height-hooks-tests.log
+          python3 scripts/apply-never-nether-experiment-r15.py --self-test 2>&1 | tee artifacts/r15-cleanup-selftest.log
 
       - name: Build exact current Paperclip
         run: |
@@ -57,7 +58,27 @@ jobs:
             python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
           done
           python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
-          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          cat > .work/r15-natural.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'r15-natural-qa')
+              def cp = server.sourceSets.main.runtimeClasspath
+              def compileQa = server.tasks.register('neverNetherR15QaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source new File(gradle.rootProject.projectDir, '../../qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java')
+                  destinationDirectory = qaDir
+                  classpath = cp
+                  options.release = 25
+              }
+              server.tasks.register('neverNetherR15Smoke', JavaExec) {
+                  dependsOn compileQa
+                  classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke'
+                  jvmArgs '-ea'
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverNetherR15Smoke :folia-server:createPaperclipJar -I ../r15-natural.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build.log
           python3 - <<'PY'
           import shutil,zipfile
           from pathlib import Path
