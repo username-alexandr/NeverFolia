@@ -15,6 +15,8 @@ on:
       - 'scripts/apply-never-overworld-monument-r11.py'
       - 'scripts/apply-never-overworld-desert-r1.py'
       - 'scripts/never-overworld-sandstorm-window.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
       - 'scripts/apply-neverfolia-post-patches.sh'
       - '.github/workflows/never-overworld-field-r11-desert-r1.yml'
   workflow_dispatch:
