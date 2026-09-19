@@ -145,6 +145,36 @@ Lava comparison:
 Therefore R15 is still a candidate. The next correction needs a conservative
 post-FEATURES owner-chunk cleanup and an evidence-based chunk-edge shelf rule.
 
+## Second natural R15 result — post-FEATURES candidate
+
+Run `35466716075`, source `030234167eb501daf2d37def572a329fd81dfe88`,
+adds the conservative LIGHT-barrier post-FEATURES micro-cavity pass and the
+evidence-based chunk-edge hanging-lava rule.
+
+Confirmed on the same seed and 50-chunk sample:
+
+- native R15 smoke: **PASS**, 28 checks;
+- 50/50 selected chunks saved as `minecraft:full`;
+- Roof512: **PASS**, 12,800 roof cells checked;
+- technical padding Y=513..527: **0 non-air**;
+- source lava with air below: **1 -> 0**;
+- hanging source-lava shelf candidates: **1 -> 0**;
+- all hanging-shelf provenance buckets: **0**;
+- owner-chunk-contained original micro components: **27 -> 7**;
+- owner-chunk-contained original micro blocks: **37 -> 8**;
+- chunk-edge micro components remain **7 / 10 blocks** by design.
+
+Every one of the seven residual owner-contained original components lies at
+**Y=510** (six single-block components and one two-block component). There are
+no residual owner-contained original micro-cavities below Y=510 in this sample.
+
+R14 defines a randomized five-block bedrock envelope from Y=507 through Y=511
+below the mandatory solid bedrock roof at Y=512. R15 deliberately refuses to
+copy bedrock as generic cavity fill material. Therefore residual Y=510 pinholes
+belong to the roof-envelope diagnostic class and are not treated as body-rock
+field defects. The hard R15 body gate is Y=-128..506; the R14 roof audit remains
+the authority for Y=507..512.
+
 ## Acceptance gates
 
 Before R15 may be treated as accepted:
