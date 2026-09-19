@@ -45,6 +45,7 @@ jobs:
           python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/r14-height-hooks-tests.log
           python3 scripts/apply-never-nether-experiment-r15.py --self-test 2>&1 | tee artifacts/r15-cleanup-selftest.log
           python3 scripts/build-never-nether-field-r15.py --self-test 2>&1 | tee artifacts/r15-pack-tests.log
+          python3 scripts/test-never-nether-r15-acceptance.py 2>&1 | tee artifacts/r15-acceptance-tests.log
 
       - name: Build exact current Paperclip
         run: |
@@ -281,6 +282,17 @@ jobs:
           if failures:raise SystemExit(f'R14 roof/padding failures: {len(failures)}')
           PY
 
+      - name: Require R15 field acceptance and package test candidate
+        id: r15_acceptance
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          python3 scripts/check-never-nether-r15-acceptance.py \
+            --artifacts artifacts \
+            --world .work/nevernether-natural-integrity/world \
+            --source-sha "$GITHUB_SHA" \
+            --package 2>&1 | tee artifacts/r15-acceptance.log
+
       - name: Publish integrity summary
         if: always()
         run: |
@@ -303,8 +315,28 @@ jobs:
           print(f"- Enclosed small air components ≤64: **{d['enclosed_small_air_components']}**")
           print(f"- Cavity size buckets: **{d['enclosed_air_size_buckets']}**")
           print()
-          print('Shelf/cavity findings are diagnostic candidates, not automatic failures; roof512/FULL status is a hard gate.')
+          print('Runtime roof/FULL checks remain mandatory. R15 field acceptance below is an additional gate.')
+          gate=Path('artifacts/r15-acceptance.json')
+          if gate.is_file():
+              g=json.loads(gate.read_text())
+              print(f"- R15 field acceptance: **{g.get('nether_field_acceptance_pass',False)}**")
+              print(f"- Original owner-contained body micro-cavities: **{g.get('original_owner_body_micro_components','unknown')}**")
+              print(f"- Roof-envelope diagnostic cavities: **{g.get('roof_envelope_micro_components','unknown')}**")
+              print(f"- Chunk-edge diagnostic cavities: **{g.get('chunk_edge_micro_components','unknown')}**")
+              for error in g.get('errors',[]): print(f"- FAIL: {error}")
+          else:
+              print('- R15 field acceptance: **not produced; no candidate may be published**')
+          print('This is a fixed 50-chunk Nether test candidate, not production/whole-world acceptance.')
           PY
+
+      - name: Upload accepted Nether test bundle
+        if: ${{ success() && steps.r15_acceptance.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R15-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-R15-TEST-*.zip
+          if-no-files-found: error
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -318,6 +350,10 @@ jobs:
             artifacts/r14-pack-build.json
             artifacts/r15-pack-build.json
             artifacts/r15-pack-tests.log
+            artifacts/r15-cleanup-selftest.log
+            artifacts/r15-acceptance-tests.log
+            artifacts/r15-acceptance.log
+            artifacts/r15-acceptance.json
             artifacts/field-integrity-tests.log
             artifacts/r14-height-pack-tests.log
             artifacts/r14-height-hooks-tests.log
