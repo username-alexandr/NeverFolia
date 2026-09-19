@@ -1,5 +1,10 @@
 package net.minecraft.world.level.levelgen.placement;
 
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,6 +32,9 @@ public final class NeverNetherFieldCleanupR15 {
     static final int MIN_Y = -128;
     static final int MAX_Y = 511;
     static final int MAX_MICRO_POCKET = 4;
+    static final String NATIVE_PROFILE = "NN-R15-FIELD-CLEANUP-1";
+    private static final String HEIGHT_LOCK = ".neverfolia-nevernether-height.lock";
+    private static final String NATIVE_LOCK = ".neverfolia-nevernether-native.lock";
     private static final int[][] DIRECTIONS = {
         {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
     };
@@ -53,6 +61,78 @@ public final class NeverNetherFieldCleanupR15 {
         }
         validateEnvelope(chunk);
         return new Result(fillMicroPockets(chunk, true), 0);
+    }
+
+    public static void verifyNativeRevision(final Path worldRoot) {
+        try {
+            final Path heightLock = worldRoot.resolve(HEIGHT_LOCK);
+            final Path nativeLock = worldRoot.resolve(NATIVE_LOCK);
+
+            if (!Files.exists(heightLock)) {
+                if (Files.exists(nativeLock)) {
+                    throw new IllegalStateException(
+                        "NeverNether R15 native lock exists without the required R14 height lock"
+                    );
+                }
+                return;
+            }
+
+            final String expectedHeight = NeverNetherHeightR14.PROFILE + "\n";
+            if (!Files.readString(heightLock).equals(expectedHeight)) {
+                throw new IllegalStateException(
+                    "NeverNether R15 requires the exact active R14 height profile"
+                );
+            }
+
+            if (Files.exists(nativeLock)) {
+                final String locked = Files.readString(nativeLock);
+                if (!locked.equals(NATIVE_PROFILE + "\n")) {
+                    throw new IllegalStateException(
+                        "NeverNether native revision mismatch: locked=" + locked.trim()
+                            + " active=" + NATIVE_PROFILE
+                    );
+                }
+                return;
+            }
+
+            if (hasNetherRegions(worldRoot)) {
+                throw new IllegalStateException(
+                    "NeverNether R15 cannot adopt existing R14-only Nether regions; use a NEW/reset Nether"
+                );
+            }
+
+            Files.createDirectories(worldRoot);
+            final Path tmp = Files.createTempFile(worldRoot, NATIVE_LOCK + ".", ".tmp");
+            try {
+                Files.writeString(tmp, NATIVE_PROFILE + "\n");
+                try {
+                    Files.move(tmp, nativeLock, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException ex) {
+                    Files.move(tmp, nativeLock, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("NeverNether R15 native revision lock verification failed", ex);
+        }
+    }
+
+    private static boolean hasNetherRegions(final Path worldRoot) throws IOException {
+        final Path[] regions = {
+            worldRoot.resolve("dimensions/minecraft/the_nether/region"),
+            worldRoot.resolve("DIM-1/region"),
+            worldRoot.resolveSibling(worldRoot.getFileName() + "_nether").resolve("DIM-1/region")
+        };
+        for (Path region : regions) {
+            if (!Files.isDirectory(region)) continue;
+            try (var files = Files.list(region)) {
+                if (files.anyMatch(path -> path.getFileName().toString().endsWith(".mca"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void validateEnvelope(final ChunkAccess chunk) {
