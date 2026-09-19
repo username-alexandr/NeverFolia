@@ -50,6 +50,24 @@ def source_lava(state: str) -> bool:
     return properties.get("level", "0") == "0"
 
 
+def structure_reference_ids(root: dict[str, Any]) -> list[str]:
+    structures = root.get("structures", root.get("Structures", {}))
+    refs = structures.get("references", structures.get("References", {})) if isinstance(structures, dict) else {}
+    if not isinstance(refs, dict):
+        return []
+    result = []
+    for key, value in refs.items():
+        if isinstance(value, dict):
+            values = value.get("$long_array", [])
+        elif isinstance(value, list):
+            values = value
+        else:
+            values = []
+        if values:
+            result.append(str(key))
+    return sorted(result)
+
+
 def structure_boxes(root: dict[str, Any]) -> list[Box]:
     """Use saved start/piece boxes, never infer a structure's presence from air."""
     boxes: list[Box] = []
@@ -84,6 +102,7 @@ class Volume:
         self.size = (max_y - min_y + 1) * 256
         self.chunks: dict[Chunk, list[str]] = {}
         self.section_tags: dict[tuple[int, int, int], dict[str, Any]] = {}
+        self.structure_references: dict[Chunk, list[str]] = {}
         self.boxes: list[Box] = []
         self.roof_non_air = 0
         for (cx, cz), original in sorted(roots.items()):
@@ -125,6 +144,7 @@ class Volume:
                     source = (y - low) * 256
                     blocks[offset:offset + 256] = decoded[source:source + 256]
             self.chunks[(cx, cz)] = blocks
+            self.structure_references[(cx, cz)] = structure_reference_ids(root)
             self.boxes.extend(structure_boxes(root))
 
     def at(self, position: Position) -> str | None:
@@ -135,6 +155,9 @@ class Volume:
         if chunk is None:
             return None  # Missing coverage is UNKNOWN, never air or rock.
         return chunk[(y - self.min_y) * 256 + (z & 15) * 16 + (x & 15)]
+
+    def structure_reference_ids_at(self, position: Position) -> list[str]:
+        return self.structure_references.get((position[0] // 16, position[2] // 16), [])
 
     def in_structure(self, position: Position) -> bool:
         x, y, z = position
@@ -289,6 +312,7 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                                 "below": below,
                                 "provenance": provenance,
                                 "below_provenance": volume.provenance_at((position[0], y - 1, position[2])),
+                                "chunk_structure_reference_ids": volume.structure_reference_ids_at(position),
                             })
                     else:
                         counts["source_lava_fall_or_edge_candidates"] += 1
@@ -376,6 +400,22 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                             if original_only:
                                 counts["r15_original_owner_micro_components"] += 1
                                 counts["r15_original_owner_micro_blocks"] += size
+                                refs = volume.structure_reference_ids_at(position)
+                                if refs:
+                                    counts["r15_original_owner_micro_referenced_components"] += 1
+                                    counts["r15_original_owner_micro_referenced_blocks"] += size
+                                else:
+                                    counts["r15_original_owner_micro_unreferenced_components"] += 1
+                                    counts["r15_original_owner_micro_unreferenced_blocks"] += size
+                                if maximum[1] <= 506:
+                                    counts["r15_original_owner_micro_body_components"] += 1
+                                    counts["r15_original_owner_micro_body_blocks"] += size
+                                elif minimum[1] >= 507:
+                                    counts["r15_original_owner_micro_roof_envelope_components"] += 1
+                                    counts["r15_original_owner_micro_roof_envelope_blocks"] += size
+                                else:
+                                    counts["r15_original_owner_micro_mixed_height_components"] += 1
+                                    counts["r15_original_owner_micro_mixed_height_blocks"] += size
                     if len(pocket_samples) < max_findings:
                         pocket_samples.append({
                             "size": size,
@@ -385,6 +425,7 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                             "provenance_counts": dict(sorted(provenance_counts.items())),
                             "original_only": original_only,
                             "touches_owner_chunk_boundary": touches_owner_chunk_boundary,
+                            "chunk_structure_reference_ids": volume.structure_reference_ids_at(position),
                         })
     keys = (
         "source_lava_blocks", "source_lava_support_unknown", "source_lava_with_air_below",
@@ -405,6 +446,11 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
         "enclosed_micro_owner_components", "enclosed_micro_owner_blocks",
         "enclosed_micro_edge_components", "enclosed_micro_edge_blocks",
         "r15_original_owner_micro_components", "r15_original_owner_micro_blocks",
+        "r15_original_owner_micro_referenced_components", "r15_original_owner_micro_referenced_blocks",
+        "r15_original_owner_micro_unreferenced_components", "r15_original_owner_micro_unreferenced_blocks",
+        "r15_original_owner_micro_body_components", "r15_original_owner_micro_body_blocks",
+        "r15_original_owner_micro_roof_envelope_components", "r15_original_owner_micro_roof_envelope_blocks",
+        "r15_original_owner_micro_mixed_height_components", "r15_original_owner_micro_mixed_height_blocks",
     )
     return {
         "schema": 1, "audit": "nevernether-field-integrity-r1", "read_only": True,
