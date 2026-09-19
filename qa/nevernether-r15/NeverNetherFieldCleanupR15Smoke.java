@@ -1,5 +1,7 @@
 package net.minecraft.world.level.levelgen.placement;
 
+import java.nio.file.*;
+import java.util.Comparator;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.*;
 import net.minecraft.server.Bootstrap;
@@ -30,7 +32,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
         section.recalcBlockCounts();
     }
 
-    public static void main(String[] args){
+    public static void main(String[] args) throws Exception{
         var out=System.out;SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         var c=fixture();
 
@@ -107,6 +109,57 @@ public final class NeverNetherFieldCleanupR15Smoke {
         check(c.getBlockState(new BlockPos(8,512,8)).is(Blocks.BEDROCK),"roof untouched");
         check(NeverNetherFieldCleanupR15.sourceLava(Blocks.LAVA.defaultBlockState()),"source lava classifier");
         check(NeverNetherFieldCleanupR15.isNaturalRock(Blocks.BLACKSTONE.defaultBlockState()),"rock classifier");
+
+        Path lockRoot=Files.createTempDirectory("nn-r15-lock-");
+        try {
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            check(!Files.exists(lockRoot.resolve(".neverfolia-nevernether-native.lock")),"plain world must not receive R15 lock");
+
+            Files.writeString(lockRoot.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            Path nativeLock=lockRoot.resolve(".neverfolia-nevernether-native.lock");
+            check(Files.readString(nativeLock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"new R15 native lock");
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            check(Files.readString(nativeLock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"R15 restart lock");
+
+            Files.writeString(nativeLock,"NN-R14-OLD\n");
+            try {
+                NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+                throw new AssertionError("native revision mismatch accepted");
+            } catch (IllegalStateException expected) {
+                checks++;
+            }
+
+            Path legacy=Files.createDirectory(lockRoot.resolve("legacy"));
+            Files.writeString(legacy.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
+            Path region=legacy.resolve("dimensions/minecraft/the_nether/region");
+            Files.createDirectories(region);
+            Files.writeString(region.resolve("r.0.0.mca"),"sentinel");
+            try {
+                NeverNetherFieldCleanupR15.verifyNativeRevision(legacy);
+                throw new AssertionError("existing R14-only Nether adopted by R15");
+            } catch (IllegalStateException expected) {
+                checks++;
+            }
+            check(!Files.exists(legacy.resolve(".neverfolia-nevernether-native.lock")),"rejected legacy world writes no R15 lock");
+
+            Path sibling=Files.createDirectory(lockRoot.resolve("sibling"));
+            Files.writeString(sibling.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
+            Path siblingRegion=lockRoot.resolve("sibling_nether/DIM-1/region");
+            Files.createDirectories(siblingRegion);
+            Files.writeString(siblingRegion.resolve("r.0.0.mca"),"sentinel");
+            try {
+                NeverNetherFieldCleanupR15.verifyNativeRevision(sibling);
+                throw new AssertionError("Bukkit sibling R14-only Nether adopted by R15");
+            } catch (IllegalStateException expected) {
+                checks++;
+            }
+        } finally {
+            try (var paths=Files.walk(lockRoot)) {
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+            }
+        }
+
         out.println("PASS NeverNetherFieldCleanupR15Smoke checks="+checks+" "+result);
     }
 }
