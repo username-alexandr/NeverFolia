@@ -34,6 +34,92 @@ public final class NeverNetherFieldCleanupR15Smoke {
         section.recalcBlockCounts();
     }
 
+    @FunctionalInterface
+    private interface CheckedAction { void run() throws Exception; }
+
+    private static void rejects(CheckedAction action,String why) throws Exception {
+        try { action.run(); }
+        catch (IllegalStateException | java.io.IOException expected) { checks++;return; }
+        throw new AssertionError("accepted invalid native-lock case: "+why);
+    }
+
+    private static void nativeLockHardening(Path root,Path datapacks,Path marker) throws Exception {
+        final String good=Files.readString(marker);
+        final Path world=Files.createDirectory(root.resolve("strict"));
+        final Path height=world.resolve(".neverfolia-nevernether-height.lock");
+        final Path lock=world.resolve(".neverfolia-nevernether-native.lock");
+        Files.writeString(height,NeverNetherHeightR14.PROFILE+"\n");
+        final String[] badProfiles={
+            good.replace("\"schema\":1","\"schema\":1.5"),
+            good.replace("\"schema\":1","\"schema\":4294967297"),
+            good.replace("\"schema\":1","\"schema\":\"1\""),
+            good.replace("\"schema\":1","\"schema\":null"),
+            good.replace("\"schema\":1","\"schema\":true"),
+            good.replace("\"schema\":1","\"schema\":[]"),
+            good.replace("\"new_world_required\":true","\"new_world_required\":\"true\""),
+            good.replace("\"new_world_required\":true","\"new_world_required\":false"),
+            good.replace(NeverNetherFieldCleanupR15.NATIVE_PROFILE,"NN-R14-OLD"),
+            good.replace(NeverNetherHeightR14.PROFILE,"NN-OTHER-HEIGHT"),
+            "[]", "null", "{", "{}", good+" ".repeat(65537)
+        };
+        for (int i=0;i<badProfiles.length;i++) {
+            Files.writeString(marker,badProfiles[i]);
+            rejects(()->NeverNetherFieldCleanupR15.verifyNativeRevision(world,datapacks),"profile "+i);
+            check(!Files.exists(lock),"rejected profile must not create native lock "+i);
+        }
+        Files.writeString(marker,good);
+        NeverNetherFieldCleanupR15.verifyNativeRevision(world,datapacks);
+        check(Files.readString(lock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"strict valid profile accepted");
+        var stamp=Files.getLastModifiedTime(lock);
+        NeverNetherFieldCleanupR15.createNativeLock(lock);
+        check(Files.getLastModifiedTime(lock).equals(stamp),"create-only publication leaves matching lock untouched");
+
+        for (String invalid : new String[]{"", "NN-R14-OLD\n", "NN-R15-FIELD-CLEANUP", "X".repeat(257)}) {
+            Files.writeString(lock,invalid);
+            rejects(()->NeverNetherFieldCleanupR15.createNativeLock(lock),"competing invalid lock");
+            check(Files.readString(lock).equals(invalid),"competing lock must not be overwritten");
+        }
+        Files.writeString(lock,NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n");
+        Files.delete(marker);
+        rejects(()->NeverNetherFieldCleanupR15.verifyNativeRevision(world,datapacks),"missing marker on restart");
+        check(Files.readString(lock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"restart failure preserves native lock");
+        Files.writeString(marker,good);
+        Files.delete(height);
+        rejects(()->NeverNetherFieldCleanupR15.verifyNativeRevision(world,datapacks),"orphan native lock");
+        check(!Files.exists(height),"orphan rejection must not recreate height lock");
+        Files.writeString(height,NeverNetherHeightR14.PROFILE+"\n");
+
+        final Path legacy=Files.createDirectory(root.resolve("legacy-dim1"));
+        Files.writeString(legacy.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
+        final Path region=legacy.resolve("DIM-1/region/r.0.0.mca");
+        Files.createDirectories(region.getParent());Files.writeString(region,"sentinel");
+        rejects(()->NeverNetherFieldCleanupR15.verifyNativeRevision(legacy,datapacks),"legacy DIM-1");
+        check(Files.readString(region).equals("sentinel"),"legacy region untouched");
+        check(!Files.exists(legacy.resolve(".neverfolia-nevernether-native.lock")),"legacy DIM-1 writes no native lock");
+
+        final Path zipWorld=Files.createDirectory(root.resolve("zip-world"));
+        Files.writeString(zipWorld.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
+        final Path zipPacks=Files.createDirectories(zipWorld.resolve("datapacks"));
+        final Path zip=zipPacks.resolve("profile.zip");
+        for (String payload : new String[]{good,good+" ".repeat(65537)}) {
+            try (var output=new java.util.zip.ZipOutputStream(Files.newOutputStream(zip))) {
+                output.putNextEntry(new java.util.zip.ZipEntry("nevernether-worldgen-fingerprint.json"));
+                output.write("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));output.closeEntry();
+                output.putNextEntry(new java.util.zip.ZipEntry("data/neverfolia/nevernether/native_profile.json"));
+                output.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));output.closeEntry();
+            }
+            if (payload.equals(good)) {
+                NeverNetherFieldCleanupR15.verifyNativeRevision(zipWorld,zipPacks);
+                check(Files.readString(zipWorld.resolve(".neverfolia-nevernether-native.lock")).equals(
+                    NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"valid zipped profile accepted");
+            } else {
+                rejects(()->NeverNetherFieldCleanupR15.verifyNativeRevision(zipWorld,zipPacks),"oversized zipped profile");
+                check(Files.readString(zipWorld.resolve(".neverfolia-nevernether-native.lock")).equals(
+                    NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"oversized zip failure preserves lock");
+            }
+        }
+    }
+
     public static void main(String[] args) throws Exception{
         var out=System.out;SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         var c=fixture();
@@ -179,6 +265,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
             } catch (IllegalStateException expected) {
                 checks++;
             }
+            nativeLockHardening(lockRoot,datapacks,nativeMarker);
         } finally {
             try (var paths=Files.walk(lockRoot)) {
                 for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);

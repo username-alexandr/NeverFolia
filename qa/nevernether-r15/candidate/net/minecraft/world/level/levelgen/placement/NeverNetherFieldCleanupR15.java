@@ -4,10 +4,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.MapCodec;
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
@@ -78,8 +81,8 @@ public final class NeverNetherFieldCleanupR15 {
             final Path heightLock = worldRoot.resolve(HEIGHT_LOCK);
             final Path nativeLock = worldRoot.resolve(NATIVE_LOCK);
 
-            if (!Files.exists(heightLock)) {
-                if (Files.exists(nativeLock)) {
+            if (!Files.exists(heightLock, LinkOption.NOFOLLOW_LINKS)) {
+                if (Files.exists(nativeLock, LinkOption.NOFOLLOW_LINKS)) {
                     throw new IllegalStateException(
                         "NeverNether R15 native lock exists without the required R14 height lock"
                     );
@@ -88,21 +91,15 @@ public final class NeverNetherFieldCleanupR15 {
             }
 
             final String expectedHeight = NeverNetherHeightR14.PROFILE + "\n";
-            if (!Files.readString(heightLock).equals(expectedHeight)) {
+            if (!readLock(heightLock).equals(expectedHeight)) {
                 throw new IllegalStateException(
                     "NeverNether R15 requires the exact active R14 height profile"
                 );
             }
             verifyNativeDatapacks(datapackDir);
 
-            if (Files.exists(nativeLock)) {
-                final String locked = Files.readString(nativeLock);
-                if (!locked.equals(NATIVE_PROFILE + "\n")) {
-                    throw new IllegalStateException(
-                        "NeverNether native revision mismatch: locked=" + locked.trim()
-                            + " active=" + NATIVE_PROFILE
-                    );
-                }
+            if (Files.exists(nativeLock, LinkOption.NOFOLLOW_LINKS)) {
+                requireNativeLock(nativeLock);
                 return;
             }
 
@@ -113,19 +110,43 @@ public final class NeverNetherFieldCleanupR15 {
             }
 
             Files.createDirectories(worldRoot);
-            final Path tmp = Files.createTempFile(worldRoot, NATIVE_LOCK + ".", ".tmp");
-            try {
-                Files.writeString(tmp, NATIVE_PROFILE + "\n");
-                try {
-                    Files.move(tmp, nativeLock, StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException ex) {
-                    Files.move(tmp, nativeLock, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } finally {
-                Files.deleteIfExists(tmp);
-            }
+            createNativeLock(nativeLock);
         } catch (IOException ex) {
             throw new IllegalStateException("NeverNether R15 native revision lock verification failed", ex);
+        }
+    }
+
+    private static byte[] readLimited(final InputStream input, final int limit, final String source) throws IOException {
+        final byte[] bytes = input.readNBytes(limit + 1);
+        if (bytes.length > limit) {
+            throw new IOException("Oversized NeverNether profile/lock: " + source);
+        }
+        return bytes;
+    }
+
+    private static String readLock(final Path path) throws IOException {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("NeverNether lock is not a regular file: " + path);
+        }
+        try (InputStream input = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
+            return new String(readLimited(input, 256, path.toString()), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void requireNativeLock(final Path path) throws IOException {
+        if (!readLock(path).equals(NATIVE_PROFILE + "\n")) {
+            throw new IllegalStateException("NeverNether native revision mismatch: " + path);
+        }
+    }
+
+    /** Create-only publication. A failed/partial write remains a rejected lock;
+     * neither a concurrent lock nor an invalid existing lock is overwritten. */
+    static void createNativeLock(final Path path) throws IOException {
+        try {
+            Files.writeString(path, NATIVE_PROFILE + "\n", StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        } catch (FileAlreadyExistsException existing) {
+            requireNativeLock(path);
         }
     }
 
@@ -142,17 +163,21 @@ public final class NeverNetherFieldCleanupR15 {
                     if (!Files.isRegularFile(marker)) {
                         throw new IllegalStateException("R15 native profile marker missing from " + pack.getFileName());
                     }
-                    validateNativeProfile(Files.readAllBytes(marker), pack.toString());
+                    try (InputStream input = Files.newInputStream(marker)) {
+                        validateNativeProfile(readLimited(input, 65536, marker.toString()), pack.toString());
+                    }
                     found = true;
                 } else if (Files.isRegularFile(pack)
                     && pack.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".zip")) {
                     try (ZipFile zip = new ZipFile(pack.toFile())) {
                         if (zip.getEntry(PACK_FINGERPRINT) == null) continue;
                         final var marker = zip.getEntry(NATIVE_MARKER);
-                        if (marker == null) {
+                        if (marker == null || marker.isDirectory()) {
                             throw new IllegalStateException("R15 native profile marker missing from " + pack.getFileName());
                         }
-                        validateNativeProfile(zip.getInputStream(marker).readAllBytes(), pack.toString());
+                        try (InputStream input = zip.getInputStream(marker)) {
+                            validateNativeProfile(readLimited(input, 65536, pack.toString()), pack.toString());
+                        }
                         found = true;
                     }
                 }
@@ -167,15 +192,26 @@ public final class NeverNetherFieldCleanupR15 {
         if (payload.length > 65536) {
             throw new IllegalStateException("Oversized R15 native profile in " + source);
         }
-        final JsonObject value = JsonParser.parseString(
-            new String(payload, java.nio.charset.StandardCharsets.UTF_8)
-        ).getAsJsonObject();
-        if (!value.has("schema") || value.get("schema").getAsInt() != 1
-            || !value.has("profile") || !NATIVE_PROFILE.equals(value.get("profile").getAsString())
-            || !value.has("requires_height_profile")
-            || !NeverNetherHeightR14.PROFILE.equals(value.get("requires_height_profile").getAsString())
-            || !value.has("new_world_required") || !value.get("new_world_required").getAsBoolean()) {
-            throw new IllegalStateException("Invalid R15 native profile in " + source);
+        try {
+            final var parsed = JsonParser.parseString(new String(payload, StandardCharsets.UTF_8));
+            if (!parsed.isJsonObject()) throw new IllegalArgumentException("profile must be a JSON object");
+            final JsonObject value = parsed.getAsJsonObject();
+            final var schema = value.get("schema");
+            final var profile = value.get("profile");
+            final var height = value.get("requires_height_profile");
+            final var newWorld = value.get("new_world_required");
+            if (schema == null || !schema.isJsonPrimitive() || !schema.getAsJsonPrimitive().isNumber()
+                || schema.getAsBigDecimal().intValueExact() != 1
+                || profile == null || !profile.isJsonPrimitive() || !profile.getAsJsonPrimitive().isString()
+                || !NATIVE_PROFILE.equals(profile.getAsString())
+                || height == null || !height.isJsonPrimitive() || !height.getAsJsonPrimitive().isString()
+                || !NeverNetherHeightR14.PROFILE.equals(height.getAsString())
+                || newWorld == null || !newWorld.isJsonPrimitive() || !newWorld.getAsJsonPrimitive().isBoolean()
+                || !newWorld.getAsBoolean()) {
+                throw new IllegalArgumentException("native profile field types or values do not match R15");
+            }
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Invalid R15 native profile in " + source, ex);
         }
     }
 
