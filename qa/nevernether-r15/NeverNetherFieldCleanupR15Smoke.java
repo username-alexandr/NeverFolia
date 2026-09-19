@@ -72,12 +72,21 @@ public final class NeverNetherFieldCleanupR15Smoke {
         var result=NeverNetherFieldCleanupR15.clean(c);
         check(result.microPocketBlocksFilled()==3,"micro pocket changed="+result.microPocketBlocksFilled());
         check(result.hangingLavaCellsSolidified()==2,"shelf changed="+result.hangingLavaCellsSolidified());
+
+        // Publish the immutable post-prepass substrate exactly where R10 would.
+        for (var section : c.getSections()) {
+            section.neverNetherR10Data=new NeverNetherSubstrateR10.SectionData(section.getStates().copy());
+        }
+
         check(c.getBlockState(new BlockPos(4,120,5)).isAir(),"5-block cavity pre-pass start preserved");
         check(c.getBlockState(new BlockPos(8,120,5)).isAir(),"5-block cavity pre-pass end preserved");
         set(c,6,120,5,Blocks.NETHERRACK);
         int postChanged=NeverNetherFieldCleanupR15.fillMicroPocketsPublished(c);
         check(postChanged==4,"post-FEATURES fragmented cavity changed="+postChanged);
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(4,120,5))),"post fragment left fill");
+        var postSection=c.getSection(c.getSectionIndex(120));
+        int postIndex=((120&15)<<8)|((5&15)<<4)|(4&15);
+        check(postSection.neverNetherR10Data.external.get(postIndex),"post fill must be recorded as external provenance");
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(5,120,5))),"post fragment left fill 2");
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(7,120,5))),"post fragment right fill");
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(8,120,5))),"post fragment right fill 2");
