@@ -201,8 +201,10 @@ public final class NeverNetherFieldCleanupR15 {
             directSet(chunk, localX, y, localZ, state);
             return;
         }
-        pos.set(chunk.getPos().getMinBlockX() + localX, y, chunk.getPos().getMinBlockZ() + localZ);
-        chunk.setBlockState(pos, state, 0);
+        final var section = chunk.getSection(chunk.getSectionIndex(y));
+        NeverNetherSubstrateR10.externalWrite(section, localX, y, localZ);
+        section.getStates().set(localX & 15, y & 15, localZ & 15, state);
+        section.recalcBlockCounts();
     }
 
     private static void directSet(
