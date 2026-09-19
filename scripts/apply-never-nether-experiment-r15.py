@@ -20,6 +20,9 @@ OVERWORLD_LIGHT_CALL='net.minecraft.world.level.chunk.NeverOverworldFlood.apply(
 POST_MARKER='// NEVERFOLIA: NeverNether R15 post-FEATURES cleanup'
 POST_CALL='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.afterFeatures(task.world, task.fromChunk);'
 STARLIGHT='StarLightEngine.getEmptySectionsForChunk(task.fromChunk)'
+FINGERPRINT_GUARD=Path('net/minecraft/server/NeverNetherFingerprintGuard.java')
+R14_VERIFY='net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.verifyDatapacks(worldRoot,datapackDir);'
+R15_VERIFY='net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15.verifyNativeRevision(worldRoot);'
 OLD='''        if (chunk.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES))
             throw new IllegalStateException("R10 cannot capture an already decorated chunk");
         LevelChunkSection[] sections = chunk.getSections();
@@ -74,10 +77,21 @@ def patch_light(text:str)->str:
         fail('R15 LIGHT ordering invalid')
     return out
 
+def patch_fingerprint_guard(text:str)->str:
+    if R15_VERIFY in text:
+        if text.count(R15_VERIFY)!=1:
+            fail('duplicate R15 native revision verification')
+        if text.index(R15_VERIFY)<text.index(R14_VERIFY):
+            fail('R15 native revision must verify after R14 datapack/height profile')
+        return text
+    if text.count(R14_VERIFY)!=1:
+        fail('expected exactly one R14 fingerprint-guard verification hook')
+    return text.replace(R14_VERIFY,R14_VERIFY+'\n        '+R15_VERIFY,1)
+
 def helper()->str:
     if not SOURCE.is_file(): fail('helper source missing: '+str(SOURCE))
     value=SOURCE.read_text()
-    for marker in ('MAX_MICRO_POCKET = 4','solidifyHangingLava','afterFeatures','hasAnyStructureReferences','isNaturalRock','owner-chunk'):
+    for marker in ('MAX_MICRO_POCKET = 4','NATIVE_PROFILE = "NN-R15-FIELD-CLEANUP-1"','verifyNativeRevision','solidifyHangingLava','afterFeatures','hasAnyStructureReferences','isNaturalRock','owner-chunk'):
         if marker not in value: fail('helper contract marker missing: '+marker)
     return value
 
@@ -107,6 +121,16 @@ def self_test()->None:
     if patch_light(light)!=light: fail('LIGHT transformer not idempotent')
     if not light.index(OVERWORLD_LIGHT_CALL)<light.index(POST_CALL)<light.index(STARLIGHT):
         fail('SELF-TEST: LIGHT ordering invalid')
+    guard_fixture='''class NeverNetherFingerprintGuard {
+    static void verify(Path worldRoot, Path datapackDir) {
+        net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.verifyDatapacks(worldRoot,datapackDir);
+    }
+}
+'''
+    guard=patch_fingerprint_guard(guard_fixture)
+    if patch_fingerprint_guard(guard)!=guard: fail('fingerprint transformer not idempotent')
+    if not guard.index(R14_VERIFY)<guard.index(R15_VERIFY):
+        fail('SELF-TEST: native lock verifier ordering invalid')
     helper()
     print('[NeverFolia][NN-R15 field cleanup] SELF-TEST OK')
 
@@ -116,10 +140,17 @@ def prepare(folia:Path)->dict[Path,str]:
     if not target.is_file(): fail('materialized R14 substrate helper missing: '+str(target))
     dest=folia/JAVA/HELPER
     light=folia/JAVA/MOONRISE
+    guard=folia/JAVA/FINGERPRINT_GUARD
     payload=helper()
     if dest.exists() and dest.read_text()!=payload: fail('conflicting R15 helper')
     if not light.is_file(): fail('materialized Moonrise ChunkLightTask missing: '+str(light))
-    return {target:patch(target.read_text()),dest:payload,light:patch_light(light.read_text())}
+    if not guard.is_file(): fail('materialized NeverNetherFingerprintGuard missing: '+str(guard))
+    return {
+        target:patch(target.read_text()),
+        dest:payload,
+        light:patch_light(light.read_text()),
+        guard:patch_fingerprint_guard(guard.read_text()),
+    }
 
 def main()->None:
     p=argparse.ArgumentParser(description=__doc__)
@@ -134,6 +165,6 @@ def main()->None:
     staged=prepare(a.folia.resolve())
     for path,value in staged.items():
         path.parent.mkdir(parents=True,exist_ok=True);path.write_text(value,encoding='utf-8')
-    print('[NeverFolia][NN-R15 field cleanup] installed: '+str(len(staged))+' files (pre-capture + LIGHT post-FEATURES)')
+    print('[NeverFolia][NN-R15 field cleanup] installed: '+str(len(staged))+' files (pre-capture + LIGHT post-FEATURES + native lock)')
 
 if __name__=='__main__':main()
