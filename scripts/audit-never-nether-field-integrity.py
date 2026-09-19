@@ -255,26 +255,39 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                     counts["source_lava_support_unknown"] += 1
                 elif block_name(below) in AIR:
                     counts["source_lava_with_air_below"] += 1
-                    horizontal = [
-                        volume.at((position[0] + dx, y, position[2] + dz))
-                        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
-                    ]
-                    horizontal_source = sum(
-                        1 for neighbor in horizontal
-                        if neighbor is not None and source_lava(neighbor)
-                    )
+                    horizontal_details = []
+                    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        neighbor_pos = (position[0] + dx, y, position[2] + dz)
+                        neighbor = volume.at(neighbor_pos)
+                        horizontal_details.append({
+                            "offset": [dx, dz],
+                            "position": list(neighbor_pos),
+                            "state": neighbor,
+                            "same_chunk": (
+                                neighbor_pos[0] // 16 == position[0] // 16
+                                and neighbor_pos[2] // 16 == position[2] // 16
+                            ),
+                            "source_lava": neighbor is not None and source_lava(neighbor),
+                        })
+                    horizontal_source = sum(1 for item in horizontal_details if item["source_lava"])
                     above = volume.at((position[0], y + 1, position[2]))
                     inside_structure = volume.in_structure(position)
+                    provenance = volume.provenance_at(position)
                     shelf_candidate = horizontal_source >= 2 and not inside_structure
                     if shelf_candidate:
                         counts["hanging_source_lava_shelf_candidates"] += 1
+                        shelf_class = provenance.get("classification", "unknown")
+                        if shelf_class not in {"original", "external", "proposal", "unrecorded"}:
+                            shelf_class = "unknown"
+                        counts[f"hanging_source_lava_shelf_{shelf_class}_candidates"] += 1
                         if len(shelf_samples) < max_findings:
                             shelf_samples.append({
                                 "position": list(position),
                                 "horizontal_source_lava_neighbors": horizontal_source,
+                                "horizontal_neighbors": horizontal_details,
                                 "above": above,
                                 "below": below,
-                                "provenance": volume.provenance_at(position),
+                                "provenance": provenance,
                                 "below_provenance": volume.provenance_at((position[0], y - 1, position[2])),
                             })
                     else:
@@ -284,9 +297,10 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                             "position": list(position),
                             "inside_saved_structure_bbox": inside_structure,
                             "horizontal_source_lava_neighbors": horizontal_source,
+                            "horizontal_neighbors": horizontal_details,
                             "above": above,
                             "shelf_candidate": shelf_candidate,
-                            "provenance": volume.provenance_at(position),
+                            "provenance": provenance,
                         })
             elif block_name(state) == "minecraft:lava":
                 counts["flowing_lava_blocks"] += 1
@@ -298,11 +312,14 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
             unknown = False
             rock_boundary = True
             inside_structure = False
+            touches_owner_chunk_boundary = False
             minimum = list(position)
             maximum = list(position)
             while queue:
                 current = queue.popleft()
                 size += 1
+                if (current[0] & 15) in (0, 15) or (current[2] & 15) in (0, 15):
+                    touches_owner_chunk_boundary = True
                 if size <= pocket_limit:
                     component_positions.append(current)
                 # Once a component exceeds the reporting limit, no more costly
@@ -334,6 +351,11 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                 else:
                     counts["enclosed_small_air_components"] += 1
                     counts["enclosed_small_air_blocks"] += size
+                    provenance_counts = Counter(
+                        volume.provenance_at(cell)["classification"]
+                        for cell in component_positions
+                    )
+                    original_only = provenance_counts == Counter({"original": size})
                     if size == 1:
                         counts["enclosed_air_components_size_1"] += 1
                     elif size <= 4:
@@ -342,27 +364,47 @@ def audit(volume: Volume, pocket_limit: int = 64, max_findings: int = 200) -> di
                         counts["enclosed_air_components_size_5_16"] += 1
                     else:
                         counts["enclosed_air_components_size_17_64"] += 1
+                    if size <= 4:
+                        counts["enclosed_micro_components"] += 1
+                        counts["enclosed_micro_blocks"] += size
+                        if touches_owner_chunk_boundary:
+                            counts["enclosed_micro_edge_components"] += 1
+                            counts["enclosed_micro_edge_blocks"] += size
+                        else:
+                            counts["enclosed_micro_owner_components"] += 1
+                            counts["enclosed_micro_owner_blocks"] += size
+                            if original_only:
+                                counts["r15_original_owner_micro_components"] += 1
+                                counts["r15_original_owner_micro_blocks"] += size
                     if len(pocket_samples) < max_findings:
-                        provenance_counts = Counter(
-                            volume.provenance_at(cell)["classification"]
-                            for cell in component_positions
-                        )
                         pocket_samples.append({
                             "size": size,
                             "bbox": minimum + maximum,
                             "sample": list(position),
                             "sample_provenance": volume.provenance_at(position),
                             "provenance_counts": dict(sorted(provenance_counts.items())),
+                            "original_only": original_only,
+                            "touches_owner_chunk_boundary": touches_owner_chunk_boundary,
                         })
     keys = (
         "source_lava_blocks", "source_lava_support_unknown", "source_lava_with_air_below",
-        "hanging_source_lava_shelf_candidates", "source_lava_fall_or_edge_candidates",
+        "hanging_source_lava_shelf_candidates",
+        "hanging_source_lava_shelf_original_candidates",
+        "hanging_source_lava_shelf_external_candidates",
+        "hanging_source_lava_shelf_proposal_candidates",
+        "hanging_source_lava_shelf_unrecorded_candidates",
+        "hanging_source_lava_shelf_unknown_candidates",
+        "source_lava_fall_or_edge_candidates",
         "flowing_lava_blocks", "air_components", "air_blocks",
         "air_components_touching_unknown_boundary", "air_components_above_pocket_limit",
         "small_air_components_in_saved_structure_bbox", "enclosed_small_air_components",
         "enclosed_small_air_blocks", "enclosed_air_components_size_1",
         "enclosed_air_components_size_2_4", "enclosed_air_components_size_5_16",
         "enclosed_air_components_size_17_64",
+        "enclosed_micro_components", "enclosed_micro_blocks",
+        "enclosed_micro_owner_components", "enclosed_micro_owner_blocks",
+        "enclosed_micro_edge_components", "enclosed_micro_edge_blocks",
+        "r15_original_owner_micro_components", "r15_original_owner_micro_blocks",
     )
     return {
         "schema": 1, "audit": "nevernether-field-integrity-r1", "read_only": True,
