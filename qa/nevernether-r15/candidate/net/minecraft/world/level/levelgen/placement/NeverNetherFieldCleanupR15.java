@@ -84,6 +84,10 @@ public final class NeverNetherFieldCleanupR15 {
                     if (visited[startIndex]) continue;
                     pos.set(baseX + lx, y, baseZ + lz);
                     if (!chunk.getBlockState(pos).isAir()) continue;
+                    if (published && !originalAir(chunk, lx, y, lz)) {
+                        visited[startIndex] = true;
+                        continue;
+                    }
 
                     final ArrayDeque<Cell> queue = new ArrayDeque<>();
                     final java.util.ArrayList<Cell> cells = new java.util.ArrayList<>(MAX_MICRO_POCKET + 1);
@@ -110,6 +114,10 @@ public final class NeverNetherFieldCleanupR15 {
                             pos.set(baseX + nx, ny, baseZ + nz);
                             final BlockState adjacent = chunk.getBlockState(pos);
                             if (adjacent.isAir()) {
+                                if (published && !originalAir(chunk, nx, ny, nz)) {
+                                    safe = false;
+                                    continue;
+                                }
                                 final int nextIndex = index(nx,ny,nz);
                                 if (!visited[nextIndex]) {
                                     visited[nextIndex] = true;
@@ -228,6 +236,21 @@ public final class NeverNetherFieldCleanupR15 {
             || state.is(Blocks.ANCIENT_DEBRIS)
             || state.is(Blocks.GRAVEL)
             || state.is(Blocks.BEDROCK);
+    }
+
+    private static boolean originalAir(
+        final ChunkAccess chunk,
+        final int localX,
+        final int y,
+        final int localZ
+    ) {
+        final var section = chunk.getSection(chunk.getSectionIndex(y));
+        final BlockPos pos = new BlockPos(
+            chunk.getPos().getMinBlockX() + localX,
+            y,
+            chunk.getPos().getMinBlockZ() + localZ
+        );
+        return NeverNetherSubstrateR10.original(section, pos).isAir();
     }
 
     private static boolean isFillMaterial(final BlockState state) {
