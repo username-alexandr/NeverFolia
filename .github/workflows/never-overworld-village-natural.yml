@@ -56,10 +56,11 @@ jobs:
           test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
           bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
-          for stage in 8 9 10 11 12 13 14 15; do
+          for stage in 8 9 10 11 12 13 14; do
             python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
           done
           python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
           (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
           python3 - <<'PY'
           import shutil,zipfile
