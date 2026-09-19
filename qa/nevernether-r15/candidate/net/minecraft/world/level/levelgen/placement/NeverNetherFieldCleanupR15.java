@@ -4,10 +4,13 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * R15 field cleanup for defects proven to exist in the immutable CARVERS
@@ -31,15 +34,39 @@ public final class NeverNetherFieldCleanupR15 {
     private NeverNetherFieldCleanupR15() {}
 
     public static Result clean(final ChunkAccess chunk) {
-        if (chunk.getMinY() != MIN_Y || chunk.getMaxY() < MAX_Y + 1) {
-            throw new IllegalStateException("R15 cleanup requires the NeverNether -128..511 generated body");
-        }
-        final int pockets = fillMicroPockets(chunk);
+        validateEnvelope(chunk);
+        final int pockets = fillMicroPockets(chunk, false);
         final int shelves = solidifyHangingLava(chunk);
         return new Result(pockets, shelves);
     }
 
+    public static Result afterFeatures(final WorldGenLevel level, final ChunkAccess chunk) {
+        if (!level.getLevel().dimension().equals(Level.NETHER)
+            || level.getMinY() != MIN_Y
+            || level.getHeight() != NeverNetherHeightR14.HEIGHT
+            || chunk.getPersistedStatus().isOrAfter(ChunkStatus.FULL)
+            || chunk.hasAnyStructureReferences()) {
+            return new Result(0, 0);
+        }
+        validateEnvelope(chunk);
+        return new Result(fillMicroPockets(chunk, true), 0);
+    }
+
+    private static void validateEnvelope(final ChunkAccess chunk) {
+        if (chunk.getMinY() != MIN_Y || chunk.getMaxY() < MAX_Y + 1) {
+            throw new IllegalStateException("R15 cleanup requires the NeverNether -128..511 generated body");
+        }
+    }
+
     static int fillMicroPockets(final ChunkAccess chunk) {
+        return fillMicroPockets(chunk, false);
+    }
+
+    static int fillMicroPocketsPublished(final ChunkAccess chunk) {
+        return fillMicroPockets(chunk, true);
+    }
+
+    private static int fillMicroPockets(final ChunkAccess chunk, final boolean published) {
         final int height = MAX_Y - MIN_Y + 1;
         final boolean[] visited = new boolean[height * 256];
         final int baseX = chunk.getPos().getMinBlockX();
@@ -96,7 +123,7 @@ public final class NeverNetherFieldCleanupR15 {
                     if (!safe || cells.isEmpty() || cells.size() > MAX_MICRO_POCKET) continue;
                     final BlockState replacement = chooseFill(boundary);
                     for (Cell cell : cells) {
-                        directSet(chunk, cell.x, cell.y, cell.z, replacement);
+                        write(chunk, cell.x, cell.y, cell.z, replacement, published, pos);
                         ++changed;
                     }
                 }
@@ -134,6 +161,23 @@ public final class NeverNetherFieldCleanupR15 {
             }
         }
         return changed;
+    }
+
+    private static void write(
+        final ChunkAccess chunk,
+        final int localX,
+        final int y,
+        final int localZ,
+        final BlockState state,
+        final boolean published,
+        final BlockPos.MutableBlockPos pos
+    ) {
+        if (!published) {
+            directSet(chunk, localX, y, localZ, state);
+            return;
+        }
+        pos.set(chunk.getPos().getMinBlockX() + localX, y, chunk.getPos().getMinBlockZ() + localZ);
+        chunk.setBlockState(pos, state, 0);
     }
 
     private static void directSet(
