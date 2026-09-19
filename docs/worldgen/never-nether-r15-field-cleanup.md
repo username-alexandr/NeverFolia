@@ -115,7 +115,8 @@ Before R15 may be treated as accepted:
 - the same two-area 50-chunk natural-integrity sample must reach FULL and stop normally;
 - Roof512/padding must remain exact;
 - the baseline hanging shelf must no longer appear;
-- owner-chunk-contained size<=4 enclosed cavity findings must fall to zero;
+- owner-chunk-contained size<=4 enclosed cavity findings whose persisted provenance is entirely `original` must fall to zero;
+- tiny components created later by `external`/`proposal` writers remain diagnostic rather than being misattributed to CARVERS substrate;
 - boundary-touching and size>=5 cavity findings remain diagnostic, not failure conditions;
 - all existing NeverOverworld FIELD-R11 / DESERT-R1 / village gates must remain green.
 
