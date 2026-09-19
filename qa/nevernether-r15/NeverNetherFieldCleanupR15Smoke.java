@@ -82,7 +82,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
         check(c.getBlockState(new BlockPos(8,120,5)).isAir(),"5-block cavity pre-pass end preserved");
         set(c,6,120,5,Blocks.NETHERRACK);
         int postChanged=NeverNetherFieldCleanupR15.fillMicroPocketsPublished(c);
-        check(postChanged==4,"post-FEATURES fragmented cavity changed="+postChanged);
+        check(postChanged==5,"post-FEATURES fragmented cavity/support changed="+postChanged);
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(4,120,5))),"post fragment left fill");
         var postSection=c.getSection(c.getSectionIndex(120));
         int postIndex=((120&15)<<8)|((5&15)<<4)|(4&15);
@@ -90,6 +90,8 @@ public final class NeverNetherFieldCleanupR15Smoke {
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(5,120,5))),"post fragment left fill 2");
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(7,120,5))),"post fragment right fill");
         check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(8,120,5))),"post fragment right fill 2");
+        check(NeverNetherFieldCleanupR15.isNaturalRock(c.getBlockState(new BlockPos(8,9,8))),"post fill under repaired interior shelf");
+        check(c.getBlockState(new BlockPos(11,19,15)).isAir(),"edge shelf support remains because it touches chunk boundary");
         var pocketA=c.getBlockState(new BlockPos(8,100,8));
         var pocketB=c.getBlockState(new BlockPos(9,100,8));
         var pocketC=c.getBlockState(new BlockPos(8,101,8));
