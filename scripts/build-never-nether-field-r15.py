@@ -5,13 +5,17 @@ The R14 geometry/storage payload is retained. A native profile document and a
 registry-decoded required processor marker make R15 pack/runtime pairing
 bidirectional: R15 rejects an R14-only pack, while an older R14 runtime cannot
 decode the R15-only processor type. The canonical content fingerprint is then
-recomputed for the changed pack.
+recomputed for the changed pack. In build mode stdout is one JSON document;
+verification diagnostics are written to stderr.
 """
 from __future__ import annotations
 import argparse
+from contextlib import redirect_stdout
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import zipfile
@@ -102,6 +106,53 @@ def transform(source:Path,output:Path)->dict:
     }
 
 
+def test_cli_contract(source:Path,expected:dict,reference:Path,root:Path)->None:
+    """Exercise the real CLI and fingerprint verifier, not a mocked transform."""
+    def check(ok:bool,message:str)->None:
+        if not ok:raise AssertionError('R15 CLI contract: '+message)
+
+    def run(input_path:Path,output_path:Path):
+        return subprocess.run(
+            [sys.executable,str(Path(__file__).resolve()),
+             '--input',str(input_path),'--output',str(output_path)],
+            capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+
+    before=source.read_bytes()
+    output=root/'cli output.zip'
+    result=run(source,output)
+    check(result.returncode==0,'build failed: '+result.stderr[-2000:])
+    # json.loads rejects both prefixed diagnostics and any trailing log text.
+    check(json.loads(result.stdout)==expected,'stdout must be the exact JSON report')
+    check(result.stderr.count('[NeverFolia][NeverNether fingerprint] VERIFY OK')==2,
+          'source/output verification diagnostics must remain visible on stderr')
+    check(output.read_bytes()==reference.read_bytes(),'CLI changed deterministic ZIP bytes')
+    check(source.read_bytes()==before,'CLI modified its input')
+
+    result=run(source,output)
+    check(result.returncode!=0 and result.stdout=='','overwrite failure emitted success JSON')
+    check('output already exists' in result.stderr,'overwrite rejection was not reported')
+    check(output.read_bytes()==reference.read_bytes(),'existing output was overwritten')
+
+    rejected=root/'reapplied.zip'
+    result=run(output,rejected)
+    check(result.returncode!=0 and result.stdout=='','R15 input emitted success JSON')
+    check('already contains an R15 native profile' in result.stderr,
+          'reapplication rejection was not reported')
+    check(not rejected.exists(),'rejected R15 input created an output')
+
+    fp=load_fp()
+    entries=fp.read_entries(source)
+    entries['pack.mcmeta']+=b' '
+    tampered=root/'tampered.zip'
+    fp.write_zip(tampered,entries)
+    result=run(tampered,rejected)
+    check(result.returncode!=0 and result.stdout=='','bad fingerprint emitted success JSON')
+    check('content fingerprint mismatch' in result.stderr,'fingerprint rejection was not reported')
+    check(not rejected.exists(),'bad fingerprint created an output')
+    check(source.read_bytes()==before,'failure tests modified the original input')
+    print('[NeverFolia][NN-R15 pack] CLI JSON/stderr contract SELF-TEST OK')
+
+
 def self_test()->None:
     fp=load_fp()
     with tempfile.TemporaryDirectory(prefix='nn-r15-pack-') as raw:
@@ -129,6 +180,7 @@ def self_test()->None:
         try:transform(output,root/'twice.zip')
         except ValueError:pass
         else:raise AssertionError('R15 pack accepted as its own R14 source')
+        test_cli_contract(source,result,output,root)
     print('[NeverFolia][NN-R15 pack] SELF-TEST OK')
 
 
@@ -140,6 +192,10 @@ def main()->None:
     a=p.parse_args()
     if a.self_test:self_test();return
     if a.input is None or a.output is None:p.error('--input and --output are required')
-    print(json.dumps(transform(a.input,a.output),indent=2))
+    # The workflow saves stdout as r15-pack-build.json. Keep verifier logs on
+    # stderr and emit the report only after the complete transform succeeds.
+    with redirect_stdout(sys.stderr):
+        result=transform(a.input,a.output)
+    print(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()
