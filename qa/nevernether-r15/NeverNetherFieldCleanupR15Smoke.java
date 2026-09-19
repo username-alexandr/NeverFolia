@@ -5,6 +5,8 @@ import java.util.Comparator;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.*;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.*;
 import net.minecraft.world.level.block.*;
@@ -110,21 +112,44 @@ public final class NeverNetherFieldCleanupR15Smoke {
         check(NeverNetherFieldCleanupR15.sourceLava(Blocks.LAVA.defaultBlockState()),"source lava classifier");
         check(NeverNetherFieldCleanupR15.isNaturalRock(Blocks.BLACKSTONE.defaultBlockState()),"rock classifier");
 
+        check(BuiltInRegistries.STRUCTURE_PROCESSOR
+            .getOptional(Identifier.fromNamespaceAndPath("neverfolia","field_r15_required")).isPresent(),
+            "R15 required processor registered");
+
         Path lockRoot=Files.createTempDirectory("nn-r15-lock-");
         try {
-            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            Path datapacks=lockRoot.resolve("datapacks");
+            Path profile=datapacks.resolve("profile");
+            Files.createDirectories(profile);
+            Files.writeString(profile.resolve("nevernether-worldgen-fingerprint.json"),"{}\n");
+
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot,datapacks);
             check(!Files.exists(lockRoot.resolve(".neverfolia-nevernether-native.lock")),"plain world must not receive R15 lock");
 
             Files.writeString(lockRoot.resolve(".neverfolia-nevernether-height.lock"),NeverNetherHeightR14.PROFILE+"\n");
-            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            try {
+                NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot,datapacks);
+                throw new AssertionError("R15 runtime accepted R14-only datapack");
+            } catch (IllegalStateException expected) {
+                checks++;
+            }
+
+            Path nativeMarker=profile.resolve("data/neverfolia/nevernether/native_profile.json");
+            Files.createDirectories(nativeMarker.getParent());
+            Files.writeString(nativeMarker,
+                "{\"schema\":1,\"profile\":\""+NeverNetherFieldCleanupR15.NATIVE_PROFILE+
+                "\",\"requires_height_profile\":\""+NeverNetherHeightR14.PROFILE+
+                "\",\"new_world_required\":true}\n");
+
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot,datapacks);
             Path nativeLock=lockRoot.resolve(".neverfolia-nevernether-native.lock");
             check(Files.readString(nativeLock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"new R15 native lock");
-            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+            NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot,datapacks);
             check(Files.readString(nativeLock).equals(NeverNetherFieldCleanupR15.NATIVE_PROFILE+"\n"),"R15 restart lock");
 
             Files.writeString(nativeLock,"NN-R14-OLD\n");
             try {
-                NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot);
+                NeverNetherFieldCleanupR15.verifyNativeRevision(lockRoot,datapacks);
                 throw new AssertionError("native revision mismatch accepted");
             } catch (IllegalStateException expected) {
                 checks++;
@@ -136,7 +161,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
             Files.createDirectories(region);
             Files.writeString(region.resolve("r.0.0.mca"),"sentinel");
             try {
-                NeverNetherFieldCleanupR15.verifyNativeRevision(legacy);
+                NeverNetherFieldCleanupR15.verifyNativeRevision(legacy,datapacks);
                 throw new AssertionError("existing R14-only Nether adopted by R15");
             } catch (IllegalStateException expected) {
                 checks++;
@@ -149,7 +174,7 @@ public final class NeverNetherFieldCleanupR15Smoke {
             Files.createDirectories(siblingRegion);
             Files.writeString(siblingRegion.resolve("r.0.0.mca"),"sentinel");
             try {
-                NeverNetherFieldCleanupR15.verifyNativeRevision(sibling);
+                NeverNetherFieldCleanupR15.verifyNativeRevision(sibling,datapacks);
                 throw new AssertionError("Bukkit sibling R14-only Nether adopted by R15");
             } catch (IllegalStateException expected) {
                 checks++;
