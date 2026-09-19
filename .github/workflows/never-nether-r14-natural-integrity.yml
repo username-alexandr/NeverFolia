@@ -2,7 +2,7 @@ name: NeverNether R14 Natural Integrity Audit
 
 on:
   push:
-    branches: [wip/nevernether-r15-postfeatures]
+    branches: [wip/nevernether-r15-native-lock]
     paths:
       - 'native/nevernether/**'
       - 'qa/nevernether-r14/**'
