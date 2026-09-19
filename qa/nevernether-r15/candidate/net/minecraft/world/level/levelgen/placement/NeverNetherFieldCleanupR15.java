@@ -112,8 +112,8 @@ public final class NeverNetherFieldCleanupR15 {
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int changed = 0;
         for (int y = MIN_Y + 1; y < MAX_Y; ++y) {
-            for (int lz = 1; lz < 15; ++lz) {
-                for (int lx = 1; lx < 15; ++lx) {
+            for (int lz = 0; lz < 16; ++lz) {
+                for (int lx = 0; lx < 16; ++lx) {
                     pos.set(baseX + lx, y, baseZ + lz);
                     final BlockState state = chunk.getBlockState(pos);
                     if (!sourceLava(state)) continue;
@@ -121,7 +121,10 @@ public final class NeverNetherFieldCleanupR15 {
                     if (!chunk.getBlockState(pos).isAir()) continue;
                     int horizontal = 0;
                     for (int[] d : new int[][]{{1,0},{-1,0},{0,1},{0,-1}}) {
-                        pos.set(baseX + lx + d[0], y, baseZ + lz + d[1]);
+                        final int nx = lx + d[0];
+                        final int nz = lz + d[1];
+                        if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
+                        pos.set(baseX + nx, y, baseZ + nz);
                         if (sourceLava(chunk.getBlockState(pos))) ++horizontal;
                     }
                     if (horizontal < 2) continue;
@@ -193,7 +196,11 @@ public final class NeverNetherFieldCleanupR15 {
             for (int dz = -1; dz <= 1; ++dz) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     if (dx == 0 && dy == 0 && dz == 0) continue;
-                    pos.set(baseX + lx + dx, y + dy, baseZ + lz + dz);
+                    final int nx = lx + dx;
+                    final int ny = y + dy;
+                    final int nz = lz + dz;
+                    if (nx < 0 || nx > 15 || nz < 0 || nz > 15 || ny < MIN_Y || ny > MAX_Y) continue;
+                    pos.set(baseX + nx, ny, baseZ + nz);
                     final BlockState state = chunk.getBlockState(pos);
                     if (isNaturalRock(state) && isFillMaterial(state)) counts.merge(state,1,Integer::sum);
                 }
