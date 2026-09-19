@@ -2,7 +2,7 @@ name: NeverNether R14 Natural Integrity Audit
 
 on:
   push:
-    branches: [wip/nevernether-r15-native-lock]
+    branches: [wip/nevernether-r15-final]
     paths:
       - 'native/nevernether/**'
       - 'qa/nevernether-r14/**'
@@ -258,6 +258,7 @@ jobs:
               'flowing_lava_blocks':counts['flowing_lava_blocks'],
               'source_lava_with_air_below':counts['source_lava_with_air_below'],
               'hanging_source_lava_shelf_candidates':counts['hanging_source_lava_shelf_candidates'],
+              'hanging_source_lava_shelf_original_candidates':counts['hanging_source_lava_shelf_original_candidates'],
               'source_lava_fall_or_edge_candidates':counts['source_lava_fall_or_edge_candidates'],
               'enclosed_small_air_components':counts['enclosed_small_air_components'],
               'enclosed_small_air_blocks':counts['enclosed_small_air_blocks'],
@@ -267,18 +268,45 @@ jobs:
                   '5-16':counts['enclosed_air_components_size_5_16'],
                   '17-64':counts['enclosed_air_components_size_17_64'],
               },
+              'r15_micro':{
+                  'owner_components':counts['enclosed_micro_owner_components'],
+                  'owner_blocks':counts['enclosed_micro_owner_blocks'],
+                  'edge_components':counts['enclosed_micro_edge_components'],
+                  'edge_blocks':counts['enclosed_micro_edge_blocks'],
+                  'original_owner_components':counts['r15_original_owner_micro_components'],
+                  'original_owner_blocks':counts['r15_original_owner_micro_blocks'],
+                  'original_owner_body_components':counts['r15_original_owner_micro_body_components'],
+                  'original_owner_body_blocks':counts['r15_original_owner_micro_body_blocks'],
+                  'original_owner_roof_envelope_components':counts['r15_original_owner_micro_roof_envelope_components'],
+                  'original_owner_roof_envelope_blocks':counts['r15_original_owner_micro_roof_envelope_blocks'],
+                  'original_owner_mixed_height_components':counts['r15_original_owner_micro_mixed_height_components'],
+                  'original_owner_mixed_height_blocks':counts['r15_original_owner_micro_mixed_height_blocks'],
+                  'referenced_components':counts['r15_original_owner_micro_referenced_components'],
+                  'unreferenced_components':counts['r15_original_owner_micro_unreferenced_components'],
+              },
               'air_components_touching_unknown_boundary':counts['air_components_touching_unknown_boundary'],
               'lava_samples':integrity['source_lava_air_below_samples'],
               'hanging_lava_shelf_samples':integrity['hanging_lava_shelf_samples'],
               'enclosed_air_samples':integrity['enclosed_air_samples'],
               'field_findings_are_diagnostic':True,
               'natural_integrity_runtime_pass':full==plan['chunk_count'] and not failures,
+              'r15_field_cleanup_pass':(
+                  counts['hanging_source_lava_shelf_candidates']==0
+                  and counts['r15_original_owner_micro_body_components']==0
+                  and counts['r15_original_owner_micro_mixed_height_components']==0
+              ),
               'release_ready':False,
           }
           (root/'artifacts/nevernether-natural-summary.json').write_text(json.dumps(summary,indent=2)+'\n')
           print(json.dumps(summary,indent=2))
           if full!=plan['chunk_count']:raise SystemExit(f'not all selected chunks FULL: {full}/{plan["chunk_count"]}')
           if failures:raise SystemExit(f'R14 roof/padding failures: {len(failures)}')
+          if counts['hanging_source_lava_shelf_candidates']!=0:
+              raise SystemExit(f'R15 hanging lava shelf candidates remain: {counts["hanging_source_lava_shelf_candidates"]}')
+          if counts['r15_original_owner_micro_body_components']!=0:
+              raise SystemExit(f'R15 original owner micro cavities remain in body Y<=506: {counts["r15_original_owner_micro_body_components"]}')
+          if counts['r15_original_owner_micro_mixed_height_components']!=0:
+              raise SystemExit(f'R15 mixed body/roof-envelope micro cavities remain: {counts["r15_original_owner_micro_mixed_height_components"]}')
           PY
 
       - name: Publish integrity summary
@@ -302,8 +330,13 @@ jobs:
           print(f"- Lavafall/edge candidates: **{d['source_lava_fall_or_edge_candidates']}**")
           print(f"- Enclosed small air components ≤64: **{d['enclosed_small_air_components']}**")
           print(f"- Cavity size buckets: **{d['enclosed_air_size_buckets']}**")
+          micro=d.get('r15_micro',{})
+          print(f"- R15 original owner micro in body Y<=506: **{micro.get('original_owner_body_components')} / {micro.get('original_owner_body_blocks')} blocks**")
+          print(f"- R15 roof-envelope micro Y=507..511: **{micro.get('original_owner_roof_envelope_components')} / {micro.get('original_owner_roof_envelope_blocks')} blocks**")
+          print(f"- R15 edge micro (diagnostic): **{micro.get('edge_components')} / {micro.get('edge_blocks')} blocks**")
+          print(f"- R15 cleanup hard gate: **{d.get('r15_field_cleanup_pass')}**")
           print()
-          print('Shelf/cavity findings are diagnostic candidates, not automatic failures; roof512/FULL status is a hard gate.')
+          print('R15 hard gate covers hanging shelves and original owner micro-cavities in body Y<=506. Roof-envelope and chunk-edge micro-cavities remain diagnostic.')
           PY
 
       - uses: actions/upload-artifact@v4
