@@ -51,6 +51,8 @@ python3 "${ROOT_DIR}/scripts/prepare-never-nether-noise-r5.py" --install "${FOLI
 echo "[NeverFolia] Installing native NeverNether R4/R5 adapters"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-native-adapters-r4.py" "${FOLIA_DIR}"
 
-# Final override: historical ecology hashes are checked before TREE-R1.
+# Final overrides: historical source contracts are checked before these stages.
 echo "[NeverFolia] Preserving fully submerged, fallen and partially flooded trees"
 python3 "${ROOT_DIR}/scripts/preserve-never-overworld-trees-r1.py" "${FOLIA_DIR}"
+echo "[NeverFolia] Removing custom village sea-level reclamation; keeping vanilla placement"
+python3 "${ROOT_DIR}/scripts/remove-never-overworld-village-reclamation-r1.py" "${FOLIA_DIR}"

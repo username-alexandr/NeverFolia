@@ -1,49 +1,68 @@
-# NeverOverworld TREE-R1 — keep submerged trees intact
+# NeverOverworld TREE-R1 and VILLAGE-NOFILL-R1
 
-## Requested rule
+## Tree rule
 
-Fully underwater trees are not automatically deleted. Existing fallen-tree
-features are allowed to survive the flood, including their horizontal logs and
-leaves. Trees with only two or three wood/leaf blocks submerged keep the entire
-tree. There is no new rule deleting a tree at four submerged blocks and no
-per-block truncation at the ocean waterline.
+Fully underwater trees are not automatically deleted. Fallen trees and trees
+with only two or three submerged log/leaf blocks must remain intact. There is
+no rule deleting a tree at four submerged blocks. This patch is flood
+preservation, not a new tree placement algorithm or a change in tree frequency.
 
-## Implementation
+## Corrected source-chain diagnosis
 
-The final production transformer `preserve-never-overworld-trees-r1.py` runs at
-the end of `apply-neverfolia-post-patches.sh`, after all historic hash-checked
-FIELD-R10/R11 and DESERT-R1 stages. It removes the historic positive LOGS/LEAVES
-flood clauses and adds an explicit early exclusion before `canBeReplaced()` in
-both `NeverOverworldFlood.isFloodable` and
-`NeverOverworldFloodBoundaryR11.isFloodable`.
+Run 35506215292 failed BEFORE Java compilation because the first TREE-R1
+installer expected the intermediate R8 positive LOGS/LEAVES clauses. The final
+`harden-never-overworld-flood-r9.py` had already removed BOTH clauses and disabled
+the R8 cavern fallback call. Therefore the earlier claim that the final R15
+bundle still unconditionally removed logs/leaves was not established by reading
+R8 alone. The complete final chain, rather than an intermediate helper, is the
+source of truth.
 
-This protects logs and leaves in the surface-connected pass, the R8 cavern
-fallback and the FIELD-R11 boundary pass. Exact block properties, including log
-axis and existing leaf waterlogging, are not rewritten. The algorithm never
-reads or writes a neighbouring chunk. It does not cancel the whole flood when
-a tree is present: connected surrounding air and ordinary removable flora
-remain floodable.
+The corrected TREE-R1 installer accepts only the inspected complete final
+R9/R11 predicates, checks R9 markers and keeps the R8 fallback disabled. It adds
+an explicit LOGS/LEAVES exclusion BEFORE generic canBeReplaced evaluation. All
+other flood clauses, including traversal of existing water, remain unchanged.
 
-This is a flood-preservation change, not a new fallen-tree model/placement
-algorithm or a change to configured tree frequencies. Previously erased blocks
-cannot be restored by this patch. Existing FULL-chunk relight protection is
-unchanged; validation belongs in a fresh disposable NeverOverworld test world.
+13 Python source-transformer tests cover the real final predicate shape,
+source drift, obsolete R8 clauses, ordering, idempotence and read-only preflight.
+The existing Java 25 ProtoChunk smoke checks submerged/fallen/partially flooded
+trees, waterlogged leaves, negative chunk boundaries and nearby ordinary flora.
+Its direct invocation of the retained R8 helper is a defensive isolated test;
+it does NOT mean the R8 fallback is enabled in runtime generation.
 
-## Tests and scope
+## Village square reclamation
 
-The Python transformer regressions check both targets, idempotence, removal of
-the historic pair, ordering ahead of generic replaceability, failure on source
-drift/partial installations, and preflight without partial writes.
+The final production override
+`remove-never-overworld-village-reclamation-r1.py` removes exactly the custom
+`NeverOverworldVillageReclamation.apply(level, this, chunkPos)` call immediately
+after vanilla `structure.afterPlace`. That custom pass could infer foundations
+from unrelated solid blocks inside piece bounding boxes and raise selected
+columns to the fixed Y=128 sea plane.
 
-The native Java 25 ProtoChunk smoke exercises installed surface/R8/R11/remnant
-methods with a fully submerged standing tree, a fallen birch log, waterlogged
-leaves, exactly two/three submerged log/leaf blocks, and a tree across a negative
-chunk boundary in both processing orders. Exact block states are compared after
-each pass. Nearby flooding and flower/grass/snow cleanup are also asserted.
-Block-tag bindings are test-fixture setup in the standalone smoke JVM; they do
-not alter server tags or prove a natural tree-distribution acceptance.
+Vanilla piece placement, Jigsaw/template placement, vanilla afterPlace,
+structure definitions and the existing village-location policy are retained.
+No alternative bbox fill or new foundation heuristic is introduced. This means
+natural water between buildings is permitted; it is not a promise that every
+village footprint will be dry or every shoreline building well-supported.
 
-Existing boundary, oasis, village-foundation and sandstorm smoke tasks remain
-mandatory. Village square reclamation is NOT fixed or accepted by this change.
-Neither Nether rules nor `staging`/`main` are promoted by this change. CI publishes
-only logs/scope, not a replacement server archive before natural-world testing.
+12 source-transformer tests ensure only that exact custom call is removed,
+vanilla placement is preserved, source drift/duplicates are rejected and
+preflight does not modify files. The historical VillageFoundationSmoke still
+unit-tests the retained but no-longer-called helper; it is NOT village-shape
+acceptance and cannot justify re-enabling reclamation.
+
+## Scope and remaining gates
+
+Both overrides run at the END of the existing post-patch wrapper. Historical
+hash-checked stages remain intact. No saved world, lock or region file is edited.
+The Nether implementation and staging/main branches are not modified.
+
+Compilation/native smoke and natural saved-world checks remain separate gates.
+Natural checks must establish tree survival and the shape around actual village
+buildings, including shoreline/foundation safety. The old requirement of zero
+water across the entire village bbox is not evidence of natural shape: it can
+reward the very artificial square fill the user wants removed.
+
+Previously generated rectangular terrain and erased trees are NOT repaired by
+this source change. Test new chunks in a new disposable Overworld. Until the
+natural gates are complete this workflow publishes diagnostics only, not a
+replacement server distribution.

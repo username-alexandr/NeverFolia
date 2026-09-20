@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Preserve logs/leaves in the FINAL NeverOverworld LIGHT flood predicates.
+"""Explicitly protect logs/leaves in the inspected FINAL R9/R11 flood predicates.
 
-Run after FIELD-R10, FIELD-R11 and DESERT-R1: the earlier exact-source stages
-still validate their historic inputs, then this stage replaces the obsolete
-block-wise tree erasure policy. It does not inspect/mutate saved worlds, add a
-submersion quota, change tree frequency, or read neighbouring chunks.
+R9 already removes R8's positive LOGS/LEAVES clauses. This final stage must
+recognize that real input, not require the obsolete R8 clauses to survive.
+Never edits saved worlds, tree distribution, or neighbouring chunks.
 """
 from __future__ import annotations
 
@@ -18,12 +17,30 @@ TARGETS = {
     'NeverOverworldFlood.java': '    private static boolean isFloodable(final BlockState state) {\n',
     'NeverOverworldFloodBoundaryR11.java': '    static boolean isFloodable(final BlockState state) {\n',
 }
-LEGACY_LOGS = '            || state.is(net.minecraft.tags.BlockTags.LOGS)\n'
-LEGACY_LEAVES = '            || state.is(net.minecraft.tags.BlockTags.LEAVES)\n'
+R9_MARKER = '// NeverFolia R9: interpolated drowned sediment'
+R9_POWDER = '        removeDeepPowderSnow(chunk, minY, FLOOD_LEVEL - 1, air);\n'
+R8_CALL = '        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);\n'
 MARKER = '        // TREE-R1: submersion alone never authorizes removal of a log or leaf.\n'
 GUARD = (MARKER
          + '        if (state.is(net.minecraft.tags.BlockTags.LOGS)\n'
          + '            || state.is(net.minecraft.tags.BlockTags.LEAVES)) return false;\n')
+
+
+def expected_body(name: str) -> str:
+    # Both methods have the same semantics, but the historical main helper
+    # uses qualified class names for the ecology clauses.
+    main = name == 'NeverOverworldFlood.java'
+    tags = 'net.minecraft.tags.BlockTags' if main else 'BlockTags'
+    blocks = 'net.minecraft.world.level.block.Blocks' if main else 'Blocks'
+    return ('        return state.isAir()\n'
+            '            || state.is(Blocks.WATER)\n'
+            '            || (state.getFluidState().isEmpty() && state.canBeReplaced())\n'
+            f'            || state.is({tags}.RAILS)\n'
+            f'            || state.is({blocks}.SUGAR_CANE)\n'
+            f'            || state.is({blocks}.LILY_PAD)\n'
+            f'            || state.is({blocks}.MUSHROOM_STEM)\n'
+            f'            || state.is({blocks}.RED_MUSHROOM_BLOCK)\n'
+            f'            || state.is({blocks}.BROWN_MUSHROOM_BLOCK);')
 
 
 def require(ok: bool, message: str) -> None:
@@ -32,31 +49,24 @@ def require(ok: bool, message: str) -> None:
 
 
 def patch(source: str, name: str) -> str:
-    """Fail closed on duplicate, partial or unrecognized predicate installation."""
+    """Accept only the complete inspected final predicate, or our exact output."""
     signature = TARGETS[name]
     require(source.count(signature) == 1, name + ': expected exactly one flood predicate')
     start = source.index(signature) + len(signature)
     end = source.find('\n    }', start)
     require(end >= start, name + ': predicate end missing')
     body = source[start:end]
-    require('state.isAir()' in body and 'state.canBeReplaced()' in body,
-            name + ': base flood semantics missing')
-    if MARKER in source:
-        require(source.count(MARKER) == 1 and body.startswith(GUARD),
-                name + ': partial/duplicate tree protection')
-        require(LEGACY_LOGS not in body and LEGACY_LEAVES not in body,
-                name + ': legacy tree erasure still present')
-        return source
-    require('BlockTags.LOGS' not in body.replace(LEGACY_LOGS, '')
-            and 'BlockTags.LEAVES' not in body.replace(LEGACY_LEAVES, ''),
-            name + ': unknown pre-existing tree predicate')
     if name == 'NeverOverworldFlood.java':
-        require(body.count(LEGACY_LOGS) == body.count(LEGACY_LEAVES) == 1,
-                name + ': expected the historic LOGS/LEAVES erasure pair')
-        body = body.replace(LEGACY_LOGS, '', 1).replace(LEGACY_LEAVES, '', 1)
-    else:
-        require(LEGACY_LOGS not in body and LEGACY_LEAVES not in body,
-                name + ': unexpected boundary tree erasure pair')
+        require(R9_MARKER in source and source.count(R9_POWDER) == 1,
+                name + ': final R9 stabilization must be installed first')
+        require(R8_CALL not in source, name + ': obsolete R8 fallback is still active')
+    expected = expected_body(name)
+    if MARKER in source:
+        require(source.count(MARKER) == 1 and body == GUARD + expected,
+                name + ': partial, duplicate or changed TREE-R1 predicate')
+        return source
+    require(body == expected,
+            name + ': final R9/R11 predicate differs from inspected input; refusing partial rewrite')
     return source[:start] + GUARD + body + source[end:]
 
 
@@ -70,27 +80,33 @@ def prepare(folia: Path) -> dict[Path, str]:
 
 
 def fixture(name: str) -> str:
-    legacy = LEGACY_LOGS + LEGACY_LEAVES if name == 'NeverOverworldFlood.java' else ''
-    return ('class Fixture {\n' + TARGETS[name]
-            + '        return state.isAir()\n'
-            + '            || (state.getFluidState().isEmpty() && state.canBeReplaced())\n'
-            + legacy + '            || state.is(Blocks.SUGAR_CANE);\n'
-            + '    }\n}\n')
+    prefix = 'class Fixture {\n'
+    if name == 'NeverOverworldFlood.java':
+        prefix += '    ' + R9_MARKER + '\n    void apply() {\n' + R9_POWDER + '    }\n'
+    return prefix + TARGETS[name] + expected_body(name) + '\n    }\n}\n'
 
 
 class TransformerTests(unittest.TestCase):
-    def test_main_removes_legacy_pair_and_protects_before_replaceable(self):
-        out = patch(fixture('NeverOverworldFlood.java'), 'NeverOverworldFlood.java')
-        self.assertNotIn(LEGACY_LOGS, out)
-        self.assertNotIn(LEGACY_LEAVES, out)
+    def test_real_r9_input_has_no_positive_log_leaf_clauses(self):
+        name = 'NeverOverworldFlood.java'
+        original = fixture(name)
+        self.assertNotIn('BlockTags.LOGS', original)
+        self.assertNotIn('BlockTags.LEAVES', original)
+        out = patch(original, name)
+        self.assertIn(GUARD, out)
         self.assertLess(out.index(GUARD), out.index('return state.isAir()'))
-        self.assertIn('state.canBeReplaced()', out)
-        self.assertIn('state.is(Blocks.SUGAR_CANE)', out)
+        self.assertEqual(out.replace(GUARD, '', 1), original)
 
     def test_boundary_protection_before_generic_replaceable(self):
         name = 'NeverOverworldFloodBoundaryR11.java'
         out = patch(fixture(name), name)
         self.assertLess(out.index(GUARD), out.index('state.canBeReplaced()'))
+
+    def test_water_and_non_tree_ecology_unchanged(self):
+        for name in TARGETS:
+            out = patch(fixture(name), name)
+            self.assertIn(expected_body(name), out)
+            self.assertIn('|| state.is(Blocks.WATER)', out)
 
     def test_idempotent_both_targets(self):
         for name in TARGETS:
@@ -103,23 +119,41 @@ class TransformerTests(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(ValueError):
                     patch(bad, name)
 
-    def test_partial_legacy_pair_rejected(self):
+    def test_obsolete_r8_pair_rejected_not_required(self):
         name = 'NeverOverworldFlood.java'
-        for old in (LEGACY_LOGS, LEGACY_LEAVES):
-            with self.assertRaises(ValueError):
-                patch(fixture(name).replace(old, ''), name)
+        for tag in ('LOGS', 'LEAVES'):
+            old = fixture(name).replace('return state.isAir()',
+                'return state.isAir()\n            || state.is(net.minecraft.tags.BlockTags.' + tag + ')')
+            with self.assertRaises(ValueError): patch(old, name)
 
-    def test_marker_cannot_hide_missing_guard(self):
+    def test_unknown_clause_rejected(self):
+        for name in TARGETS:
+            bad = fixture(name).replace('return state.isAir()', 'return state.isAir() || state.is(Blocks.STONE)')
+            with self.assertRaises(ValueError): patch(bad, name)
+
+    def test_missing_r9_markers_rejected(self):
         name = 'NeverOverworldFlood.java'
-        good = patch(fixture(name), name)
+        for marker in (R9_MARKER, R9_POWDER):
+            with self.assertRaises(ValueError): patch(fixture(name).replace(marker, ''), name)
+
+    def test_r8_runtime_call_cannot_be_reenabled(self):
+        name = 'NeverOverworldFlood.java'
+        with self.assertRaises(ValueError): patch(fixture(name) + R8_CALL, name)
+
+    def test_marker_cannot_hide_wrong_guard(self):
+        for name in TARGETS:
+            good = patch(fixture(name), name)
+            with self.assertRaises(ValueError): patch(good.replace('return false;', 'return true;'), name)
+
+    def test_changed_installed_return_rejected(self):
+        name = 'NeverOverworldFlood.java'
         with self.assertRaises(ValueError):
-            patch(good.replace(')) return false;', ')) return true;'), name)
+            patch(patch(fixture(name), name).replace('state.canBeReplaced()', 'true'), name)
 
     def test_unrelated_methods_unchanged(self):
         name = 'NeverOverworldFlood.java'
         extra = '\nvoid unrelated() { chunk.setBlockState(pos, water, 0); }\n'
-        out = patch(fixture(name) + extra, name)
-        self.assertTrue(out.endswith(extra))
+        self.assertTrue(patch(fixture(name) + extra, name).endswith(extra))
 
     def test_prepare_failure_writes_neither_file(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -127,16 +161,14 @@ class TransformerTests(unittest.TestCase):
             first = directory / 'NeverOverworldFlood.java'
             first.write_text(fixture(first.name))
             before = first.read_bytes()
-            with self.assertRaises(ValueError):
-                prepare(root)
+            with self.assertRaises(ValueError): prepare(root)
             self.assertEqual(first.read_bytes(), before)
 
 
 def self_test() -> None:
     result = unittest.TextTestRunner(verbosity=2).run(
         unittest.defaultTestLoader.loadTestsFromTestCase(TransformerTests))
-    if not result.wasSuccessful():
-        raise SystemExit(1)
+    if not result.wasSuccessful(): raise SystemExit(1)
 
 
 def main() -> None:
@@ -145,18 +177,13 @@ def main() -> None:
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
-    if args.self_test:
-        self_test(); return
-    if args.folia is None:
-        parser.error('folia worktree is required unless --self-test is used')
+    if args.self_test: self_test(); return
+    if args.folia is None: parser.error('folia worktree is required unless --self-test is used')
     staged = prepare(args.folia.resolve())
     if args.check_only:
-        print('[NeverFolia][TREE-R1] preflight OK; no files changed')
-        return
-    for path, content in staged.items():
-        path.write_text(content, encoding='utf-8')
-    print('[NeverFolia][TREE-R1] logs/leaves preserved in surface, R8 and FIELD-R11 floods')
+        print('[NeverFolia][TREE-R1] preflight OK; no files changed'); return
+    for path, content in staged.items(): path.write_text(content, encoding='utf-8')
+    print('[NeverFolia][TREE-R1] explicit log/leaf exclusion installed on final R9/R11 predicates')
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__': main()

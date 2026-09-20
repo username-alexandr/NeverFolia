@@ -26,11 +26,12 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Validate TREE-R1 transformer
+      - name: Validate tree and village source transformers
         run: |
           set -euo pipefail
           mkdir -p artifacts
           python3 scripts/preserve-never-overworld-trees-r1.py --self-test 2>&1 | tee artifacts/tree-transformer.log
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py --self-test 2>&1 | tee artifacts/village-no-reclamation.log
           python3 scripts/test-never-overworld-field-r11.py 2>&1 | tee artifacts/field-r11-tests.log
           bash -n scripts/apply-neverfolia-post-patches.sh
       - name: Materialize exact current candidate
@@ -48,6 +49,7 @@ jobs:
           python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
           python3 scripts/preserve-never-overworld-trees-r1.py .work/Folia --check-only
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py .work/Folia --check-only
       - name: Compile and exercise installed flood paths
         run: |
           set -euo pipefail
@@ -90,7 +92,7 @@ jobs:
         run: |
           mkdir -p artifacts
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
-          printf '%s\n' 'TREE-R1 source/ProtoChunk validation only. No natural multi-seed acceptance, no existing-world repair, no village-shape acceptance, no release bundle.' > artifacts/SCOPE.txt
+          printf '%s\n' 'TREE-R1 source/ProtoChunk checks and VILLAGE-NOFILL-R1 source-hook removal. Historical village-helper unit tests do not imply its runtime hook is enabled. No natural multi-seed, village-shape, existing-world repair or release acceptance.' > artifacts/SCOPE.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
