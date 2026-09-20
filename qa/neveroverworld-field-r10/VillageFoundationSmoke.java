@@ -15,7 +15,10 @@ public final class VillageFoundationSmoke {
         var holder=Holder.direct(biome);var ids=new IdMapper<Holder<Biome>>();ids.add(holder);var factory=new PalettedContainerFactory(Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY),Blocks.AIR.defaultBlockState(),null,Strategy.createForBiomes(ids),holder,null,null);return new ProtoChunk(new ChunkPos(0,0),UpgradeData.EMPTY,LevelHeightAccessor.create(-512,1024),factory,null);
     }
     private static void direct(ProtoChunk c,int x,int y,int z,net.minecraft.world.level.block.state.BlockState s){c.getSection(c.getSectionIndex(y)).setBlockState(x&15,y&15,z&15,s,false);}
-    public static void main(String[] args){SharedConstants.tryDetectVersion();Bootstrap.bootStrap();var c=fixture();var p=new BlockPos.MutableBlockPos();
+    public static void main(String[] args){
+        // Bootstrap redirects System.out; keep the original CI stream for the final result.
+        final java.io.PrintStream out = System.out;
+        SharedConstants.tryDetectVersion();Bootstrap.bootStrap();var c=fixture();var p=new BlockPos.MutableBlockPos();
         var near=new BoundingBox(0,126,0,4,142,4);direct(c,2,130,2,Blocks.OAK_PLANKS.defaultBlockState());direct(c,2,120,2,Blocks.STONE.defaultBlockState());
         check(NeverOverworldVillageReclamation.pieceOccupiesColumn(c,near,2,2,p),"actual piece column");
         check(!NeverOverworldVillageReclamation.pieceOccupiesColumn(c,near,3,3,p),"empty bbox column must not become slab");
@@ -26,6 +29,8 @@ public final class VillageFoundationSmoke {
         check(!NeverOverworldVillageReclamation.pieceOccupiesColumn(c,high,7,7,p),"high dry piece gets no y128 platform");
         check(NeverOverworldVillageReclamation.clippedMaxZ(14,15)==14,"piece maxZ inside chunk");
         check(NeverOverworldVillageReclamation.clippedMaxZ(40,15)==15,"piece maxZ clips to chunkMaxZ, not chunkMinZ");
-        System.out.println("PASS VillageFoundationSmoke checks="+checks);
+        out.println("PASS VillageFoundationSmoke checks="+checks);
+        out.flush();
+        if (out.checkError()) throw new IllegalStateException("Failed to write village smoke result");
     }
 }
