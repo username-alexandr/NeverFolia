@@ -15,45 +15,68 @@ completed successfully on 2026-09-20. The downloaded diagnostic artifact
 
 This proves compilation and the stated native fixtures, not natural village shape.
 
-## New observation workflow
+## Observation workflow and persistence barriers
 
 `never-overworld-tree-village-natural.yml` builds the exact branch candidate,
-repeats the native regressions and both source preflight checks, builds and
-fingerprints the matching Overworld datapack, and then starts a NEW disposable
-server. There is no new production Java change in this step, no debug source
-instrumentation and no placement of synthetic trees through console commands.
+repeats native regressions and both source preflight checks, and fingerprints
+the matching Overworld datapack. It starts a NEW disposable server, with no
+production Java instrumentation or console placement of synthetic trees.
 
-The fixed seed is `-2996952393010080672`. Three 5x5 areas are chosen near located
-forest, birch forest and taiga biomes. Plains and desert village starts are
-located and first saved; then the actual union of saved piece boxes plus a
-one-block margin is generated. Every requested chunk must be saved FULL before
-unloading. The observer reads final evidence again only after a normal stop.
-Missing chunks/statuses/palette data are errors, not empty terrain.
+The fixed seed is `-2996952393010080672`. Three 5x5 areas are located near forest,
+birch forest and taiga. Plains and desert village starts are also located.
 
-The new script refuses an existing working-world directory instead of deleting
-it. Its offline audit only reads region files. Output contains source SHA,
-server/datapack byte hashes, requested chunk sets, structured component findings,
-logs and village Y128 column CSVs. Fifteen synthetic observer tests cover packed
-state decoding, negative coordinates, unknown-neighbour handling, coverage,
-non-destructive setup, and preservation of water-between-pieces diagnostics.
+Run `35510250669` on `ecfdb3d` passed compilation/native smoke and pack creation,
+but its observer failed before the requested sample generation. The server
+positively acknowledged `Gamerule random_tick_speed is now set to: 0`, then
+rejected `save-all flush`. A subsequent say marker did NOT establish a save.
+The observer incorrectly attributed that later command error to the gamerule.
+Artifact `10606005262` contains the separate replies in `tree-village-server.log`.
+
+The corrected harness does not use `save-all`:
+
+1. It requires the positive gamerule response in that command's new log window.
+2. It requests the forest areas and initial village chunks in bounded batches.
+   Every requested chunk must answer its own `execute if loaded` probe before
+   tickets are released. This is a runtime load barrier, NOT persisted evidence.
+3. It explicitly sends `stop` and requires process exit code 0. Only after the
+   process has exited does it read saved NBT, check FULL status and coordinates,
+   and derive actual village piece bounding boxes.
+4. It restarts the SAME newly created test world with the SAME JAR and datapack,
+   generates each saved village bbox plus a one-block margin, and stops normally
+   again. All final requested chunks are verified FULL from the stopped world.
+
+The plan records both stop phases and final verification separately. An abnormal
+stop, missing chunk, wrong persisted status, stale/absent command reply, changed
+datapack or incomplete phase cannot be accepted. Source SHA is recorded when
+the plan is first created, including for failed runs. Input/installed datapack
+hashes are checked before each start. No locks, regions or world data are deleted
+or bypassed. A pre-existing working-world directory is rejected.
+
+Thirty synthetic tests cover the original 15 observer regressions and 15 new
+console/lifecycle regressions. They test the real command-response parsing and
+mock the server lifecycle to assert that no NBT read occurs while it is alive.
+They do NOT replace executing the corrected harness against the actual server.
+Outputs include source SHA, binary hashes, selected chunks, separate phase logs,
+component findings and village Y128 column CSVs.
 
 ## Deliberately limited claims
 
-The tree observer classifies six-connected wood/leaf components. It does not
-claim one component equals one tree. Wholly submerged observations mean every
-component block is at/below Y128 and the component contacts water; they do not
-prove every face is wet. Horizontal logs are reported as candidates, not proof
-of a fallen-tree feature. Natural observations do not replace exact native
-fixtures for fallen trees or two/three submerged blocks. An absent example is
-reported as absent, never manufactured to pass the observation.
+The tree observer classifies six-connected wood/leaf components, not individual
+tree identities. A wholly submerged observation is at/below Y128 and contacts
+water; not every block face is proven wet. Horizontal logs are candidates, not
+proof of a fallen-tree feature. Exact fallen-tree and two/three-submerged-block
+fixtures remain separately covered by native smoke. Missing examples are not
+manufactured to pass; absence of a complete underwater component still fails.
 
-Village CSVs record block names at Y128 and membership in piece XZ bounding
-boxes. Those boxes are NOT exact building/foundation footprints. Water outside
-them is permitted; no zero-water-over-the-whole-village requirement is used.
-Neither a flat natural area nor water between buildings automatically proves or
-disproves an artificial platform. Visual review of shoreline buildings and
-foundations remains outstanding. The source gate separately proves removal of
-the custom reclamation hook.
+Village CSVs record Y128 block names and membership in piece XZ boxes. These
+boxes are NOT exact foundation footprints. Water between pieces is permitted;
+no all-dry village-bbox gate is reinstated. A flat natural area or water between
+buildings alone cannot establish visual acceptance. Shoreline buildings and
+foundations still need visual review. The source gate separately proves removal
+of the custom reclamation hook.
 
-The workflow publishes diagnostics only. No staging/main promotion, old-world
-repair, complete release, multi-seed or player-load acceptance is claimed.
+This correction changes only the observer, its tests and this documentation.
+The TREE-R1 preservation rules, VILLAGE-NOFILL-R1 override and native Nether
+implementation are unchanged. The workflow publishes diagnostics only, not a
+release or a replacement server distribution. No staging/main promotion,
+existing-world repair, multi-seed or player-load acceptance is claimed.

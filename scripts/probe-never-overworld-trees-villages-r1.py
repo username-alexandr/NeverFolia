@@ -214,6 +214,8 @@ def village_plane(volume: Volume, boxes, output: Path) -> dict:
 
 
 class Server:
+    COMMAND_ERROR = r'Unknown or incomplete command|Incorrect argument|Unknown command|Could not find|Couldn.t find'
+
     def __init__(self, jar: Path, folder: Path, log: Path):
         self.log = log; self.stream = log.open('x',encoding='utf-8'); self.token = 0
         try:
@@ -230,26 +232,69 @@ class Server:
         require(self.p.poll() is None, f'server exited: {self.p.returncode}')
         self.p.stdin.write(text+'\n'); self.p.stdin.flush()
 
-    def wait(self, pattern, start=0, timeout=120):
+    def wait(self, pattern, start=0, timeout=120, command=None):
         end = time.monotonic()+timeout
         while time.monotonic() < end:
-            match = re.search(pattern,self.text()[start:])
+            segment = self.text()[start:]
+            if command is not None:
+                require(not re.search(self.COMMAND_ERROR,segment),
+                        f'command failed: {command}\n{segment[-2000:]}')
+            match = re.search(pattern,segment)
             if match:
                 return match
             require(self.p.poll() is None,'server exited while waiting: '+pattern)
             time.sleep(0.5)
-        raise TimeoutError(pattern)
+        raise TimeoutError(f'{command or pattern}: no positive acknowledgement')
+
+    @staticmethod
+    def marker_pattern(token):
+        # Accept a server say response, not a command echoed in an error message.
+        return r'(?m)^\[[^\r\n]*\bINFO\]: (?:\[Not Secure\] )?\[Server\] '+re.escape(token)+r'\r?$'
+
+    def disable_random_ticks(self):
+        command = 'execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0'
+        start = len(self.text()); self.send(command)
+        self.wait(r'(?m)^\[[^\r\n]*\bINFO\]: Gamerule (?:minecraft:)?random_tick_speed is now set to: 0\r?$',
+                  start,command=command)
 
     def locate(self, kind, target, x, z):
-        start = len(self.text())
-        self.send(f'execute in minecraft:overworld positioned {x} 200 {z} run locate {kind} {target}')
-        m = self.wait(re.escape(target)+r'.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]',start)
+        command = f'execute in minecraft:overworld positioned {x} 200 {z} run locate {kind} {target}'
+        start = len(self.text()); self.send(command)
+        m = self.wait(re.escape(target)+r'.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]',
+                      start,command=command)
         return int(m.group(1)), int(m.group(3))
 
-    def flush(self):
-        self.token += 1; token = 'TREE_NATURAL_FLUSH_'+str(self.token)
-        start = len(self.text()); self.send('save-all flush'); self.send('say '+token)
-        self.wait(re.escape(token),start)
+    def load(self, chunks, label, timeout=240):
+        """Runtime barrier only. Saved FULL status is checked AFTER normal stop."""
+        selected = sorted(set(map(tuple,chunks)))
+        require(1 <= len(selected) <= 324 and all(len(p)==2 and all(type(v) is int for v in p)
+                for p in selected),'invalid load request')
+        for offset in range(0,len(selected),32):
+            batch = selected[offset:offset+32]
+            start = len(self.text()); probes = {}
+            for cx,cz in batch:
+                self.send(f'execute in minecraft:overworld run forceload add {cx*16} {cz*16}')
+                self.token += 1
+                token = f'TREE_LOADED_{self.token}_{cx}_{cz}'
+                probes[token] = (cx,cz)
+            pending = set(probes); deadline = time.monotonic()+timeout
+            while pending and time.monotonic() < deadline:
+                for token in sorted(pending):
+                    cx,cz = probes[token]
+                    self.send(f'execute in minecraft:overworld if loaded {cx*16} 0 {cz*16} run say {token}')
+                time.sleep(1)
+                segment = self.text()[start:]
+                require(not re.search(self.COMMAND_ERROR,segment),f'{label}: load command failed\n{segment[-2000:]}')
+                pending = {token for token in pending if not re.search(self.marker_pattern(token),segment)}
+                require(self.p.poll() is None,f'{label}: server exited during load barrier')
+            require(not pending,f'{label}: load barrier timed out: {sorted(pending)}')
+            self.token += 1; token = f'TREE_RELEASED_{self.token}'
+            start = len(self.text())
+            command = 'execute in minecraft:overworld run forceload remove all'
+            self.send(command); self.send('say '+token)
+            self.wait(self.marker_pattern(token),start,command=command)
+        print('LOADED (not yet saved-verified)',label,len(selected),flush=True)
+        return [list(p) for p in selected]
 
     def stop(self):
         self.send('stop'); code=self.p.wait(timeout=150); self.stream.close()
@@ -264,11 +309,21 @@ class Server:
         self.stream.close()
 
 
-def generate(root: Path, jar: Path, pack: Path, out: Path, nbt):
+def stopped_roots(phase, region, chunks, nbt):
+    """Never substitute an in-memory loaded marker for saved NBT evidence."""
+    require(phase.get('normal_stop') is True and type(phase.get('process_exit_code')) is int
+            and phase['process_exit_code'] == 0,'phase did not stop normally; no region reads')
+    roots = {tuple(p):nbt.read_chunk_nbt(region,*p) for p in chunks}
+    Volume(roots)  # Every requested chunk must be FULL with matching coordinates.
+    return roots
+
+
+def generate(root: Path, jar: Path, pack: Path, out: Path, nbt, source_sha=None):
     work = root/'.work/trees-villages-natural-r1'
     work.mkdir(parents=True,exist_ok=False)  # Never delete/adopt an existing world.
     (work/'world/datapacks').mkdir(parents=True)
-    shutil.copyfile(pack,work/'world/datapacks/NeverOverworld.zip')
+    installed_pack = work/'world/datapacks/NeverOverworld.zip'
+    shutil.copyfile(pack,installed_pack)
     (work/'eula.txt').write_text('eula=true\n')  # Disposable CI only, not an installer.
     (work/'server.properties').write_text(
         f'level-name=world\nlevel-seed={SEED}\n'
@@ -277,79 +332,101 @@ def generate(root: Path, jar: Path, pack: Path, out: Path, nbt):
         'view-distance=2\nsimulation-distance=2\nspawn-protection=0\nenable-status=false\n'
         'pause-when-empty-seconds=-1\n',encoding='utf-8')
     region = work/'world/dimensions/minecraft/overworld/region'
-    progress = {'schema':1,'seed':SEED,'source_sha':None,'areas':[], 'normal_stop':False,
-                'jar_sha256':sha(jar),'pack_sha256':sha(pack)}
+    progress = {'schema':2,'seed':SEED,'source_sha':source_sha,'areas':[], 'normal_stop':False,
+                'phases':[], 'jar_sha256':sha(jar),'pack_sha256':sha(pack)}
     progress_file = out/'tree-village-plan.json'
     write_json(progress_file,progress)
-    server = Server(jar,work,out/'tree-village-server.log')
 
-    def full(chunks, label):
-        selected = sorted(set(chunks))
-        for offset in range(0,len(selected),32):
-            batch = selected[offset:offset+32]
-            for cx,cz in batch:
-                server.send(f'execute in minecraft:overworld run forceload add {cx*16} {cz*16}')
-            deadline = time.monotonic()+240; last={}
-            while time.monotonic() < deadline:
-                time.sleep(5); server.flush(); last={}
-                for cx,cz in batch:
-                    try:
-                        doc=nbt.read_chunk_nbt(region,cx,cz)
-                        status=doc.get('Status')
-                    except (FileNotFoundError,ValueError,OSError) as error:
-                        status=type(error).__name__+':'+str(error)
-                    if status != 'minecraft:full': last[f'{cx},{cz}']=status
-                if not last: break
-            require(not last,f'{label}: incomplete FULL coverage: {last}')
-            server.send('execute in minecraft:overworld run forceload remove all')
-        print('FULL',label,len(selected),flush=True)
-        return [list(p) for p in selected]
+    def run_phase(name, action):
+        # A phase is successful only after an explicit stop returns exit code 0.
+        require(sha(jar)==progress['jar_sha256'] and sha(pack)==progress['pack_sha256']
+                and sha(installed_pack)==progress['pack_sha256'],'test binaries changed between phases')
+        phase = {'name':name,'normal_stop':False,'process_exit_code':None}
+        progress['phases'].append(phase); write_json(progress_file,progress)
+        log_name = 'tree-village-server.log' if len(progress['phases'])==1 else 'tree-village-restart.log'
+        server = Server(jar,work,out/log_name)
+        try:
+            server.wait(r'Done \(',timeout=300)
+            server.disable_random_ticks()
+            action(server)
+            phase['process_exit_code'] = server.stop()
+            phase['normal_stop'] = True
+        except Exception as error:
+            phase['error'] = f'{type(error).__name__}: {error}'
+            raise
+        finally:
+            server.close()
+            write_json(progress_file,progress)
+        return phase
 
-    try:
-        server.wait(r'Done \(',timeout=300)
-        start=len(server.text())
-        server.send('execute in minecraft:overworld run gamerule minecraft:random_tick_speed 0')
-        server.flush()
-        require(not re.search(r'Unknown|Incorrect argument|Unknown or incomplete',server.text()[start:]),
-                'failed to disable random ticks in disposable sample')
+    initial_villages = []
+
+    def locate_and_load(server):
         for target, origin in zip(FORESTS,((0,0),(12000,0),(-12000,0))):
             x,z=server.locate('biome',target,*origin); cx,cz=x//16,z//16
             selected=[(a,b) for b in range(cz-2,cz+3) for a in range(cx-2,cx+3)]
-            area={'kind':'forest','target':target,'located_xz':[x,z], 'chunks':full(selected,target)}
+            area={'kind':'forest','target':target,'located_xz':[x,z], 'chunks':server.load(selected,target)}
             progress['areas'].append(area); write_json(progress_file,progress)
         for target in VILLAGES:
             x,z=server.locate('structure',target,8192,8192); cx,cz=x//16,z//16
             initial=[(a,b) for b in range(cz-2,cz+3) for a in range(cx-2,cx+3)]
-            full(initial,target+' initial')
-            found=[]
-            for a,b in initial:
-                doc=nbt.read_chunk_nbt(region,a,b)
-                raw=doc.get('structures',{}).get('starts',{}).get(target)
-                if isinstance(raw,dict) and raw.get('id')==target:
-                    found.append(((a-cx)**2+(b-cz)**2,a,b,boxes_for_start(doc,target)))
-            require(bool(found),'located village not persisted: '+target)
-            _,a,b,boxes=min(found)
-            selected=coverage(boxes,margin=1)
-            area={'kind':'village','target':target,'located_xz':[x,z], 'start_chunk':[a,b],
-                  'piece_boxes':boxes,'chunks':full(selected,target+' complete bbox')}
-            progress['areas'].append(area); write_json(progress_file,progress)
-        server.flush(); progress['process_exit_code']=server.stop(); progress['normal_stop']=True
-        write_json(progress_file,progress)
-    finally:
-        server.close()
+            initial_villages.append({'target':target,'located_xz':[x,z],
+                                     'chunks':server.load(initial,target+' initial')})
+        progress['initial_villages'] = initial_villages
+
+    first = run_phase('locate-and-initial-chunks',locate_and_load)
+    for area in progress['areas']:
+        stopped_roots(first,region,area['chunks'],nbt)
+    for initial in initial_villages:
+        target = initial['target']; x,z = initial['located_xz']; cx,cz=x//16,z//16
+        roots = stopped_roots(first,region,initial['chunks'],nbt)
+        found = []
+        for (a,b), doc in roots.items():
+            raw=doc.get('structures',{}).get('starts',{}).get(target)
+            if isinstance(raw,dict) and raw.get('id')==target:
+                found.append(((a-cx)**2+(b-cz)**2,a,b,boxes_for_start(doc,target)))
+        require(bool(found),'located village not persisted: '+target)
+        _,a,b,boxes=min(found)
+        progress['areas'].append({'kind':'village','target':target,'located_xz':[x,z],
+            'start_chunk':[a,b],'piece_boxes':boxes,'chunks':[list(p) for p in coverage(boxes,margin=1)]})
+    first['saved_initial_full_verified'] = True
+    write_json(progress_file,progress)
+
+    def complete_villages(server):
+        for area in progress['areas']:
+            if area['kind']=='village':
+                server.load(area['chunks'],area['target']+' complete bbox')
+
+    second = run_phase('complete-village-footprints',complete_villages)
+    for area in progress['areas']:
+        stopped_roots(second,region,area['chunks'],nbt)
+    require(sha(jar)==progress['jar_sha256'] and sha(installed_pack)==progress['pack_sha256'],
+            'test binaries changed before final audit')
+    second['saved_all_full_verified'] = True
+    progress['process_exit_code'] = second['process_exit_code']
+    progress['normal_stop'] = True
+    write_json(progress_file,progress)
     return progress,region
 
 
 def audit(plan, region, out, nbt):
     require(plan.get('normal_stop') is True and type(plan.get('process_exit_code')) is int
             and plan['process_exit_code']==0,'world not stopped normally')
+    phases = plan.get('phases',[])
+    require(plan.get('schema') == 2 and len(phases)==2
+            and [p.get('name') for p in phases]==['locate-and-initial-chunks','complete-village-footprints']
+            and all(p.get('normal_stop') is True and type(p.get('process_exit_code')) is int
+                    and p['process_exit_code']==0 for p in phases)
+            and phases[0].get('saved_initial_full_verified') is True
+            and phases[1].get('saved_all_full_verified') is True,'incomplete stopped-world phases')
     require(type(plan.get('seed')) is int and plan['seed']==SEED,'unexpected seed')
     targets=[(a.get('kind'),a.get('target')) for a in plan.get('areas',[])]
     expected=[('forest',x) for x in FORESTS]+[('village',x) for x in VILLAGES]
     require(len(targets)==len(expected) and set(targets)==set(expected),'incomplete/duplicate target coverage')
-    result={'schema':1,'seed':SEED,'source_sha':plan['source_sha'], 'jar_sha256':plan['jar_sha256'],
+    result={'schema':2,'seed':SEED,'source_sha':plan['source_sha'], 'jar_sha256':plan['jar_sha256'],
             'pack_sha256':plan['pack_sha256'],'areas':[],'production_ready':False,
-            'village_visual_review_required':True,'natural_observation_pass':False}
+            'village_visual_review_required':True,'natural_observation_pass':False,
+            'saved_evidence_after_normal_stops':True}
     submerged=0; unique=set()
     for area in plan['areas']:
         coordinates=[tuple(p) for p in area['chunks']]
@@ -392,8 +469,7 @@ def main():
     root=Path(__file__).resolve().parents[1]; out=args.output.resolve(); out.mkdir(parents=True,exist_ok=True)
     require(not (out/'tree-village-plan.json').exists(),'do not overwrite previous evidence')
     nbt=load_nbt(root)
-    plan,region=generate(root,args.jar.resolve(),args.pack.resolve(),out,nbt)
-    plan['source_sha']=args.source_sha; write_json(out/'tree-village-plan.json',plan)
+    plan,region=generate(root,args.jar.resolve(),args.pack.resolve(),out,nbt,args.source_sha)
     report=audit(plan,region,out,nbt)
     print(json.dumps(report,indent=2))
 
