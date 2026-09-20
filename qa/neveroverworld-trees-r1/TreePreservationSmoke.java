@@ -24,7 +24,7 @@ import net.minecraft.world.level.lighting.LevelLightEngine;
 public final class TreePreservationSmoke {
     private static int checks;
     private static final int WATER_Y = 128;
-    private static final BlockState WATER = Blocks.WATER.defaultBlockState();
+    private static BlockState WATER; // Initialized only after Minecraft bootstrap.
 
     private static void check(boolean ok, String message) {
         if (!ok) throw new AssertionError(message);
@@ -200,6 +200,7 @@ public final class TreePreservationSmoke {
     public static void main(String[] args) throws Exception {
         var out = System.out;
         SharedConstants.tryDetectVersion(); Bootstrap.bootStrap();
+        WATER = Blocks.WATER.defaultBlockState();
         for (Block block : new Block[]{Blocks.OAK_LOG, Blocks.BIRCH_LOG, Blocks.STRIPPED_OAK_LOG}) tag(block, BlockTags.LOGS);
         for (Block block : new Block[]{Blocks.OAK_LEAVES, Blocks.BIRCH_LEAVES}) tag(block, BlockTags.LEAVES);
         Method predicate = NeverOverworldFlood.class.getDeclaredMethod("isFloodable", BlockState.class);
