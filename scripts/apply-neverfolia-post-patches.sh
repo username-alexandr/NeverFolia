@@ -50,3 +50,7 @@ echo "[NeverFolia] Preparing pinned CC0 noise for native NeverNether R5"
 python3 "${ROOT_DIR}/scripts/prepare-never-nether-noise-r5.py" --install "${FOLIA_DIR}"
 echo "[NeverFolia] Installing native NeverNether R4/R5 adapters"
 python3 "${ROOT_DIR}/scripts/apply-never-nether-native-adapters-r4.py" "${FOLIA_DIR}"
+
+# Final override: historical ecology hashes are checked before TREE-R1.
+echo "[NeverFolia] Preserving fully submerged, fallen and partially flooded trees"
+python3 "${ROOT_DIR}/scripts/preserve-never-overworld-trees-r1.py" "${FOLIA_DIR}"
