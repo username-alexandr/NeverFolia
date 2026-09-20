@@ -30,6 +30,8 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           python3 scripts/test-never-overworld-trees-villages-r1.py 2>&1 | tee artifacts/observer-tests.log
+          python3 scripts/test-never-overworld-final-villages-r1.py 2>&1 | tee artifacts/final-geometry-tests.log
+          python3 scripts/test-never-overworld-tree-village-bundle-r1.py 2>&1 | tee artifacts/bundle-tests.log
           python3 scripts/preserve-never-overworld-trees-r1.py --self-test
           python3 scripts/remove-never-overworld-village-reclamation-r1.py --self-test
           python3 scripts/test-never-overworld-field-r11.py
@@ -107,16 +109,27 @@ jobs:
           python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
           python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
           python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
-      - name: Generate and inspect saved forests and village footprints
+      - name: Generate and inspect final saved forests and village footprints
         run: |
           set -euo pipefail
-          python3 scripts/probe-never-overworld-trees-villages-r1.py --jar artifacts/server.jar --pack artifacts/NeverOverworld.zip --output artifacts --source-sha "$GITHUB_SHA" 2>&1 | tee artifacts/natural-observer.log
+          python3 scripts/probe-never-overworld-final-villages-r1.py --jar artifacts/server.jar --pack artifacts/NeverOverworld.zip --output artifacts --source-sha "$GITHUB_SHA" 2>&1 | tee artifacts/natural-observer.log
+      - name: Package new-world manual field-test candidate
+        run: |
+          set -euo pipefail
+          python3 scripts/package-never-overworld-tree-village-r1.py --artifacts artifacts --output "artifacts/NeverFolia-OVERWORLD-TREE-VILLAGE-TEST-${GITHUB_SHA::7}.zip" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" | tee artifacts/tree-village-bundle.json
+      - name: Publish manual field-test candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-OVERWORLD-TREE-VILLAGE-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-OVERWORLD-TREE-VILLAGE-TEST-*.zip
+          retention-days: 14
+          if-no-files-found: error
       - name: Record scope and observation summary
         if: always()
         run: |
           mkdir -p artifacts
           git rev-parse HEAD > artifacts/SOURCE-SHA.txt
-          printf '%s\n' 'TREE-R1 + VILLAGE-NOFILL-R1 disposable-world observation. No before/after natural tree identity proof, complete village-shape, migration or production acceptance. Water between village pieces is allowed. Historical village-helper smoke does not re-enable reclamation.' > artifacts/SCOPE.txt
+          printf '%s\n' 'TREE-R1 + VILLAGE-NOFILL-R1 stopped-world observation. Final village bounds must stay inside saved FULL coverage; both snapshots retained. Successful checks may publish a NEW-world manual field-test bundle, NOT production or visual acceptance. No existing-world repair.' > artifacts/SCOPE.txt
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
