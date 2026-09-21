@@ -1,0 +1,193 @@
+name: NeverOverworld HEIGHT2 ORE-LIGHT natural
+on:
+  push:
+    branches: [wip/neveroverworld-field-r12]
+    paths:
+      - 'qa/ore-light-r12/**'
+      - 'native/neveroverworld/field-r12/**'
+      - 'qa/neveroverworld-field-r12/**'
+      - 'scripts/apply-never-overworld-field-r12.py'
+      - 'scripts/apply-neverfolia-post-patches*.sh'
+      - '.github/workflows/never-overworld-ore-light-r12-natural.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  natural:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Validate independent observer and source installers
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 qa/ore-light-r12/test-probe-natural.py 2>&1 | tee artifacts/height2-natural-tests.log
+          python3 qa/ore-light-r12/test-defer-upper-pruning.py
+          python3 scripts/test-never-overworld-paired-r12.py
+          python3 scripts/apply-never-overworld-field-r12.py --self-test
+      - name: Materialize HEIGHT2, dry mines and Nether R15; install late ore pruning
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          python3 scripts/apply-never-overworld-field-r12.py .work/Folia --check-only
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia 2>&1 | tee artifacts/ore-light-install.log
+          python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia --check-only
+          python3 scripts/preserve-never-overworld-trees-r1.py .work/Folia --check-only
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py .work/Folia --check-only
+      - name: Build exact Paperclip with all retained native regressions
+        run: |
+          set -euo pipefail
+          cat > .work/height2-natural.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'height2-natural-qa')
+              def cp = server.sourceSets.main.runtimeClasspath
+              def files = [
+                  'qa/ore-light-r12/UpperOreLightR12Smoke.java',
+                  'qa/neveroverworld-field-r12/FieldPolicyR12Test.java',
+                  'qa/neveroverworld-field-r12/FieldR12Smoke.java',
+                  'qa/neveroverworld-trees-r1/TreePreservationSmoke.java',
+                  'qa/neveroverworld-field-r10/VillageFoundationSmoke.java',
+                  'qa/neveroverworld-field-r11/FloodBoundarySmoke.java',
+                  'qa/neveroverworld-desert-r1/DesertR1Smoke.java',
+                  'qa/neveroverworld-desert-r1/SandstormR1Smoke.java',
+                  'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java'
+              ]
+              def compileQa = server.tasks.register('height2NaturalCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source server.files(files.collect { new File(gradle.rootProject.projectDir, '../../' + it) })
+                  destinationDirectory = qaDir
+                  classpath = cp
+                  options.release = 25
+              }
+              def tasks = [
+                  h2Ore:'net.minecraft.world.level.chunk.UpperOreLightR12Smoke',
+                  h2Policy:'net.minecraft.world.level.chunk.FieldPolicyR12Test',
+                  h2Native:'net.minecraft.world.level.chunk.FieldR12Smoke',
+                  h2Trees:'net.minecraft.world.level.chunk.TreePreservationSmoke',
+                  h2Village:'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke',
+                  h2Boundary:'net.minecraft.world.level.chunk.FloodBoundarySmoke',
+                  h2Desert:'net.minecraft.world.level.chunk.DesertR1Smoke',
+                  h2Sandstorm:'net.minecraft.server.level.SandstormR1Smoke',
+                  h2Nether:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke'
+              ]
+              tasks.each { taskName, className ->
+                  server.tasks.register(taskName, JavaExec) {
+                      dependsOn compileQa
+                      classpath = cp + server.files(qaDir)
+                      mainClass = className
+                      jvmArgs '-ea'
+                  }
+              }
+              server.tasks.register('height2NaturalNative') { dependsOn tasks.keySet().collect { server.tasks.named(it) } }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:height2NaturalNative :folia-server:createPaperclipJar -I ../height2-natural.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          python3 - <<'PY'
+          import hashlib, importlib.util, json, os, shutil, zipfile
+          from pathlib import Path
+          libs = Path('.work/Folia/folia-server/build/libs')
+          jars = list(libs.glob('folia-paperclip-*.jar'))
+          if len(jars) != 1: raise ValueError('Expected one Paperclip')
+          shutil.copyfile(jars[0], 'artifacts/server.jar')
+          bundles = []
+          for jar in libs.glob('*.jar'):
+              with zipfile.ZipFile(jar) as z:
+                  if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()): bundles.append(jar)
+          if len(bundles) != 1: raise ValueError('Expected one full pack-input bundler')
+          shutil.copyfile(bundles[0], 'artifacts/pack-input-bundler.jar')
+          path = Path('qa/ore-light-r12/defer-upper-pruning.py')
+          spec = importlib.util.spec_from_file_location('overlay', path)
+          overlay = importlib.util.module_from_spec(spec); spec.loader.exec_module(overlay)
+          base = Path('.work/Folia') / overlay.JAVA
+          hashes = {n: hashlib.sha256((base/n).read_bytes()).hexdigest() for n in overlay.CONTRACTS}
+          if any(hashes[n] != c['after'] for n, c in overlay.CONTRACTS.items()): raise ValueError('Final overlay not installed')
+          manifest = {'profile':'FIELD-R12-HEIGHT2-ORE-LIGHT-1', 'source_sha':os.environ['GITHUB_SHA'],
+              'workflow_run':int(os.environ['GITHUB_RUN_ID']), 'overlay_installed':True,
+              'materialized_overlay_sha256':hashes, 'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
+              'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(), 'production_ready':False}
+          Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(manifest, indent=2)+'\n')
+          PY
+      - name: Build and verify both matching datapacks
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+          python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13.zip --inject
+          python3 scripts/build-never-nether-height-r14.py --input .work/NeverNether-R13.zip --output .work/NeverNether-R14.zip
+          python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output artifacts/NeverNether.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
+      - name: Fetch pinned delivered baseline, never substitute another version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, io, os, urllib.request, urllib.error, urllib.parse, zipfile
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          request=urllib.request.Request('https://api.github.com/repos/username-alexandr/NeverFolia/actions/artifacts/10611756410/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          try:
+              with urllib.request.build_opener(NoRedirect).open(request,timeout=60) as response: raw=response.read(80000001)
+          except urllib.error.HTTPError as error:
+              if error.code!=302: raise
+              location=error.headers['Location']
+              if urllib.parse.urlsplit(location).scheme!='https': raise ValueError('insecure artifact redirect')
+              with urllib.request.urlopen(location,timeout=60) as response: raw=response.read(80000001)
+          if hashlib.sha256(raw).hexdigest()!='38f6b569afca06dccfae42d1dd8b733397e08a942e8c54301addd652ee9302a5': raise ValueError('baseline artifact changed')
+          with zipfile.ZipFile(io.BytesIO(raw)) as outer:
+              names=outer.namelist()
+              if len(names)!=1 or not names[0].endswith('.zip'): raise ValueError('unexpected baseline artifact')
+              bundle=outer.read(names[0])
+          if hashlib.sha256(bundle).hexdigest()!='783f87732256f24f0b90c66d97aff04c78f4439dcb73524a211014eabfaf3f4a': raise ValueError('baseline bundle changed')
+          with zipfile.ZipFile(io.BytesIO(bundle)) as archive: jar=archive.read('server.jar')
+          if hashlib.sha256(jar).hexdigest()!='dfdbcffce9d4404bbb610828eb804db622ab410f94b37344293ce94d2349ce11': raise ValueError('baseline JAR changed')
+          Path('.work/baseline-32c6df3.jar').write_bytes(jar)
+          PY
+      - name: Compare two identical fixed candidates and measure historical density
+        run: |
+          set -euo pipefail
+          python3 qa/ore-light-r12/probe-natural.py --jar artifacts/server.jar --baseline-jar .work/baseline-32c6df3.jar --overworld artifacts/NeverOverworld.zip --nether artifacts/NeverNether.zip --output artifacts --build-manifest artifacts/BUILD-PROFILE.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" 2>&1 | tee artifacts/height2-natural.log
+      - name: Publish accepted manual test bundle with both dimensions
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-HEIGHT2-ORE-LIGHT-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-HEIGHT2-ORE-LIGHT-TEST-*.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Keep complete diagnostics including failed comparisons
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-height2-ore-light-${{ github.sha }}
+          path: |
+            artifacts/**/*.json
+            artifacts/**/*.log
+            artifacts/**/*.txt
+          if-no-files-found: error
+          retention-days: 14
