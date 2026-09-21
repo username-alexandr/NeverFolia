@@ -1,0 +1,108 @@
+name: NeverOverworld FIELD-R12 native regression
+on:
+  push:
+    branches: [wip/neveroverworld-field-r12]
+    paths:
+      - 'native/neveroverworld/field-r12/**'
+      - 'qa/neveroverworld-field-r12/**'
+      - 'scripts/apply-never-overworld-field-r12.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - '.github/workflows/never-overworld-field-r12.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Validate exact-source installer
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/apply-never-overworld-field-r12.py --self-test 2>&1 | tee artifacts/installer-tests.log
+          bash -n scripts/apply-neverfolia-post-patches.sh
+      - name: Materialize and patch exact current candidate
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          python3 scripts/apply-never-overworld-field-r12.py .work/Folia --check-only
+          python3 scripts/preserve-never-overworld-trees-r1.py .work/Folia --check-only
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py .work/Folia --check-only
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+      - name: Compile and run native tree, mine, ore and retained regression tests
+        run: |
+          set -euo pipefail
+          cat > .work/field-r12.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'field-r12-qa')
+              def cp = server.sourceSets.main.runtimeClasspath
+              def sourcePaths = [
+                  'qa/neveroverworld-field-r12/FieldPolicyR12Test.java',
+                  'qa/neveroverworld-field-r12/FieldR12Smoke.java',
+                  'qa/neveroverworld-trees-r1/TreePreservationSmoke.java',
+                  'qa/neveroverworld-field-r10/VillageFoundationSmoke.java',
+                  'qa/neveroverworld-field-r11/FloodBoundarySmoke.java',
+                  'qa/neveroverworld-desert-r1/DesertR1Smoke.java',
+                  'qa/neveroverworld-desert-r1/SandstormR1Smoke.java',
+                  'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java'
+              ]
+              def compileQa = server.tasks.register('fieldR12QaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source server.files(sourcePaths.collect { new File(gradle.rootProject.projectDir, '../../' + it) })
+                  destinationDirectory = qaDir
+                  classpath = cp
+                  options.release = 25
+              }
+              [
+                  fieldR12Policy:'net.minecraft.world.level.chunk.FieldPolicyR12Test',
+                  fieldR12Native:'net.minecraft.world.level.chunk.FieldR12Smoke',
+                  fieldR12TreePreservation:'net.minecraft.world.level.chunk.TreePreservationSmoke',
+                  fieldR12Village:'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke',
+                  fieldR12Boundary:'net.minecraft.world.level.chunk.FloodBoundarySmoke',
+                  fieldR12Desert:'net.minecraft.world.level.chunk.DesertR1Smoke',
+                  fieldR12Sandstorm:'net.minecraft.server.level.SandstormR1Smoke',
+                  fieldR12Nether:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke'
+              ].each { taskName, className ->
+                  server.tasks.register(taskName, JavaExec) {
+                      dependsOn compileQa
+                      classpath = cp + server.files(qaDir)
+                      mainClass = className
+                      jvmArgs '-ea'
+                  }
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:fieldR12Policy :folia-server:fieldR12Native :folia-server:fieldR12TreePreservation :folia-server:fieldR12Village :folia-server:fieldR12Boundary :folia-server:fieldR12Desert :folia-server:fieldR12Sandstorm :folia-server:fieldR12Nether -I ../field-r12.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+      - name: Record scope without claiming a tested server release
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          printf '%s\n' 'FIELD-R12 native candidate. Fresh natural generation, saved mine-fluid checks and ore before/after sampling remain separate. No ready server bundle, no existing-world changes, no visual village acceptance.' > artifacts/SCOPE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-field-r12-native-${{ github.sha }}
+          path: artifacts/*
+          retention-days: 14
+          if-no-files-found: error

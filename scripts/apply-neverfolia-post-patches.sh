@@ -56,3 +56,6 @@ echo "[NeverFolia] Preserving fully submerged, fallen and partially flooded tree
 python3 "${ROOT_DIR}/scripts/preserve-never-overworld-trees-r1.py" "${FOLIA_DIR}"
 echo "[NeverFolia] Removing custom village sea-level reclamation; keeping vanilla placement"
 python3 "${ROOT_DIR}/scripts/remove-never-overworld-village-reclamation-r1.py" "${FOLIA_DIR}"
+
+echo "[NeverFolia] Applying FIELD-R12 tree admission, additional ore scarcity and dry mine corridors"
+python3 "${ROOT_DIR}/scripts/apply-never-overworld-field-r12.py" "${FOLIA_DIR}"
