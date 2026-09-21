@@ -39,7 +39,7 @@ public final class FieldR12Smoke {
     private static final class TestWorld implements InvocationHandler {
         final Map<BlockPos,BlockState> blocks=new HashMap<>();
         final Map<Long,ProtoChunk> chunks=new HashMap<>();
-        final int terrain; boolean rejectWrites; int writes;
+        final int terrain; boolean rejectWrites; int writes; int heightQueries;
         final WorldGenLevel world=(WorldGenLevel)Proxy.newProxyInstance(WorldGenLevel.class.getClassLoader(),new Class<?>[]{WorldGenLevel.class},this);
         TestWorld(int terrain){this.terrain=terrain;}
         BlockState at(BlockPos p){return blocks.getOrDefault(p,Blocks.AIR.defaultBlockState());}
@@ -51,7 +51,7 @@ public final class FieldR12Smoke {
                 case "isFluidAtPosition":return ((Predicate<FluidState>)a[1]).test(at((BlockPos)a[0]).getFluidState());
                 case "getMinY":return -512;
                 case "getMaxY":return 512;
-                case "getHeight":return a==null||a.length==0?1024:terrain;
+                case "getHeight":if(a==null||a.length==0)return 1024; heightQueries++;return terrain;
                 case "getSeed":return -2996952393010080672L;
                 case "ensureCanWrite":return !rejectWrites;
                 case "setBlock":if(rejectWrites)return false;blocks.put(((BlockPos)a[0]).immutable(),(BlockState)a[1]);writes++;return true;
@@ -69,47 +69,75 @@ public final class FieldR12Smoke {
         }
     }
     private static void treeTransactions()throws Exception{
-        for(int submerged=0;submerged<=5;submerged++){
-            TestWorld w=new TestWorld(100);
-            var tx=new NeverOverworldTreePlacementR12.Proposal(w.world,true);
+        // The boundary is feature origin Y, independent of any wet-block census.
+        for(int baseY:new int[]{70,124,125,126,127,128,129,140}){
+            TestWorld w=new TestWorld(180);
+            var tx=new NeverOverworldTreePlacementR12.Proposal(w.world,true,baseY);
+            boolean allowed=baseY>=126;
+            check(tx.canStart()==allowed,"early origin height gate "+baseY);
+            check(w.writes==0&&w.heightQueries==0,"origin gate needs no terrain reads or writes");
             BlockPos oldTree=new BlockPos(3,80,3);w.blocks.put(oldTree,Blocks.BIRCH_LOG.defaultBlockState());
-            for(int y=129-submerged;y<=136;y++)tx.view().setBlock(new BlockPos(8,y,8),Blocks.OAK_LOG.defaultBlockState(),19);
+            for(int y=baseY;y<baseY+8;y++)tx.view().setBlock(new BlockPos(8,y,8),Blocks.OAK_LOG.defaultBlockState(),19);
             check(w.writes==0,"no proposal published before decision");
-            check(tx.view().isStateAtPosition(new BlockPos(8,135,8),s->s.is(Blocks.OAK_LOG)),"staged log visible to trunk/foliage queries");
-            check(tx.acceptAndCommit()==(submerged<=3),"exact submerged block quota "+submerged);
-            check(w.writes==(submerged<=3?8+submerged:0),"rejected proposal did not leave stump/dirt");
+            check(tx.view().isStateAtPosition(new BlockPos(8,baseY+5,8),s->s.is(Blocks.OAK_LOG)),"staged log visible to trunk/foliage queries");
+            check(tx.acceptAndCommit()==allowed,"origin height commit gate "+baseY);
+            check(w.writes==(allowed?8:0),"rejected proposal did not leave a stump");
+            check(w.heightQueries==0,"terrain height is no longer used for admission");
             check(w.at(oldTree).is(Blocks.BIRCH_LOG),"unrelated existing underwater tree preserved");
         }
-        TestWorld w=new TestWorld(75);var tx=new NeverOverworldTreePlacementR12.Proposal(w.world,true);
+        // A wide trunk has >3 underwater wood cells but is legal at ocean-2.
+        TestWorld wide=new TestWorld(80);
+        var wideTx=new NeverOverworldTreePlacementR12.Proposal(wide.world,true,126);
+        for(int x=-1;x<=0;x++)for(int z=-1;z<=0;z++)for(int y=126;y<=133;y++){
+            wideTx.view().setBlock(new BlockPos(x,y,z),Blocks.OAK_LOG.defaultBlockState(),19);
+        }
+        BlockPos lowLeaf=new BlockPos(1,124,0),rootSoil=new BlockPos(-1,125,-1);
+        wideTx.view().setBlock(lowLeaf,Blocks.OAK_LEAVES.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED,true),19);
+        wideTx.view().setBlock(rootSoil,Blocks.DIRT.defaultBlockState(),19);
+        check(wideTx.canStart()&&wideTx.acceptAndCommit(),"wide trunk origin Y126 must not fail old block quota");
+        check(wide.writes==34,"complete wide tree and root soil published");
+        check(wide.at(lowLeaf).is(Blocks.OAK_LEAVES)&&wide.at(lowLeaf).getValue(BlockStateProperties.WATERLOGGED),"low leaves not clipped or counted as origin");
+        check(wide.at(rootSoil).is(Blocks.DIRT),"origin is not the soil/root coordinate");
+        check(wide.heightQueries==0,"no ocean-floor sampling for wide tree");
+
         var config=new TreeConfiguration.TreeConfigurationBuilder(BlockStateProvider.simple(Blocks.OAK_LOG),new StraightTrunkPlacer(6,0,0),
             BlockStateProvider.simple(Blocks.OAK_LEAVES),new BlobFoliagePlacer(ConstantInt.of(2),ConstantInt.of(0),3),new TwoLayersFeatureSize(1,0,1),BlockStateProvider.simple(Blocks.DIRT)).build();
         Method core=TreeFeature.class.getDeclaredMethod("doPlace",WorldGenLevel.class,RandomSource.class,BlockPos.class,BiConsumer.class,BiConsumer.class,FoliagePlacer.FoliageSetter.class,TreeConfiguration.class);
         core.setAccessible(true);
-        Set<BlockPos> leaves=new HashSet<>();
-        BiConsumer<BlockPos,BlockState> setter=(p,s)->tx.view().setBlock(p,s,19);
-        FoliagePlacer.FoliageSetter fs=new FoliagePlacer.FoliageSetter(){
-            public void set(BlockPos p,BlockState s){leaves.add(p.immutable());setter.accept(p,s);}
-            public boolean isSet(BlockPos p){return leaves.contains(p);}
-        };
-        check((Boolean)core.invoke(new TreeFeature(TreeConfiguration.CODEC),tx.view(),RandomSource.create(7),new BlockPos(8,75,8),setter,setter,fs,config),"actual vanilla trunk/foliage candidate created");
-        check(!leaves.isEmpty(),"native foliage created");
-        check(!tx.acceptAndCommit(),"native wholly submerged standing proposal vetoed");
-        check(w.writes==0&&w.blocks.isEmpty(),"native rejection leaves no roots, soil, logs or leaves");
-        TestWorld cave=new TestWorld(180);var caveTx=new NeverOverworldTreePlacementR12.Proposal(cave.world,true);
+        for(int baseY:new int[]{75,125,126,127,128}){
+            TestWorld w=new TestWorld(75);var tx=new NeverOverworldTreePlacementR12.Proposal(w.world,true,baseY);
+            Set<BlockPos> leaves=new HashSet<>();
+            BiConsumer<BlockPos,BlockState> setter=(p,s)->tx.view().setBlock(p,s,19);
+            FoliagePlacer.FoliageSetter fs=new FoliagePlacer.FoliageSetter(){
+                public void set(BlockPos p,BlockState s){leaves.add(p.immutable());setter.accept(p,s);}
+                public boolean isSet(BlockPos p){return leaves.contains(p);}
+            };
+            // Exercise the real trunk/foliage implementation even for a low
+            // proposal to verify the second commit guard cannot publish it.
+            check((Boolean)core.invoke(new TreeFeature(TreeConfiguration.CODEC),tx.view(),RandomSource.create(7),new BlockPos(8,baseY,8),setter,setter,fs,config),"actual vanilla trunk/foliage candidate at "+baseY);
+            check(!leaves.isEmpty(),"native foliage created");
+            check(tx.acceptAndCommit()==(baseY>=126),"native candidate origin threshold "+baseY);
+            if(baseY<126)check(w.writes==0&&w.blocks.isEmpty(),"native rejection leaves no roots, soil, logs or leaves");
+            else check(w.writes>0&&w.at(new BlockPos(8,baseY,8)).is(Blocks.OAK_LOG),"native accepted tree has intact base");
+        }
+        TestWorld cave=new TestWorld(180);var caveTx=new NeverOverworldTreePlacementR12.Proposal(cave.world,true,70);
         caveTx.view().setBlock(new BlockPos(8,70,8),Blocks.OAK_LOG.defaultBlockState(),19);
-        check(caveTx.acceptAndCommit(),"dry cave is not classified as ocean solely by Y");
-        TestWorld denied=new TestWorld(90);denied.rejectWrites=true;var bad=new NeverOverworldTreePlacementR12.Proposal(denied.world,true);
+        check(!caveTx.canStart()&&!caveTx.acceptAndCommit()&&cave.writes==0,"height policy has no low dry-cave exception");
+        TestWorld outside=new TestWorld(10);
+        var ordinary=NeverOverworldTreePlacementR12.begin(outside.world,new BlockPos(8,10,8));
+        check(ordinary.canStart()&&ordinary.view()==outside.world,"non-WorldGenRegion context remains unchanged");
+        TestWorld denied=new TestWorld(90);denied.rejectWrites=true;var bad=new NeverOverworldTreePlacementR12.Proposal(denied.world,true,135);
         check(!bad.view().setBlock(new BlockPos(8,135,8),Blocks.OAK_LOG.defaultBlockState(),19),"write radius respected");
         check(!bad.acceptAndCommit()&&denied.writes==0,"out-of-zone proposal is unpublished");
-        TestWorld wet=new TestWorld(90);var ft=new NeverOverworldTreePlacementR12.Proposal(wet.world,true);
+        TestWorld wet=new TestWorld(90);var ft=new NeverOverworldTreePlacementR12.Proposal(wet.world,true,91);
         for(int x=-10;x<=10;x++)for(int z=-10;z<=10;z++){
             wet.blocks.put(new BlockPos(x,90,z),Blocks.STONE.defaultBlockState());
             for(int y=91;y<=98;y++)wet.blocks.put(new BlockPos(x,y,z),Blocks.WATER.defaultBlockState());
         }
-        check(NeverOverworldTreePlacementR12.fallenPosition(ft.view(),new BlockPos(0,91,0)),"actual water allowed for fallen log");
+        check(NeverOverworldTreePlacementR12.fallenPosition(ft.view(),new BlockPos(0,91,0)),"actual water allowed for fallen log below Y126");
         var fc=new FallenTreeConfiguration.FallenTreeConfigurationBuilder(BlockStateProvider.simple(Blocks.BIRCH_LOG),ConstantInt.of(8)).build();
         new FallenTreeFeature(FallenTreeConfiguration.CODEC).place(new FeaturePlaceContext<>(Optional.empty(),ft.view(),null,RandomSource.create(19),new BlockPos(0,91,0),fc));
-        ft.commit();
+        ft.commit(); // Fallen feature uses its separate path, not standing admission.
         long horizontal=wet.blocks.values().stream().filter(s->s.is(Blocks.BIRCH_LOG)&&s.getValue(BlockStateProperties.AXIS)!=Direction.Axis.Y).count();
         check(horizontal==6,"actual FallenTreeFeature placed complete horizontal log in water: "+horizontal);
     }
@@ -182,7 +210,7 @@ public final class FieldR12Smoke {
         var out=System.out;SharedConstants.tryDetectVersion();Bootstrap.bootStrap();
         tag(Blocks.OAK_LOG,BlockTags.LOGS);tag(Blocks.BIRCH_LOG,BlockTags.LOGS);tag(Blocks.OAK_LEAVES,BlockTags.LEAVES);
         treeTransactions();dryMines();ore();
-        out.println("PASS FieldR12Smoke checks="+checks+" native-tree-admission/fallen-water/mines-cross-chunk/PDC/ore-subset");out.flush();
+        out.println("PASS FieldR12Smoke checks="+checks+" tree-origin-height126/fallen-water/mines-cross-chunk/PDC/ore-subset");out.flush();
         if(out.checkError())throw new IllegalStateException("smoke output failed");
     }
 }

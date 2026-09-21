@@ -5,11 +5,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.WorldGenRegion;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.LevelSimulatedReader;
@@ -17,14 +15,13 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
 import net.minecraft.world.level.material.FluidState;
 
-/** FIELD-R12: veto unsuitable NEW standing-tree proposals; never erase an
- * existing tree. Trunk/root/foliage writes are staged before decorators run.
- * Vanilla read-after-write queries observe the staged states. On acceptance,
- * writes use the original WorldGenRegion's normal write-radius/flag checks.
+/** FIELD-R12 height revision: new standing trees start no lower than ocean-2.
+ * Existing trees are never erased. Roots/trunk/foliage are still staged before
+ * decorators; only the admission rule changed from a block census to origin Y.
+ * No terrain-height queries or neighbouring-block scans decide admission.
  */
 public final class NeverOverworldTreePlacementR12 {
     private NeverOverworldTreePlacementR12() {}
@@ -35,8 +32,8 @@ public final class NeverOverworldTreePlacementR12 {
             && level.getMinY() == -512 && level.getHeight() == 1024;
     }
 
-    public static Proposal begin(WorldGenLevel level) {
-        return new Proposal(level, worldgenScope(level));
+    public static Proposal begin(WorldGenLevel level, BlockPos origin) {
+        return new Proposal(level, worldgenScope(level), origin.getY());
     }
 
     private static Proposal proposal(Object level) {
@@ -62,21 +59,25 @@ public final class NeverOverworldTreePlacementR12 {
         private static final int MAX_WRITES = 32768;
         private final WorldGenLevel delegate;
         private final WorldGenLevel view;
+        private final boolean heightAllowed;
         private final LinkedHashMap<BlockPos, Write> writes = new LinkedHashMap<>();
         private boolean staging;
         private boolean invalid;
         private record Write(BlockState state, int flags, int limit) {}
 
-        // Package-private so native tests can use a deterministic WorldGenLevel
-        // fixture without inventing a real ServerLevel or a runtime bypass flag.
-        Proposal(WorldGenLevel delegate, boolean enabled) {
+        // Package-private native fixture entry; no runtime bypass flag.
+        Proposal(WorldGenLevel delegate, boolean enabled, int originY) {
             this.delegate = delegate;
             this.staging = enabled;
+            this.heightAllowed = !enabled || NeverOverworldFieldPolicyR12.acceptStandingTree(originY);
             this.view = enabled ? (WorldGenLevel)Proxy.newProxyInstance(
                 WorldGenLevel.class.getClassLoader(), new Class<?>[]{WorldGenLevel.class}, this) : delegate;
         }
 
         public WorldGenLevel view() { return this.view; }
+
+        /** Called before TreeFeature reads its random source or stages blocks. */
+        public boolean canStart() { return this.heightAllowed; }
 
         private BlockState state(BlockPos pos) {
             Write write = writes.get(pos);
@@ -121,27 +122,7 @@ public final class NeverOverworldTreePlacementR12 {
 
         public boolean acceptAndCommit() {
             if (!staging) return true;
-            if (invalid) return false;
-            int total = 0, atRisk = 0, aboveOcean = 0;
-            Map<Long, Boolean> oceanColumns = new java.util.HashMap<>();
-            for (var entry : writes.entrySet()) {
-                BlockState state = entry.getValue().state();
-                if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) continue;
-                ++total;
-                BlockPos pos = entry.getKey();
-                if (pos.getY() > NeverOverworldFieldPolicyR12.OCEAN_Y) {
-                    ++aboveOcean;
-                    continue;
-                }
-                long column = ((long)pos.getX() << 32) ^ (pos.getZ() & 0xffffffffL);
-                boolean exposed = oceanColumns.computeIfAbsent(column, ignored ->
-                    delegate.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, pos.getX(), pos.getZ())
-                        <= NeverOverworldFieldPolicyR12.OCEAN_Y);
-                // A tree in a sealed dry cave below a high mountain is not an
-                // underwater tree merely because its numeric Y is below 128.
-                if (exposed || delegate.getBlockState(pos).getFluidState().is(net.minecraft.tags.FluidTags.WATER)) ++atRisk;
-            }
-            if (!NeverOverworldFieldPolicyR12.acceptStandingTree(total, atRisk, aboveOcean)) return false;
+            if (invalid || !canStart()) return false;
             commit();
             return true;
         }
