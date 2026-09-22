@@ -42,6 +42,11 @@ jobs:
           python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
           python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia
+          sha256sum \
+            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java \
+            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
+            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
+            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia --check-only
