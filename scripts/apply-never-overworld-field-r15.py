@@ -21,14 +21,14 @@ ECO15_DST=JAVA/'net/minecraft/world/level/chunk/NeverOverworldEcologyR15.java'
 SIMPLE=JAVA/'net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java'
 
 OLD='        NeverOverworldFloodConnectivityR14.apply(level, chunk);'
-NEW='        NeverOverworldFloodConnectivityR15.apply(level, chunk);'
+NEW='        NeverOverworldEcologyR15.cleanup(level, chunk);\n        NeverOverworldFloodConnectivityR15.apply(level, chunk);'
 ECO_ANCHOR='        NeverOverworldEcologyR13.cleanup(level, chunk);'
 ECO_NEW=ECO_ANCHOR+'\n        NeverOverworldEcologyR15.cleanup(level, chunk);'
 SIMPLE_ANCHOR='        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR13.allowSimpleBlock(level, origin, stateToPlace)) return false;'
 SIMPLE_NEW=SIMPLE_ANCHOR+'\n        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR15.allowSimpleBlock(level, origin, stateToPlace)) return false;'
 
 def patch(text:str)->str:
-    if NEW in text and 'NeverOverworldEcologyR15.cleanup(level, chunk);' in text:
+    if 'NeverOverworldFloodConnectivityR15.apply(level, chunk);' in text and text.count('NeverOverworldEcologyR15.cleanup(level, chunk);') >= 2:
         return text
     if text.count(OLD)!=1: raise ValueError('FIELD-R15 R14 flood-call anchor mismatch')
     if text.count(ECO_ANCHOR)!=1: raise ValueError('FIELD-R15 ecology anchor mismatch')
