@@ -27,7 +27,16 @@ public final class FieldR15FloodEcologySmoke {
         var factory=new PalettedContainerFactory(Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY),
             Blocks.STONE.defaultBlockState(),null,Strategy.createForBiomes(ids),holder,null,null);
         var c=new ProtoChunk(new ChunkPos(0,0),UpgradeData.EMPTY,LevelHeightAccessor.create(-512,1024),factory,null);
-        c.setLightEngine(LevelLightEngine.EMPTY);return c;
+        c.setLightEngine(LevelLightEngine.EMPTY);
+        // ProtoChunk test fixtures otherwise leave working sections as air.
+        // Materialize the exact R15 flood-audit band as solid rock first so
+        // each scenario exposes only the explicitly carved cavity.
+        for(int y=-64;y<=128;y++)for(int z=0;z<16;z++)for(int x=0;x<16;x++){
+            var s=c.getSection(c.getSectionIndex(y));
+            s.getStates().set(x,y&15,z,Blocks.STONE.defaultBlockState());
+        }
+        for(int sy=c.getSectionIndex(-64);sy<=c.getSectionIndex(128);sy++)c.getSections()[sy].recalcBlockCounts();
+        return c;
     }
     private static void set(ProtoChunk c,int x,int y,int z,Block b){
         var s=c.getSection(c.getSectionIndex(y));
