@@ -46,6 +46,10 @@ def verify(folia: Path) -> None:
             "water-contact ecology scan does not cover Y130 screenshot case")
     require("waterSide" in eco13 and "shouldRemoveForWaterContext" in eco13,
             "horizontal water-contact mushroom cleanup missing")
+    require("seamSensitive" in eco13,
+            "owner-only seam mushroom/shoreline cleanup missing")
+    require("level.getBlockState(" not in eco13,
+            "unsafe cross-chunk WorldGenLevel read survived R18 ecology helper")
 
     require("hasOceanSeed" in flood15, "surface-ocean flood seed marker missing")
     require("y==SCAN_MAX_Y" in flood15 and "Blocks.WATER" in flood15,
