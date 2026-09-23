@@ -21,7 +21,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 public final class NeverOverworldEcologyR13 {
     public static final int OCEAN_Y = 128;
     public static final int MIN_PLANT_Y = 126;
-    public static final int WATER_SUPPORT_SCAN_MAX_Y = 130;
+    public static final int WATER_SUPPORT_SCAN_MAX_Y = 132;
 
     private NeverOverworldEcologyR13() {}
 
@@ -151,6 +151,7 @@ public final class NeverOverworldEcologyR13 {
                         boolean inWater = waterlogged(state) || state.getFluidState().is(FluidTags.WATER);
                         boolean waterAbove = false;
                         boolean waterBelow = false;
+                        boolean waterSide = false;
                         if (y <= WATER_SUPPORT_SCAN_MAX_Y) {
                             if (y + 1 < chunk.getMaxY()) {
                                 probe.set(x, y + 1, z);
@@ -160,12 +161,19 @@ public final class NeverOverworldEcologyR13 {
                                 probe.set(x, y - 1, z);
                                 waterBelow = water(chunk, probe);
                             }
-                            if (inWater || waterAbove || waterBelow) remove = true;
+                            final int[][] side = {{1,0},{-1,0},{0,1},{0,-1}};
+                            for (final int[] d : side) {
+                                final int nx = x + d[0], nz = z + d[1];
+                                if (nx < baseX || nx > baseX + 15 || nz < baseZ || nz > baseZ + 15) continue;
+                                probe.set(nx, y, nz);
+                                if (water(chunk, probe)) { waterSide = true; break; }
+                            }
+                            if (inWater || waterAbove || waterBelow || waterSide) remove = true;
                         }
                         if (!remove) continue;
 
                         final BlockState replacement =
-                            y <= OCEAN_Y && (inWater || waterAbove || waterBelow)
+                            y <= OCEAN_Y && (inWater || waterAbove || waterBelow || waterSide)
                                 ? Blocks.WATER.defaultBlockState()
                                 : Blocks.AIR.defaultBlockState();
                         chunk.setBlockState(pos, replacement, 0);
