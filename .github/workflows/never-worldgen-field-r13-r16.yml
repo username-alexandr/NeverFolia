@@ -1,4 +1,4 @@
-name: NeverWorldgen FIELD-R17 FIXPACK / Nether-R16 natural acceptance
+name: NeverWorldgen FIELD-R18 FIXPACK / Nether-R16 natural acceptance
 on:
   push:
     branches: [wip/neveroverworld-field-r12]
@@ -11,6 +11,10 @@ on:
       - 'scripts/apply-never-overworld-field-r15.py'
       - 'scripts/apply-never-overworld-field-r16.py'
       - 'scripts/apply-never-overworld-fixpack-r17.py'
+      - 'scripts/apply-never-overworld-fixpack-r18.py'
+      - 'scripts/apply-never-overworld-field-r18.py'
+      - 'native/neveroverworld/field-r18/**'
+      - 'qa/field-r18/**'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
       - 'qa/field-r16-r16/**'
@@ -63,9 +67,9 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
-          python3 scripts/apply-never-overworld-fixpack-r17.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r18.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r17.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r18.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
@@ -88,6 +92,7 @@ jobs:
                 'qa/field-r14-r16/FloodConnectivityR14Smoke.java',
                 'qa/field-r15-r16/FieldR15FloodEcologySmoke.java',
                 'qa/field-r16-r16/VillageFoundationR16Smoke.java',
+                'qa/field-r18/FieldR18Smoke.java',
                 'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java',
                 'qa/nevernether-r16/NeverNetherFieldCleanupR16Smoke.java'
               ]
@@ -109,12 +114,13 @@ jobs:
                 r14Flood:'net.minecraft.world.level.chunk.FloodConnectivityR14Smoke',
                 r15FloodEco:'net.minecraft.world.level.chunk.FieldR15FloodEcologySmoke',
                 r16Village:'net.minecraft.world.level.levelgen.structure.VillageFoundationR16Smoke',
+                r18Native:'net.minecraft.world.level.chunk.FieldR18Smoke',
                 r16Old:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke',
                 r16New:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR16Smoke'
               ].each{k,v->server.tasks.register(k,JavaExec){dependsOn compileQa;classpath=cp+server.files(qaDir);mainClass=v;jvmArgs '-ea'}}
           }
           GROOVY
-          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Village :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Village :folia-server:r18Native :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
           cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
           cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
       - name: Build matching Overworld, historical R15 Nether and candidate R16 Nether packs
@@ -153,11 +159,11 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p={
-            'schema':1,'profile':'FIELD-R17-NR16-NATURAL-1','source_sha':os.environ['GITHUB_SHA'],
+            'schema':1,'profile':'FIELD-R18-NR16-NATURAL-1','source_sha':os.environ['GITHUB_SHA'],
             'workflow_run':int(os.environ['GITHUB_RUN_ID']),
             'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
             'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(),
-            'r17_fixpack':True,'nether_r16_installed':True,'production_ready':False
+            'r18_fixpack':True,'nether_r16_installed':True,'production_ready':False
           }
           Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(p,indent=2)+'\n')
           PY
@@ -190,7 +196,7 @@ jobs:
           Path('.work/baseline-32c6df3.jar').write_bytes(jar)
           print('Pinned baseline verified; R15 pack is historical-Nether compatibility only')
           PY
-      - name: Generate independent worlds and require FIELD-R17 FIXPACK / Nether-R16 natural acceptance
+      - name: Generate independent worlds and require FIELD-R18 FIXPACK / Nether-R16 natural acceptance
         run: |
           set -euo pipefail
           python3 qa/field-r13-r16/probe-natural.py \
@@ -206,15 +212,15 @@ jobs:
       - name: Publish accepted FIELD-R17 FIXPACK / Nether-R16 manual test bundle
         uses: actions/upload-artifact@v4
         with:
-          name: NeverFolia-FIELD-R17-NR16-FIXPACK-TEST-${{ github.sha }}
-          path: artifacts/NeverFolia-FIELD-R17-NR16-FIXPACK-TEST-*.zip
+          name: NeverFolia-FIELD-R18-NR16-FIXPACK-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-FIELD-R18-NR16-FIXPACK-TEST-*.zip
           retention-days: 14
           if-no-files-found: error
       - name: Keep complete diagnostics on success or failure
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: NeverFolia-FIELD-R17-NR16-FIXPACK-DIAGNOSTICS-${{ github.sha }}
+          name: NeverFolia-FIELD-R18-NR16-FIXPACK-DIAGNOSTICS-${{ github.sha }}
           path: |
             artifacts/**/*.json
             artifacts/**/*.log
