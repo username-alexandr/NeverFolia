@@ -55,6 +55,18 @@ public final class NeverOverworldEcologyR13Smoke {
         check(!NeverOverworldEcologyR13.aquaticSensitive(Blocks.SUGAR_CANE.defaultBlockState()),
             "shoreline sugar cane is intentionally outside shoreline cleanup");
 
+        check(NeverOverworldEcologyR13.WATER_SUPPORT_SCAN_MAX_Y == 132,
+            "R18 water-contact scan must cover screenshot Y130 mushrooms");
+        check(NeverOverworldEcologyR13.shouldRemoveForWaterContext(
+                Blocks.RED_MUSHROOM.defaultBlockState(),130,false,false,false,true),
+            "red mushroom at Y130 touching water horizontally must be removed");
+        check(!NeverOverworldEcologyR13.shouldRemoveForWaterContext(
+                Blocks.RED_MUSHROOM.defaultBlockState(),130,false,false,false,false),
+            "dry red mushroom at Y130 must remain");
+        check(NeverOverworldEcologyR13.shouldRemoveForWaterContext(
+                Blocks.BROWN_MUSHROOM.defaultBlockState(),125,false,false,false,false),
+            "height-gated mushroom below Y126 must still be removed");
+
         out.println("PASS NeverOverworldEcologyR13Smoke checks=" + checks);
     }
 }
