@@ -2,8 +2,9 @@
 """FIELD-R13/R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
-R15 Nether pack. Two independent R13/R16 candidates must repeat exactly and
-pass dry-mine, ecology, fluid-contact and R16 lava-ocean cavity audits.
+R15 Nether pack. Two independent R13/R16 candidates must repeat exactly inside
+halo-insulated forest chunks and pass dry-mine, ecology, fluid-contact and
+R16 lava-ocean cavity audits. The full outer-ring ore delta remains diagnostic.
 """
 from __future__ import annotations
 
@@ -105,6 +106,38 @@ def mines_pass(run, targets):
 def submerged(run):
     return sum(x.get('counts', {}).get('wholly_submerged_components', 0)
                for x in run.get('observations', []))
+
+
+def halo_insulated_forest_chunks(run):
+    """Forest chunks with a complete one-chunk generated halo in all directions.
+
+    Natural FEATURES may legally spill across a chunk edge from a neighbouring
+    feature chunk. The outer ring of a bounded probe therefore is not a stable
+    coordinate-identity surface unless the outside neighbour is also generated.
+    The 3x3 interior of each generated 5x5 forest sample has that full halo.
+    """
+    stable = set()
+    neighbours = tuple(
+        (dx, dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1) if (dx, dz) != (0, 0)
+    )
+    forests = [area for area in run.get('areas', []) if area.get('kind') == 'forest']
+    require(len(forests) == 3, 'expected three forest samples for repeatability')
+    for area in forests:
+        chunks = {tuple(p) for p in area.get('chunks', [])}
+        require(len(chunks) == 25, 'expected 5x5 generated forest sample')
+        stable.update(
+            (x, z) for x, z in chunks
+            if all((x + dx, z + dz) in chunks for dx, dz in neighbours)
+        )
+    require(len(stable) == 27, 'expected three halo-insulated 3x3 forest interiors')
+    return stable
+
+
+def ores_in_chunks(resources, chunks):
+    return {
+        pos: kind for pos, kind in resources.items()
+        if (pos[0] // 16, pos[2] // 16) in chunks
+    }
 
 
 def water(state):
@@ -326,12 +359,18 @@ def evaluate(paired, runs, ores, ecology, nether, source_sha):
         and paired.plan_signature(old['areas']) == paired.plan_signature(a['areas'])
         == paired.plan_signature(b['areas'])
     )
-    delta = paired.ore_delta(ores['candidate-a'], ores['candidate-b'])
+    full_delta = paired.ore_delta(ores['candidate-a'], ores['candidate-b'])
+    stable_chunks_a = halo_insulated_forest_chunks(a)
+    stable_chunks_b = halo_insulated_forest_chunks(b)
+    require(stable_chunks_a == stable_chunks_b, 'candidate halo-insulated chunk sets differ')
+    stable_a = ores_in_chunks(ores['candidate-a'], stable_chunks_a)
+    stable_b = ores_in_chunks(ores['candidate-b'], stable_chunks_b)
+    delta = paired.ore_delta(stable_a, stable_b)
     historical = {r: paired.compare_ore(ores['historical'], ores[r]) for r in ROLES[1:]}
     density = all(v['baseline_blocks'] >= 200 and v['retained_ratio'] is not None
                   and 0.40 <= v['retained_ratio'] <= 0.60 for v in historical.values())
     stable = all(unchanged_phases(r) for r in runs.values())
-    exact = protocol and len(ores['candidate-a']) >= 100 and delta['changed_positions'] == 0
+    exact = protocol and len(stable_a) >= 100 and delta['changed_positions'] == 0
     dry = all(mines_pass(runs[r], paired.MINE_TARGETS) for r in ROLES[1:])
     trees = {r: submerged(runs[r]) for r in ROLES}
     tree_observation = trees['historical'] > 0 and all(trees[r] < trees['historical'] for r in ROLES[1:])
@@ -340,7 +379,7 @@ def evaluate(paired, runs, ores, ecology, nether, source_sha):
     lava_ocean = all(nether[r].get('pass') is True for r in ROLES[1:])
     checks = {
         'equal_execution_protocol_except_historical_r15_nether_pairing': protocol,
-        'exact_candidate_ore_repeatability': exact,
+        'exact_candidate_ore_repeatability_in_halo_insulated_chunks': exact,
         'saved_phase_stability': stable,
         'density_vs_delivered': density,
         'both_candidate_mines_dry_with_metadata': dry,
@@ -354,13 +393,16 @@ def evaluate(paired, runs, ores, ecology, nether, source_sha):
         'production_ready': False, 'manual_test_eligible': all(checks.values()), 'checks': checks,
         'candidate_jar_sha256': a['jar_sha256'], 'baseline_jar_sha256': old['jar_sha256'],
         'pack_sha256': a['pack_sha256'], 'historical_pack_sha256': old['pack_sha256'],
-        'candidate_repeatability': delta, 'historical_comparisons': historical,
+        'candidate_repeatability': delta,
+        'candidate_repeatability_full': full_delta,
+        'candidate_repeatability_chunk_count': len(stable_chunks_a),
+        'historical_comparisons': historical,
         'submerged_components': trees, 'ecology': ecology, 'nether_r16': nether,
         'historical_exact_subset_gate_preserved': all(x['pass'] is True for x in historical.values()),
         'limitations': [
             'One fixed seed and bounded natural samples; not whole-world production acceptance.',
             'Historical binary uses its compatible R15 Nether pack; Overworld pack and requests are identical.',
-            'Candidate A/B must match every sampled ore coordinate and both saved worlds pass R13/R16 audits.',
+            'Candidate A/B must match every ore coordinate in the 27 halo-insulated forest chunks; the 5x5 outer-ring full delta remains diagnostic.',
             'Dry-mine coverage is one vanilla mineshaft plus one collapsed mine, all saved piece cells checked.',
             'R13 ecology covers every FULL chunk selected by the forest+mine protocol, not every biome.',
             'R16 audit mirrors the owner-chunk predicate over the protocol nine FULL Nether chunks.',
@@ -412,7 +454,7 @@ def package(out, jar, packs, report, manifest, run_id):
         'R13: generated underground water/lava сбрасываются перед восстановлением surface-connected океана.\n'
         'R13: защищённые части шахт повторно осушаются после второго boundary-flood прохода.\n'
         'R16: закрываются только подтверждённые owner-chunk воздушные полости лавового океана; большие/краевые пещеры сохраняются.\n'
-        'Natural gate: два независимых кандидата, сухие шахты после рестарта, R13 ecology audit, R16 lava-ocean audit, roof Y512.\n'
+        'Natural gate: два независимых кандидата; точное совпадение руд в 27 halo-insulated чанках, полный outer-ring delta сохраняется как диагностика; сухие шахты, R13 ecology audit, R16 lava-ocean audit, roof Y512.\n'
         'Запуск: java -Xms1G -Xmx4G -jar server.jar --nogui\n'
         'Production-ready=false: после CI всё равно нужен визуальный осмотр мира в игре.\n'
     ).encode('utf-8')
