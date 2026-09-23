@@ -1,5 +1,7 @@
 package net.minecraft.world.level.chunk;
 
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 
 /** Regression checks for FIELD-R13 flora classification. */
@@ -14,6 +16,9 @@ public final class NeverOverworldEcologyR13Smoke {
     }
 
     public static void main(final String[] args) {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+
         check(NeverOverworldEcologyR13.isHeightGated(Blocks.MOSS_CARPET.defaultBlockState()),
             "vanilla moss carpet must be height-gated");
         check(NeverOverworldEcologyR13.isHeightGated(Blocks.PALE_MOSS_CARPET.defaultBlockState()),
