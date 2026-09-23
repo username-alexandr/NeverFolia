@@ -109,6 +109,20 @@ public final class NeverOverworldEcologyR13 {
             && state.getValue(BlockStateProperties.WATERLOGGED);
     }
 
+    static boolean shouldRemoveForWaterContext(
+        final BlockState state,
+        final int y,
+        final boolean inWater,
+        final boolean waterAbove,
+        final boolean waterBelow,
+        final boolean waterSide
+    ) {
+        if (isHeightGated(state) && y < MIN_PLANT_Y) return true;
+        return y <= WATER_SUPPORT_SCAN_MAX_Y
+            && aquaticSensitive(state)
+            && (inWater || waterAbove || waterBelow || waterSide);
+    }
+
     private static boolean water(final ChunkAccess chunk, final BlockPos.MutableBlockPos pos) {
         return chunk.getBlockState(pos).getFluidState().is(FluidTags.WATER);
     }
@@ -147,7 +161,6 @@ public final class NeverOverworldEcologyR13 {
                         final int z = baseZ + lz;
                         pos.set(x, y, z);
 
-                        boolean remove = isHeightGated(state) && y < MIN_PLANT_Y;
                         boolean inWater = waterlogged(state) || state.getFluidState().is(FluidTags.WATER);
                         boolean waterAbove = false;
                         boolean waterBelow = false;
@@ -168,9 +181,8 @@ public final class NeverOverworldEcologyR13 {
                                 probe.set(nx, y, nz);
                                 if (water(chunk, probe)) { waterSide = true; break; }
                             }
-                            if (inWater || waterAbove || waterBelow || waterSide) remove = true;
                         }
-                        if (!remove) continue;
+                        if (!shouldRemoveForWaterContext(state, y, inWater, waterAbove, waterBelow, waterSide)) continue;
 
                         final BlockState replacement =
                             y <= OCEAN_Y && (inWater || waterAbove || waterBelow || waterSide)
