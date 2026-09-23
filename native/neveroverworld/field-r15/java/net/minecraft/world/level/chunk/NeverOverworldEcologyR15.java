@@ -38,13 +38,17 @@ public final class NeverOverworldEcologyR15 {
                 BlockState s=section.getBlockState(x,ly,z);
                 if(!floodedCavePlant(s)&&!heightPlant(s))continue;
                 int y=by+ly;pos.set(baseX+x,y,baseZ+z);
-                boolean remove=heightPlant(s)&&y<=OCEAN_Y;
-                if(floodedCavePlant(s)&&y<=OCEAN_Y&&touchesWater(chunk,pos,probe))remove=true;
-                if(!remove)continue;
+                final boolean waterContact=floodedCavePlant(s)&&touchesWater(chunk,pos,probe);
+                if(!shouldRemove(s,y,waterContact))continue;
                 chunk.setBlockState(pos,Blocks.AIR.defaultBlockState(),0);++changed;
             }
         }
         return changed;
+    }
+
+    static boolean shouldRemove(BlockState state,int y,boolean waterContact){
+        return heightPlant(state)&&y<=OCEAN_Y
+            || floodedCavePlant(state)&&y<=OCEAN_Y&&waterContact;
     }
 
     private static boolean touchesWater(ChunkAccess chunk,BlockPos pos,BlockPos.MutableBlockPos probe){
