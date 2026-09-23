@@ -45,7 +45,7 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Materialize unified FIELD-R17 FIXPACK / Nether-R16 candidate
+      - name: Materialize unified FIELD-R18 FIXPACK / Nether-R16 candidate
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -152,7 +152,7 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R15.zip --verify
           python3 scripts/build-never-nether-field-r16.py --input artifacts/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
-      - name: Record exact FIELD-R17 FIXPACK / Nether-R16 build profile
+      - name: Record exact FIELD-R18 FIXPACK / Nether-R16 build profile
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -209,7 +209,7 @@ jobs:
             --build-manifest artifacts/BUILD-PROFILE.json \
             --source-sha "$GITHUB_SHA" \
             --run-id "$GITHUB_RUN_ID" 2>&1 | tee artifacts/field-r13-r16-natural.log
-      - name: Publish accepted FIELD-R17 FIXPACK / Nether-R16 manual test bundle
+      - name: Publish accepted FIELD-R18 FIXPACK / Nether-R16 manual test bundle
         uses: actions/upload-artifact@v4
         with:
           name: NeverFolia-FIELD-R18-NR16-FIXPACK-TEST-${{ github.sha }}
