@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIELD-R17/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
+"""FIELD-R18/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
 R15 Nether pack. Two independent R17/Nether-R16 candidates must repeat exactly in the
@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import zipfile
 
-PROFILE = 'FIELD-R17-NR16-NATURAL-1'
+PROFILE = 'FIELD-R18-NR16-NATURAL-1'
 R16_PROFILE = 'NN-R16-LAVA-OCEAN-CLEANUP-1'
 HEIGHT_PROFILE = 'NN-R14-SUBSTRATE-1-ROOF512'
 ROLES = ('historical', 'candidate-a', 'candidate-b')
@@ -29,7 +29,7 @@ MARKERS = (
     'FieldPolicyR12Test', 'FieldR12Smoke', 'TreePreservationSmoke',
     'UpperOreLightR12Smoke', 'VillageFoundationSmoke', 'FloodBoundarySmoke',
     'DesertR1Smoke', 'SandstormR1Smoke', 'NeverOverworldEcologyR13Smoke',
-    'FloodConnectivityR14Smoke', 'FieldR15FloodEcologySmoke', 'VillageFoundationR16Smoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
+    'FloodConnectivityR14Smoke', 'FieldR15FloodEcologySmoke', 'VillageFoundationR16Smoke', 'FieldR18Smoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
 )
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 HEIGHT_GATED = {
@@ -207,6 +207,7 @@ def ecology_audit(observer, nbt, world, plan):
         'shoreline_plant_water_contact': [],
         'flooded_cave_plant_water_contact': [],
         'lava_water_face_contact': [],
+        'deep_lava_below_y_minus54': [],
     }
     lava_faces = set()
     relevant = HEIGHT_GATED | OCEAN_HEIGHT_GATED | SHORE_PLANTS | FLOODED_CAVE_PLANTS
@@ -216,7 +217,7 @@ def ecology_audit(observer, nbt, world, plan):
         low = sy*16
         need_height = low < 126 and bool(names & HEIGHT_GATED)
         need_ocean_height = low <= 128 and bool(names & OCEAN_HEIGHT_GATED)
-        need_shore = low <= 130 and bool(names & SHORE_PLANTS)
+        need_shore = low <= 132 and bool(names & SHORE_PLANTS)
         need_cave = low <= 128 and bool(names & FLOODED_CAVE_PLANTS)
         need_lava = 'minecraft:lava' in names
         if not (need_height or need_ocean_height or need_shore or need_cave or need_lava):
@@ -241,14 +242,19 @@ def ecology_audit(observer, nbt, world, plan):
             own = water(state)
             above = volume.at(x, y+1, z)
             below = volume.at(x, y-1, z)
-            if name in SHORE_PLANTS and y <= 130 and (own or water(above) or water(below)):
-                counts['shoreline_plant_water_contact'] += 1
-                if len(examples['shoreline_plant_water_contact']) < 40:
-                    examples['shoreline_plant_water_contact'].append({
-                        'position': list(pos), 'block': name, 'waterlogged': own,
-                        'above': None if above is None else above.get('Name'),
-                        'below': None if below is None else below.get('Name'),
-                    })
+            shore_contacts = []
+            if name in SHORE_PLANTS and y <= 132:
+                for dx, dy, dz in DIRECTIONS:
+                    adjacent = volume.at(x+dx, y+dy, z+dz)
+                    if adjacent is not None and water(adjacent):
+                        shore_contacts.append([x+dx, y+dy, z+dz])
+                if own or shore_contacts:
+                    counts['shoreline_plant_water_contact'] += 1
+                    if len(examples['shoreline_plant_water_contact']) < 40:
+                        examples['shoreline_plant_water_contact'].append({
+                            'position': list(pos), 'block': name, 'waterlogged': own,
+                            'water_neighbors': shore_contacts[:6],
+                        })
             if name in FLOODED_CAVE_PLANTS and y <= 128:
                 touching = own
                 contacts = []
@@ -264,6 +270,12 @@ def ecology_audit(observer, nbt, world, plan):
                             'position': list(pos), 'block': name, 'water_neighbors': contacts[:6],
                         })
             if name == 'minecraft:lava':
+                if y < -54:
+                    counts['deep_lava_below_y_minus54'] += 1
+                    if len(examples['deep_lava_below_y_minus54']) < 40:
+                        examples['deep_lava_below_y_minus54'].append({
+                            'position': list(pos), 'block': name,
+                        })
                 for dx, dy, dz in DIRECTIONS:
                     other = (x+dx, y+dy, z+dz)
                     adjacent = volume.at(*other)
@@ -282,8 +294,9 @@ def ecology_audit(observer, nbt, world, plan):
         counts.setdefault(key, 0)
     passed = all(counts[key] == 0 for key in examples)
     return {
-        'schema': 2, 'audit': 'neveroverworld-field-r17-fixpack-ecology',
+        'schema': 3, 'audit': 'neveroverworld-field-r18-fixpack-ecology',
         'chunk_count': chunk_count, 'ocean_y': 128, 'min_height_gated_y': 126,
+        'water_contact_scan_max_y': 132, 'deep_lava_cutoff_y': -54,
         'counts': dict(counts), 'examples': examples, 'pass': passed,
         'scope': 'Saved FULL chunks selected by the repeatable forest+mine natural protocol; read-only.',
     }
@@ -498,7 +511,7 @@ def package(out, jar, packs, report, manifest, run_id):
             and report.get('production_ready') is False, 'candidate not eligible')
     require(all(v is True for v in report.get('checks', {}).values()), 'incomplete natural acceptance')
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == report['source_sha']
-            and manifest.get('r17_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r18_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'build profile mismatch')
     require(type(run_id) is int and run_id > 0 and manifest.get('workflow_run') == run_id,
             'workflow run mismatch')
@@ -523,20 +536,20 @@ def package(out, jar, packs, report, manifest, run_id):
                 nether_profile=R16_PROFILE, natural_acceptance_profile=PROFILE)
     payload['BUILD-INFO.json'] = (json.dumps(info, indent=2)+'\n').encode()
     payload['README-RU.txt'] = (
-        'NeverFolia FIELD-R17/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
+        'NeverFolia FIELD-R18/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
         'Оба датапака уже лежат в world/datapacks; старый мир/region/level.dat не переносить.\n'
         'R13: грибы, тыквы, бамбук и мох не генерируются ниже Y126; трава/цветы очищаются при контакте с водой до Y130.\n'
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
-        'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR17 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются из реально затопленных пещер; cactus/melon/bamboo/bamboo_sapling/cocoa и вся сухая цветочная группа, включая dandelion/poppy/cornflower/wildflowers/azure_bluet/pink_petals, запрещены на Y<=128.\n'
+        'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR18 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются из реально затопленных пещер; cactus/melon/bamboo/bamboo_sapling/cocoa и вся сухая цветочная группа, включая dandelion/poppy/cornflower/wildflowers/azure_bluet/pink_petals, запрещены на Y<=128.\n'
         'R16: закрываются только подтверждённые owner-chunk воздушные полости лавового океана; большие/краевые пещеры сохраняются.\n'
-        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; R17 flora/ocean-connectivity, сухие шахты, village foundations, R16 lava-ocean audit и roof Y512 обязательны.\n'
+        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; R18 flora/ocean-connectivity/deep-lava, сухие шахты, village foundations, R16 lava-ocean audit и roof Y512 обязательны.\n'
         'Запуск: java -Xms1G -Xmx4G -jar server.jar --nogui\n'
         'Production-ready=false: после CI всё равно нужен визуальный осмотр мира в игре.\n'
     ).encode('utf-8')
     payload['SHA256SUMS.txt'] = ''.join(
         hashlib.sha256(b).hexdigest()+'  '+n+'\n' for n,b in sorted(payload.items())
     ).encode()
-    name = 'NeverFolia-FIELD-R17-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
+    name = 'NeverFolia-FIELD-R18-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
     dest = out/name
     with zipfile.ZipFile(dest, 'x', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for n,b in sorted(payload.items()):
@@ -566,7 +579,7 @@ def main():
     manifest = json.loads(args.build_manifest.read_text(encoding='utf-8'))
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
-            and manifest.get('r17_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r18_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'missing exact R17/Nether-R16 build profile')
     current_packs = {'NeverOverworld.zip': args.overworld.resolve(), 'NeverNether.zip': args.nether.resolve()}
     historical_packs = {'NeverOverworld.zip': args.overworld.resolve(),
@@ -589,7 +602,7 @@ def main():
             write_json(out/(role+'-vs-historical-full-delta.json'),
                        paired.ore_delta(ores['historical'], ores[role]))
         write_json(target, report)
-        require(report['manual_test_eligible'], 'FIELD-R17/Nether-R16 natural acceptance rejected; see report')
+        require(report['manual_test_eligible'], 'FIELD-R18/Nether-R16 natural acceptance rejected; see report')
         bundle = package(out, args.jar.resolve(), current_packs, report, manifest, args.run_id)
         write_json(out/'field-r13-r16-natural-bundle.json', bundle)
         print(json.dumps(bundle, indent=2), flush=True)
