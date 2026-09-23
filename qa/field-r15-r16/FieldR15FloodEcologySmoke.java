@@ -86,10 +86,17 @@ public final class FieldR15FloodEcologySmoke {
         check(!NeverOverworldEcologyR15.shouldRemove(Blocks.OXEYE_DAISY.defaultBlockState(),129,false),
             "oxeye daisy allowed above ocean plane");
 
-        for(var flower:new Block[]{Blocks.DANDELION,Blocks.POPPY,Blocks.CORNFLOWER,Blocks.WILDFLOWERS}){
+        for(var flower:new Block[]{Blocks.DANDELION,Blocks.POPPY,Blocks.CORNFLOWER,Blocks.WILDFLOWERS,
+                                     Blocks.AZURE_BLUET,Blocks.PINK_PETALS}){
             check(NeverOverworldEcologyR15.heightPlant(flower.defaultBlockState()),flower+" classified for ocean-height gating");
             check(NeverOverworldEcologyR15.shouldRemove(flower.defaultBlockState(),128,false),flower+" blocked at/below ocean plane");
             check(!NeverOverworldEcologyR15.shouldRemove(flower.defaultBlockState(),129,false),flower+" allowed above ocean plane");
+        }
+
+        for(var plant:new Block[]{Blocks.BAMBOO,Blocks.BAMBOO_SAPLING,Blocks.COCOA}){
+            check(NeverOverworldEcologyR15.heightPlant(plant.defaultBlockState()),plant+" classified for ocean-height gating");
+            check(NeverOverworldEcologyR15.shouldRemove(plant.defaultBlockState(),128,false),plant+" blocked at/below ocean plane");
+            check(!NeverOverworldEcologyR15.shouldRemove(plant.defaultBlockState(),129,false),plant+" allowed above ocean plane");
         }
 
         out.println("PASS FieldR15FloodEcologySmoke checks="+checks);
