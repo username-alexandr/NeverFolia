@@ -72,9 +72,12 @@ public final class NeverOverworldEcologyR15 {
                 BlockState s=section.getBlockState(x,ly,z);
                 if(!floodedCavePlant(s)&&!heightPlant(s))continue;
                 int y=by+ly;pos.set(baseX+x,y,baseZ+z);
-                final boolean waterContact=floodedCavePlant(s)&&touchesWater(chunk,pos,probe);
+                final boolean waterContact=y<=OCEAN_Y&&touchesWater(chunk,pos,probe);
                 if(!shouldRemove(s,y,waterContact))continue;
-                chunk.setBlockState(pos,Blocks.AIR.defaultBlockState(),0);++changed;
+                final BlockState replacement=waterContact
+                    ? Blocks.WATER.defaultBlockState()
+                    : Blocks.AIR.defaultBlockState();
+                chunk.setBlockState(pos,replacement,0);++changed;
             }
         }
         return changed;
