@@ -22,7 +22,13 @@ public final class NeverOverworldEcologyR15 {
             ||s.is(Blocks.AZALEA)||s.is(Blocks.FLOWERING_AZALEA)
             ||s.is(Blocks.SMALL_DRIPLEAF)||s.is(Blocks.BIG_DRIPLEAF);
     }
-    static boolean heightPlant(BlockState s){return s.is(Blocks.CACTUS)||s.is(Blocks.MELON);}
+    static boolean heightPlant(BlockState s){
+        return s.is(Blocks.CACTUS)||s.is(Blocks.MELON)||s.is(Blocks.OXEYE_DAISY);
+    }
+
+    public static boolean allowSimpleBlock(WorldGenLevel level,BlockPos origin,BlockState state){
+        return !scope(level)||!heightPlant(state)||origin.getY()>OCEAN_Y;
+    }
 
     public static int cleanup(WorldGenLevel level,ChunkAccess chunk){
         if(!scope(level)||chunk.getPersistedStatus().isOrAfter(ChunkStatus.FULL))return 0;
