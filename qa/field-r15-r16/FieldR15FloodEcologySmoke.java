@@ -107,6 +107,11 @@ public final class FieldR15FloodEcologySmoke {
             check(!NeverOverworldEcologyR15.shouldRemove(plant.defaultBlockState(),129,false),plant+" allowed above ocean plane");
         }
 
+        check(NeverOverworldEcologyR15.replacementAfterRemoval(true).is(Blocks.WATER),
+            "flooded forbidden flora is replaced by water");
+        check(NeverOverworldEcologyR15.replacementAfterRemoval(false).isAir(),
+            "dry forbidden flora is replaced by air");
+
         out.println("PASS FieldR15FloodEcologySmoke checks="+checks);
     }
 }
