@@ -17,7 +17,7 @@ LAVA_DST = JAVA / "net/minecraft/world/level/chunk/NeverOverworldLavaCleanupR18.
 SAFETY = JAVA / "net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java"
 
 FLOOD_ANCHOR = "        NeverOverworldFloodConnectivityR15.apply(level, chunk);"
-FLOOD_CALL = FLOOD_ANCHOR + "\n        NeverOverworldLavaCleanupR18.cleanup(level, chunk);"
+FLOOD_CALL = "        NeverOverworldLavaCleanupR18.cleanup(level, chunk);\n" + FLOOD_ANCHOR
 
 VILLAGE_SIG = "    static boolean allowsGenerated("
 VILLAGE_OLD = "        return start.isValid();"
