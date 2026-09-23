@@ -1,11 +1,11 @@
 package net.minecraft.world.level.chunk;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.BushBlock;
 import net.minecraft.world.level.block.MossyCarpetBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -16,8 +16,8 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
  *
  * <p>Height-gated plants follow the same lower bound as standing trees:
  * Y >= 126 for the Y=128 ocean. The LIGHT cleanup then removes accidental
- * underwater/floating bushes after the final flood state is known. This is
- * generation-only: FULL/player-time chunks are never changed.</p>
+ * underwater/floating shoreline vegetation after the final flood state is known.
+ * This is generation-only: FULL/player-time chunks are never changed.</p>
  */
 public final class NeverOverworldEcologyR13 {
     public static final int OCEAN_Y = 128;
@@ -57,8 +57,31 @@ public final class NeverOverworldEcologyR13 {
             || state.getBlock() instanceof MossyCarpetBlock;
     }
 
+    /**
+     * Dry shoreline vegetation that must not survive in/over the rebuilt ocean.
+     * Minecraft 26.2 moved flowers/grass from BushBlock to VegetationBlock, so
+     * this intentionally uses the FLOWERS tag plus explicit non-flower plants.
+     * Aquatic vegetation, lily pads and sugar cane stay outside this policy.
+     */
+    static boolean isShorelinePlant(final BlockState state) {
+        return state.is(BlockTags.FLOWERS)
+            || state.is(Blocks.SHORT_GRASS)
+            || state.is(Blocks.TALL_GRASS)
+            || state.is(Blocks.FERN)
+            || state.is(Blocks.LARGE_FERN)
+            || state.is(Blocks.SHORT_DRY_GRASS)
+            || state.is(Blocks.TALL_DRY_GRASS)
+            || state.is(Blocks.DEAD_BUSH)
+            || state.is(Blocks.BUSH)
+            || state.is(Blocks.FIREFLY_BUSH)
+            || state.is(Blocks.LEAF_LITTER)
+            || state.is(Blocks.PINK_PETALS)
+            || state.is(Blocks.WILDFLOWERS)
+            || state.is(Blocks.CACTUS_FLOWER);
+    }
+
     static boolean aquaticSensitive(final BlockState state) {
-        return isHeightGated(state) || state.getBlock() instanceof BushBlock;
+        return isHeightGated(state) || isShorelinePlant(state);
     }
 
     static boolean waterlogged(final BlockState state) {
@@ -72,9 +95,9 @@ public final class NeverOverworldEcologyR13 {
 
     /**
      * Runs after both flood passes. Height-gated blocks below Y126 are removed
-     * everywhere. Up through Y130, bushes/flowers/grass and gated blocks are
-     * removed when submerged or floating directly over water. Lily pads are not
-     * BushBlock and shoreline sugar cane is intentionally outside this policy.
+     * everywhere. Up through Y130, dry shoreline plants and gated blocks are
+     * removed when submerged or floating directly over water. Lily pads,
+     * seagrass/kelp and shoreline sugar cane are intentionally outside this policy.
      */
     public static int cleanup(final WorldGenLevel level, final ChunkAccess chunk) {
         if (!scope(level) || chunk.getPersistedStatus().isOrAfter(ChunkStatus.FULL)) return 0;
