@@ -192,6 +192,78 @@ def coverage(boxes, margin=0):
     return selected
 
 
+VILLAGE_FOUNDATION_GAP = {
+    'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air',
+    'minecraft:water', 'minecraft:snow', 'minecraft:powder_snow',
+}
+VILLAGE_NATURAL_TERRAIN = {
+    'minecraft:dirt', 'minecraft:grass_block', 'minecraft:coarse_dirt',
+    'minecraft:podzol', 'minecraft:stone', 'minecraft:deepslate',
+    'minecraft:gravel', 'minecraft:sand', 'minecraft:red_sand',
+    'minecraft:snow_block', 'minecraft:ice', 'minecraft:packed_ice',
+    'minecraft:blue_ice',
+}
+
+
+def village_foundation_audit(volume: Volume, boxes) -> dict:
+    counts = Counter()
+    examples = []
+    seen = set()
+    for box in boxes:
+        minx,miny,minz,maxx,maxy,maxz = box
+        evidence_top = min(maxy, miny + 8)
+        floor_top = min(maxy, miny + 4)
+        for z in range(minz, maxz + 1):
+            for x in range(minx, maxx + 1):
+                if (x,z) in seen:
+                    continue
+                evidence = False
+                for y in range(miny, evidence_top + 1):
+                    state = volume.at(x,y,z)
+                    require(state is not None, 'missing village foundation evidence cell')
+                    name = state.get('Name')
+                    if name not in VILLAGE_FOUNDATION_GAP and name not in VILLAGE_NATURAL_TERRAIN:
+                        evidence = True
+                        break
+                if not evidence:
+                    continue
+                seen.add((x,z))
+                counts['occupied_columns'] += 1
+
+                floor_y = None
+                for y in range(miny, floor_top + 1):
+                    state = volume.at(x,y,z)
+                    require(state is not None, 'missing village floor cell')
+                    if state.get('Name') not in VILLAGE_FOUNDATION_GAP:
+                        floor_y = y
+                        break
+                if floor_y is None:
+                    counts['occupied_without_floor'] += 1
+                    if len(examples) < 40:
+                        examples.append({'x':x,'z':z,'piece':box,'reason':'occupied-without-floor'})
+                    continue
+
+                below = volume.at(x, floor_y - 1, z)
+                require(below is not None, 'missing village support cell')
+                if below.get('Name') in VILLAGE_FOUNDATION_GAP:
+                    counts['unsupported_occupied_columns'] += 1
+                    if len(examples) < 40:
+                        examples.append({
+                            'x':x,'z':z,'floor_y':floor_y,'floor':volume.at(x,floor_y,z).get('Name'),
+                            'below':below.get('Name'),'piece':box,
+                        })
+    counts.setdefault('occupied_columns',0)
+    counts.setdefault('occupied_without_floor',0)
+    counts.setdefault('unsupported_occupied_columns',0)
+    return {
+        'foundation_counts': dict(counts),
+        'foundation_examples': examples,
+        'foundation_pass': counts['occupied_without_floor'] == 0
+            and counts['unsupported_occupied_columns'] == 0,
+        'foundation_rule': 'Only columns with actual low-piece structure evidence are checked; each must have immediate non-gap support after FIELD-R16.',
+    }
+
+
 def village_plane(volume: Volume, boxes, output: Path) -> dict:
     counts = Counter()
     minx,minz = min(b[0] for b in boxes), min(b[2] for b in boxes)
@@ -447,14 +519,19 @@ def audit(plan, region, out, nbt):
             require(boxes==area['piece_boxes'],'village boxes changed after generation')
             require(set(coordinates)==set(coverage(boxes,1)),'incomplete village bbox coverage')
             entry.update(village_plane(volume,boxes,out/(area['target'].split(':')[1]+'-y128.csv')))
+            entry.update(village_foundation_audit(volume,boxes))
         result['areas'].append(entry)
     result['unique_full_chunks']=len(unique)
     result['underwater_wood_leaf_components']=submerged
-    result['natural_observation_pass']=submerged>0
+    village_foundations = [
+        area.get('foundation_pass') for area in result['areas'] if area.get('kind') == 'village'
+    ]
+    result['village_foundation_pass'] = bool(village_foundations) and all(village_foundations)
+    result['natural_observation_pass']=submerged>0 and result['village_foundation_pass']
     result['limitations']=['One fixed seed, three 5x5 forest areas, two village variants.',
         'Persisted components are not a before/after comparison and not individual tree identities.',
         'Exact two/three-block and fallen fixtures are separately tested by native smoke.',
-        'No natural fallen-feature frequency, complete village-shape or migration acceptance.']
+        'No natural fallen-feature frequency, complete village-shape or migration acceptance; foundation audit is limited to occupied low-piece columns.']
     write_json(out/'tree-village-natural.json',result)
     require(result['natural_observation_pass'],'sample has no complete underwater wood/leaf component; do not claim coverage')
     return result
