@@ -73,6 +73,10 @@ def verify(folia: Path) -> None:
     # with generated lava preserved as a barrier and dry mines protected.
     require("NeverOverworldFloodConnectivityR15.apply(level, chunk);" in flood,
             "final connected-cavity flood pass missing")
+    require("NeverOverworldFloodBoundaryR11.apply(level, chunk);" not in flood,
+            "obsolete R11 boundary flood call survived final R17 state")
+    require("NeverOverworldFloodConnectivityR14.apply(level, chunk);" not in flood,
+            "obsolete R14 boundary-only flood call survived final R17 state")
     require("NeverOverworldEcologyR15.cleanup(level, chunk);" in flood,
             "final ecology cleanup missing")
     require("if (!state.is(Blocks.WATER)) {" in flood,
