@@ -100,8 +100,6 @@ def verify(folia: Path) -> None:
             "R17 owner-only seam flora policy missing")
     require("level.getBlockState(" not in eco15,
             "unsafe cross-chunk WorldGenLevel block read survived R17 ecology helper")
-    require("level.getBlockState(probe)" in eco15,
-            "R17 ecology must read immediate cross-chunk water faces at LIGHT")
     require("NeverOverworldEcologyR15.allowSimpleBlock" in simple,
             "early R17 SimpleBlock height gate missing")
     require("NeverOverworldEcologyR13.allowSimpleBlock" in simple,
