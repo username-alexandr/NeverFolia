@@ -519,8 +519,8 @@ def package(out, jar, packs, report, manifest, run_id):
             require(not p.is_symlink(), 'symlink in evidence')
             payload['evidence/'+p.relative_to(out).as_posix()] = p.read_bytes()
     info = dict(manifest, manual_test_eligible=True, production_ready=False, new_world_required=True,
-                native_tree_origin_min_y=126, nether_profile=R16_PROFILE,
-                natural_acceptance_profile=PROFILE)
+                native_tree_origin_min_y=126, ocean_height_gate_y=128,
+                nether_profile=R16_PROFILE, natural_acceptance_profile=PROFILE)
     payload['BUILD-INFO.json'] = (json.dumps(info, indent=2)+'\n').encode()
     payload['README-RU.txt'] = (
         'NeverFolia FIELD-R17/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
