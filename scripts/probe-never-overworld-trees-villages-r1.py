@@ -220,7 +220,9 @@ class Server:
         self.log = log; self.stream = log.open('x',encoding='utf-8'); self.token = 0
         try:
             self.p = subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4',
-                '-jar',str(jar),'--nogui'],cwd=folder,stdin=subprocess.PIPE,
+                # Natural acceptance requires deterministic cross-chunk FEATURES ordering.
+                # This affects only the disposable CI server process, never the packaged JAR.
+                '-DPaper.WorkerThreadCount=1','-jar',str(jar),'--nogui'],cwd=folder,stdin=subprocess.PIPE,
                 stdout=self.stream,stderr=subprocess.STDOUT,text=True,bufsize=1)
         except Exception:
             self.stream.close(); raise
