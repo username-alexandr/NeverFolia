@@ -13,7 +13,6 @@ import net.minecraft.world.level.biome.BiomeSpecialEffects;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.chunk.PalettedContainer.Strategy;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 
 public final class FieldR15FloodEcologySmoke {
