@@ -25,8 +25,8 @@ PACKS = {'NeverOverworld.zip', 'NeverNether.zip'}
 MARKERS = (
     'FieldPolicyR12Test', 'FieldR12Smoke', 'TreePreservationSmoke',
     'UpperOreLightR12Smoke', 'VillageFoundationSmoke', 'FloodBoundarySmoke',
-    'DesertR1Smoke', 'SandstormR1Smoke', 'NeverNetherFieldCleanupR15Smoke',
-    'NeverNetherFieldCleanupR16Smoke',
+    'DesertR1Smoke', 'SandstormR1Smoke', 'NeverOverworldEcologyR13Smoke',
+    'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
 )
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 HEIGHT_GATED = {
