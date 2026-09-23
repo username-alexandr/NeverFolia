@@ -23,7 +23,32 @@ public final class NeverOverworldEcologyR15 {
             ||s.is(Blocks.SMALL_DRIPLEAF)||s.is(Blocks.BIG_DRIPLEAF);
     }
     static boolean heightPlant(BlockState s){
-        return s.is(Blocks.CACTUS)||s.is(Blocks.MELON)||s.is(Blocks.OXEYE_DAISY);
+        return s.is(Blocks.CACTUS)
+            || s.is(Blocks.MELON)
+            || s.is(Blocks.DANDELION)
+            || s.is(Blocks.POPPY)
+            || s.is(Blocks.BLUE_ORCHID)
+            || s.is(Blocks.ALLIUM)
+            || s.is(Blocks.AZURE_BLUET)
+            || s.is(Blocks.RED_TULIP)
+            || s.is(Blocks.ORANGE_TULIP)
+            || s.is(Blocks.WHITE_TULIP)
+            || s.is(Blocks.PINK_TULIP)
+            || s.is(Blocks.OXEYE_DAISY)
+            || s.is(Blocks.CORNFLOWER)
+            || s.is(Blocks.LILY_OF_THE_VALLEY)
+            || s.is(Blocks.WITHER_ROSE)
+            || s.is(Blocks.TORCHFLOWER)
+            || s.is(Blocks.PITCHER_PLANT)
+            || s.is(Blocks.PINK_PETALS)
+            || s.is(Blocks.WILDFLOWERS)
+            || s.is(Blocks.CACTUS_FLOWER)
+            || s.is(Blocks.CLOSED_EYEBLOSSOM)
+            || s.is(Blocks.OPEN_EYEBLOSSOM)
+            || s.is(Blocks.SUNFLOWER)
+            || s.is(Blocks.LILAC)
+            || s.is(Blocks.ROSE_BUSH)
+            || s.is(Blocks.PEONY);
     }
 
     public static boolean allowSimpleBlock(WorldGenLevel level,BlockPos origin,BlockState state){
