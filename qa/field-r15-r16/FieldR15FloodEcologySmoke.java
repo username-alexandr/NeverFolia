@@ -79,6 +79,12 @@ public final class FieldR15FloodEcologySmoke {
             "melon blocked below ocean plane");
         check(!NeverOverworldEcologyR15.shouldRemove(Blocks.MELON.defaultBlockState(),129,false),
             "melon allowed above ocean plane");
+        check(NeverOverworldEcologyR15.heightPlant(Blocks.OXEYE_DAISY.defaultBlockState()),
+            "oxeye daisy classified for ocean-height gating");
+        check(NeverOverworldEcologyR15.shouldRemove(Blocks.OXEYE_DAISY.defaultBlockState(),128,false),
+            "oxeye daisy blocked at/below ocean plane");
+        check(!NeverOverworldEcologyR15.shouldRemove(Blocks.OXEYE_DAISY.defaultBlockState(),129,false),
+            "oxeye daisy allowed above ocean plane");
 
         out.println("PASS FieldR15FloodEcologySmoke checks="+checks);
     }
