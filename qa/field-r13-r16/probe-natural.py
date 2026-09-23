@@ -29,7 +29,7 @@ MARKERS = (
     'FieldPolicyR12Test', 'FieldR12Smoke', 'TreePreservationSmoke',
     'UpperOreLightR12Smoke', 'VillageFoundationSmoke', 'FloodBoundarySmoke',
     'DesertR1Smoke', 'SandstormR1Smoke', 'NeverOverworldEcologyR13Smoke',
-    'FloodConnectivityR14Smoke', 'FieldR15FloodEcologySmoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
+    'FloodConnectivityR14Smoke', 'FieldR15FloodEcologySmoke', 'VillageFoundationR16Smoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
 )
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 HEIGHT_GATED = {
@@ -38,6 +38,22 @@ HEIGHT_GATED = {
     'minecraft:mushroom_stem', 'minecraft:pumpkin',
     'minecraft:bamboo', 'minecraft:bamboo_sapling',
     'minecraft:moss_carpet', 'minecraft:pale_moss_carpet',
+}
+OCEAN_HEIGHT_GATED = {
+    'minecraft:cactus', 'minecraft:melon',
+    'minecraft:dandelion', 'minecraft:poppy', 'minecraft:blue_orchid',
+    'minecraft:allium', 'minecraft:azure_bluet', 'minecraft:red_tulip',
+    'minecraft:orange_tulip', 'minecraft:white_tulip', 'minecraft:pink_tulip',
+    'minecraft:oxeye_daisy', 'minecraft:cornflower', 'minecraft:lily_of_the_valley',
+    'minecraft:wither_rose', 'minecraft:torchflower', 'minecraft:pitcher_plant',
+    'minecraft:pink_petals', 'minecraft:wildflowers', 'minecraft:cactus_flower',
+    'minecraft:closed_eyeblossom', 'minecraft:open_eyeblossom',
+    'minecraft:sunflower', 'minecraft:lilac', 'minecraft:rose_bush', 'minecraft:peony',
+}
+FLOODED_CAVE_PLANTS = {
+    'minecraft:cave_vines', 'minecraft:cave_vines_plant',
+    'minecraft:azalea', 'minecraft:flowering_azalea',
+    'minecraft:small_dripleaf', 'minecraft:big_dripleaf',
 }
 SHORE_PLANTS = {
     'minecraft:short_grass', 'minecraft:tall_grass', 'minecraft:fern', 'minecraft:large_fern',
@@ -184,21 +200,29 @@ def collect_overworld(observer, nbt, world, plan):
 def ecology_audit(observer, nbt, world, plan):
     volume, chunk_count = collect_overworld(observer, nbt, world, plan)
     counts = Counter()
-    examples = {'height_gated_below_y126': [], 'shoreline_plant_water_contact': [],
-                'lava_water_face_contact': []}
+    examples = {
+        'height_gated_below_y126': [],
+        'ocean_height_gated_at_or_below_y128': [],
+        'shoreline_plant_water_contact': [],
+        'flooded_cave_plant_water_contact': [],
+        'lava_water_face_contact': [],
+    }
     lava_faces = set()
+    relevant = HEIGHT_GATED | OCEAN_HEIGHT_GATED | SHORE_PLANTS | FLOODED_CAVE_PLANTS
     for (cx, sy, cz), section in sorted(volume.sections.items()):
         palette = section['block_states'].get('palette', [])
         names = {s.get('Name') for s in palette if isinstance(s, dict)}
         low = sy*16
         need_height = low < 126 and bool(names & HEIGHT_GATED)
+        need_ocean_height = low <= 128 and bool(names & OCEAN_HEIGHT_GATED)
         need_shore = low <= 130 and bool(names & SHORE_PLANTS)
+        need_cave = low <= 128 and bool(names & FLOODED_CAVE_PLANTS)
         need_lava = 'minecraft:lava' in names
-        if not (need_height or need_shore or need_lava):
+        if not (need_height or need_ocean_height or need_shore or need_cave or need_lava):
             continue
         for i, state in enumerate(volume.section((cx, sy, cz))):
             name = state.get('Name')
-            if name not in HEIGHT_GATED and name not in SHORE_PLANTS and name != 'minecraft:lava':
+            if name not in relevant and name != 'minecraft:lava':
                 continue
             x = cx*16 + (i & 15)
             y = sy*16 + (i >> 8)
@@ -209,17 +233,34 @@ def ecology_audit(observer, nbt, world, plan):
                 counts['height_gated_below_y126'] += 1
                 if len(examples['height_gated_below_y126']) < 40:
                     examples['height_gated_below_y126'].append({'position': list(pos), 'block': name})
-            if name in SHORE_PLANTS and y <= 130:
-                own = water(state)
-                above = volume.at(x, y+1, z)
-                below = volume.at(x, y-1, z)
-                if own or water(above) or water(below):
-                    counts['shoreline_plant_water_contact'] += 1
-                    if len(examples['shoreline_plant_water_contact']) < 40:
-                        examples['shoreline_plant_water_contact'].append({
-                            'position': list(pos), 'block': name, 'waterlogged': own,
-                            'above': None if above is None else above.get('Name'),
-                            'below': None if below is None else below.get('Name'),
+            if name in OCEAN_HEIGHT_GATED and y <= 128:
+                counts['ocean_height_gated_at_or_below_y128'] += 1
+                if len(examples['ocean_height_gated_at_or_below_y128']) < 40:
+                    examples['ocean_height_gated_at_or_below_y128'].append({'position': list(pos), 'block': name})
+            own = water(state)
+            above = volume.at(x, y+1, z)
+            below = volume.at(x, y-1, z)
+            if name in SHORE_PLANTS and y <= 130 and (own or water(above) or water(below)):
+                counts['shoreline_plant_water_contact'] += 1
+                if len(examples['shoreline_plant_water_contact']) < 40:
+                    examples['shoreline_plant_water_contact'].append({
+                        'position': list(pos), 'block': name, 'waterlogged': own,
+                        'above': None if above is None else above.get('Name'),
+                        'below': None if below is None else below.get('Name'),
+                    })
+            if name in FLOODED_CAVE_PLANTS and y <= 128:
+                touching = own
+                contacts = []
+                for dx, dy, dz in DIRECTIONS:
+                    adjacent = volume.at(x+dx, y+dy, z+dz)
+                    if adjacent is not None and water(adjacent):
+                        touching = True
+                        contacts.append([x+dx, y+dy, z+dz])
+                if touching:
+                    counts['flooded_cave_plant_water_contact'] += 1
+                    if len(examples['flooded_cave_plant_water_contact']) < 40:
+                        examples['flooded_cave_plant_water_contact'].append({
+                            'position': list(pos), 'block': name, 'water_neighbors': contacts[:6],
                         })
             if name == 'minecraft:lava':
                 for dx, dy, dz in DIRECTIONS:
@@ -240,8 +281,8 @@ def ecology_audit(observer, nbt, world, plan):
         counts.setdefault(key, 0)
     passed = all(counts[key] == 0 for key in examples)
     return {
-        'schema': 1, 'audit': 'neveroverworld-field-r13-ecology-r1', 'chunk_count': chunk_count,
-        'ocean_y': 128, 'min_height_gated_y': 126, 'water_support_scan_max_y': 130,
+        'schema': 2, 'audit': 'neveroverworld-field-r17-fixpack-ecology',
+        'chunk_count': chunk_count, 'ocean_y': 128, 'min_height_gated_y': 126,
         'counts': dict(counts), 'examples': examples, 'pass': passed,
         'scope': 'Saved FULL chunks selected by the repeatable forest+mine natural protocol; read-only.',
     }
