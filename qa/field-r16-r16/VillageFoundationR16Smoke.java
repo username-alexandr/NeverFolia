@@ -15,8 +15,8 @@ public final class VillageFoundationR16Smoke {
             .generationSettings(BiomeGenerationSettings.EMPTY).mobSpawnSettings(MobSpawnSettings.EMPTY)
             .specialEffects(new BiomeSpecialEffects.Builder().waterColor(0).build()).build();
         var holder=Holder.direct(biome);var ids=new IdMapper<Holder<Biome>>();ids.add(holder);
-        var factory=new PalettedContainerFactory(PalettedContainer.Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY),
-            Blocks.AIR.defaultBlockState(),null,PalettedContainer.Strategy.createForBiomes(ids),holder,null,null);
+        var factory=new PalettedContainerFactory(Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY),
+            Blocks.AIR.defaultBlockState(),null,Strategy.createForBiomes(ids),holder,null,null);
         return new ProtoChunk(new ChunkPos(0,0),UpgradeData.EMPTY,LevelHeightAccessor.create(-512,1024),factory,null);
     }
     private static void set(ProtoChunk c,int x,int y,int z,Block b){
