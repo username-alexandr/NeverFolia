@@ -30,12 +30,12 @@ public final class VillageFoundationR16Smoke {
         set(c,2,140,2,Blocks.SNOW_BLOCK);
         set(c,2,142,2,Blocks.SPRUCE_PLANKS);
         set(c,2,135,2,Blocks.STONE);
-        check(NeverOverworldVillageFoundationR16.placedFloorY(c,box,2,2,p)==140,
-            "snow floor with village material above is accepted");
-        check(NeverOverworldVillageFoundationR16.supportBelow(c,2,140,2,p)==135,
-            "short unsupported gap finds natural support");
+        check(NeverOverworldVillageFoundationR16.placedFloorY(c,box,2,2,p)==142,
+            "R18 ignores snow block and finds actual village floor above");
+        check(NeverOverworldVillageFoundationR16.supportBelow(c,2,142,2,p)==135,
+            "short unsupported snow/water/air gap finds natural support");
 
-        var deep=fixture();set(deep,3,140,3,Blocks.SPRUCE_PLANKS);set(deep,3,120,3,Blocks.STONE);
+        var deep=fixture();set(deep,3,140,3,Blocks.SPRUCE_PLANKS);set(deep,3,110,3,Blocks.STONE);
         check(NeverOverworldVillageFoundationR16.supportBelow(deep,3,140,3,p)==Integer.MIN_VALUE,
             "deep ravine is not bridged");
 
@@ -45,6 +45,16 @@ public final class VillageFoundationR16Smoke {
             "natural snow alone is not structure evidence");
         check(NeverOverworldVillageFoundationR16.gap(Blocks.SNOW.defaultBlockState()),
             "snow layer is a replaceable foundation gap");
+        check(NeverOverworldVillageFoundationR16.gap(Blocks.SNOW_BLOCK.defaultBlockState()),
+            "snow block must not support a floating village house");
+        check(NeverOverworldVillageFoundationR16.gap(Blocks.POWDER_SNOW.defaultBlockState()),
+            "powder snow must not support a floating village house");
+        check(NeverOverworldVillageFoundationR16.gap(Blocks.ICE.defaultBlockState()),
+            "ice must not support a floating village house");
+        check(NeverOverworldVillageFoundationR16.gap(Blocks.PACKED_ICE.defaultBlockState()),
+            "packed ice must not support a floating village house");
+        check(NeverOverworldVillageFoundationR16.gap(Blocks.BLUE_ICE.defaultBlockState()),
+            "blue ice must not support a floating village house");
 
         out.println("PASS VillageFoundationR16Smoke checks="+checks);
     }
