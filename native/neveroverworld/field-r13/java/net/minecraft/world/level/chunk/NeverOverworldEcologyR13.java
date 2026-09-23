@@ -104,6 +104,13 @@ public final class NeverOverworldEcologyR13 {
         return isHeightGated(state) || isShorelinePlant(state);
     }
 
+    static boolean seamSensitive(final BlockState state, final int y, final int localX, final int localZ) {
+        final boolean edge = localX == 0 || localX == 15 || localZ == 0 || localZ == 15;
+        if (!edge) return false;
+        return isHeightGated(state) ? y <= WATER_SUPPORT_SCAN_MAX_Y
+            : isShorelinePlant(state) && y <= OCEAN_Y;
+    }
+
     static boolean waterlogged(final BlockState state) {
         return state.hasProperty(BlockStateProperties.WATERLOGGED)
             && state.getValue(BlockStateProperties.WATERLOGGED);
@@ -182,10 +189,13 @@ public final class NeverOverworldEcologyR13 {
                                 if (water(chunk, probe)) { waterSide = true; break; }
                             }
                         }
-                        if (!shouldRemoveForWaterContext(state, y, inWater, waterAbove, waterBelow, waterSide)) continue;
+                        final boolean waterContact = inWater || waterAbove || waterBelow || waterSide;
+                        final boolean seamCandidate = seamSensitive(state, y, lx, lz);
+                        if (!shouldRemoveForWaterContext(state, y, inWater, waterAbove, waterBelow, waterSide)
+                            && !seamCandidate) continue;
 
                         final BlockState replacement =
-                            y <= OCEAN_Y && (inWater || waterAbove || waterBelow || waterSide)
+                            y <= OCEAN_Y && waterContact
                                 ? Blocks.WATER.defaultBlockState()
                                 : Blocks.AIR.defaultBlockState();
                         chunk.setBlockState(pos, replacement, 0);
