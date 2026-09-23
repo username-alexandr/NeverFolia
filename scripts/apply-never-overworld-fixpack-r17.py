@@ -96,6 +96,8 @@ def verify(folia: Path) -> None:
                    "Blocks.CACTUS", "Blocks.MELON", "Blocks.BAMBOO", "Blocks.BAMBOO_SAPLING",
                    "Blocks.COCOA", "Blocks.AZURE_BLUET", "Blocks.PINK_PETALS", *DRY_FLOWERS):
         require(marker in eco15, "R17 ecology marker missing: " + marker)
+    require("level.getBlockState(probe)" in eco15,
+            "R17 ecology must read immediate cross-chunk water faces at LIGHT")
     require("NeverOverworldEcologyR15.allowSimpleBlock" in simple,
             "early R17 SimpleBlock height gate missing")
     require("NeverOverworldEcologyR13.allowSimpleBlock" in simple,
