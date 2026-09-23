@@ -19,6 +19,10 @@ public final class NeverOverworldLavaCleanupR18 {
 
     private NeverOverworldLavaCleanupR18() {}
 
+    static boolean shouldRemoveGeneratedLava(final net.minecraft.world.level.block.state.BlockState state, final int y) {
+        return y < DEEP_LAVA_CUTOFF && state.is(Blocks.LAVA);
+    }
+
     public static int cleanup(final WorldGenLevel level, final ChunkAccess chunk) {
         if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != -512 || level.getHeight() != 1024
@@ -43,7 +47,7 @@ public final class NeverOverworldLavaCleanupR18 {
                 final int y = baseY + ly;
                 if (y >= DEEP_LAVA_CUTOFF) break;
                 for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x) {
-                    if (!section.getBlockState(x, ly, z).is(Blocks.LAVA)) continue;
+                    if (!shouldRemoveGeneratedLava(section.getBlockState(x, ly, z), y)) continue;
                     pos.set(baseX + x, y, baseZ + z);
                     chunk.setBlockState(pos, Blocks.AIR.defaultBlockState(), 0);
                     ++changed;
