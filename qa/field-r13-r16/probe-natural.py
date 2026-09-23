@@ -527,9 +527,9 @@ def package(out, jar, packs, report, manifest, run_id):
         'Оба датапака уже лежат в world/datapacks; старый мир/region/level.dat не переносить.\n'
         'R13: грибы, тыквы, бамбук и мох не генерируются ниже Y126; трава/цветы очищаются при контакте с водой до Y130.\n'
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
-        'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR15 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются только из реально затопленных пещер; cactus/melon запрещены на Y<=128.\n'
+        'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR17 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются из реально затопленных пещер; cactus/melon/bamboo/bamboo_sapling/cocoa и вся сухая цветочная группа, включая dandelion/poppy/cornflower/wildflowers/azure_bluet/pink_petals, запрещены на Y<=128.\n'
         'R16: закрываются только подтверждённые owner-chunk воздушные полости лавового океана; большие/краевые пещеры сохраняются.\n'
-        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; сухие шахты, R13 ecology audit, R16 lava-ocean audit, roof Y512.\n'
+        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; R17 flora/ocean-connectivity, сухие шахты, village foundations, R16 lava-ocean audit и roof Y512 обязательны.\n'
         'Запуск: java -Xms1G -Xmx4G -jar server.jar --nogui\n'
         'Production-ready=false: после CI всё равно нужен визуальный осмотр мира в игре.\n'
     ).encode('utf-8')
