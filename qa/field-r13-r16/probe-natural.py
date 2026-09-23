@@ -566,8 +566,8 @@ def main():
     manifest = json.loads(args.build_manifest.read_text(encoding='utf-8'))
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
-            and manifest.get('r13_installed') is True and manifest.get('r16_installed') is True,
-            'missing exact R13/R16 build profile')
+            and manifest.get('r17_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            'missing exact R17/Nether-R16 build profile')
     current_packs = {'NeverOverworld.zip': args.overworld.resolve(), 'NeverNether.zip': args.nether.resolve()}
     historical_packs = {'NeverOverworld.zip': args.overworld.resolve(),
                         'NeverNether.zip': args.historical_nether.resolve()}
