@@ -19,6 +19,7 @@ FLOOD15_DST=JAVA/'net/minecraft/world/level/chunk/NeverOverworldFloodConnectivit
 ECO15_SRC=ROOT/'native/neveroverworld/field-r15/java/net/minecraft/world/level/chunk/NeverOverworldEcologyR15.java'
 ECO15_DST=JAVA/'net/minecraft/world/level/chunk/NeverOverworldEcologyR15.java'
 SIMPLE=JAVA/'net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java'
+BAMBOO=JAVA/'net/minecraft/world/level/levelgen/feature/BambooFeature.java'
 
 OLD='        NeverOverworldFloodConnectivityR14.apply(level, chunk);'
 NEW='        NeverOverworldEcologyR15.cleanup(level, chunk);\n        NeverOverworldFloodConnectivityR15.apply(level, chunk);'
@@ -26,6 +27,8 @@ ECO_ANCHOR='        NeverOverworldEcologyR13.cleanup(level, chunk);'
 ECO_NEW=ECO_ANCHOR+'\n        NeverOverworldEcologyR15.cleanup(level, chunk);'
 SIMPLE_ANCHOR='        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR13.allowSimpleBlock(level, origin, stateToPlace)) return false;'
 SIMPLE_NEW=SIMPLE_ANCHOR+'\n        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR15.allowSimpleBlock(level, origin, stateToPlace)) return false;'
+BAMBOO_ANCHOR='        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR13.allowHeightGatedOrigin(level, origin)) return false;'
+BAMBOO_NEW=BAMBOO_ANCHOR+'\n        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR15.allowOceanHeightOrigin(level, origin)) return false;'
 
 def patch(text:str)->str:
     if 'NeverOverworldFloodConnectivityR15.apply(level, chunk);' in text and text.count('NeverOverworldEcologyR15.cleanup(level, chunk);') >= 2:
@@ -42,12 +45,20 @@ def patch_simple(text:str)->str:
     if text.count(SIMPLE_ANCHOR)!=1: raise ValueError('FIELD-R15 SimpleBlockFeature anchor mismatch')
     return text.replace(SIMPLE_ANCHOR,SIMPLE_NEW,1)
 
+def patch_bamboo(text:str)->str:
+    if 'NeverOverworldEcologyR15.allowOceanHeightOrigin(level, origin)' in text:
+        return text
+    if text.count(BAMBOO_ANCHOR)!=1: raise ValueError('FIELD-R15 BambooFeature anchor mismatch')
+    return text.replace(BAMBOO_ANCHOR,BAMBOO_NEW,1)
+
 def prepare(folia:Path):
     flood=folia/FLOOD
     simple=folia/SIMPLE
+    bamboo=folia/BAMBOO
     if not flood.is_file(): raise ValueError('NeverOverworldFlood missing')
     if not simple.is_file(): raise ValueError('SimpleBlockFeature missing')
-    staged={flood:patch(flood.read_text()),simple:patch_simple(simple.read_text())}
+    if not bamboo.is_file(): raise ValueError('BambooFeature missing')
+    staged={flood:patch(flood.read_text()),simple:patch_simple(simple.read_text()),bamboo:patch_bamboo(bamboo.read_text())}
     for src,dst in ((FLOOD15_SRC,FLOOD15_DST),(ECO15_SRC,ECO15_DST)):
         payload=src.read_text()
         target=folia/dst
