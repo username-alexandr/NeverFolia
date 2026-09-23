@@ -2,7 +2,7 @@
 """FIELD-R18/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
-R15 Nether pack. Two independent R17/Nether-R16 candidates must repeat exactly in the
+R15 Nether pack. Two independent R18/Nether-R16 candidates must repeat exactly in the
 deep ore band below Y=-64 and keep the schedule-sensitive upper vanilla FEATURES
 ore count profile within 0.5%, while passing dry-mine, ecology, fluid-contact
 and R16 lava-ocean cavity audits. The full coordinate delta remains diagnostic.
@@ -243,7 +243,7 @@ def ecology_audit(observer, nbt, world, plan):
             above = volume.at(x, y+1, z)
             below = volume.at(x, y-1, z)
             shore_contacts = []
-            if name in SHORE_PLANTS and y <= 132:
+            if name in (SHORE_PLANTS | HEIGHT_GATED) and y <= 132:
                 for dx, dy, dz in DIRECTIONS:
                     adjacent = volume.at(x+dx, y+dy, z+dz)
                     if adjacent is not None and water(adjacent):
@@ -580,7 +580,7 @@ def main():
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
             and manifest.get('r18_fixpack') is True and manifest.get('nether_r16_installed') is True,
-            'missing exact R17/Nether-R16 build profile')
+            'missing exact R18/Nether-R16 build profile')
     current_packs = {'NeverOverworld.zip': args.overworld.resolve(), 'NeverNether.zip': args.nether.resolve()}
     historical_packs = {'NeverOverworld.zip': args.overworld.resolve(),
                         'NeverNether.zip': args.historical_nether.resolve()}
