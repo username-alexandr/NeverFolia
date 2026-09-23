@@ -112,6 +112,16 @@ public final class FieldR15FloodEcologySmoke {
         check(NeverOverworldEcologyR15.replacementAfterRemoval(false).isAir(),
             "dry forbidden flora is replaced by air");
 
+        var seam=fixture();
+        check(NeverOverworldEcologyR15.horizontalChunkEdge(seam,new BlockPos(0,80,8)),
+            "x-min cave flora is a horizontal seam candidate");
+        check(NeverOverworldEcologyR15.horizontalChunkEdge(seam,new BlockPos(15,80,8)),
+            "x-max cave flora is a horizontal seam candidate");
+        check(!NeverOverworldEcologyR15.horizontalChunkEdge(seam,new BlockPos(8,80,8)),
+            "interior cave flora is not a seam candidate");
+        check(NeverOverworldEcologyR15.shouldRemove(Blocks.CAVE_VINES.defaultBlockState(),80,true),
+            "seam candidate routes through flooded-cave removal contract");
+
         out.println("PASS FieldR15FloodEcologySmoke checks="+checks);
     }
 }
