@@ -42,6 +42,10 @@ public final class NeverOverworldEcologyR13Smoke {
             "firefly bush must remain water-sensitive");
         check(NeverOverworldEcologyR13.aquaticSensitive(Blocks.LEAF_LITTER.defaultBlockState()),
             "leaf litter must remain water-sensitive");
+        check(NeverOverworldEcologyR13.aquaticSensitive(Blocks.SUNFLOWER.defaultBlockState()),
+            "tall flowers must remain water-sensitive");
+        check(NeverOverworldEcologyR13.aquaticSensitive(Blocks.CLOSED_EYEBLOSSOM.defaultBlockState()),
+            "eyeblossoms must remain water-sensitive");
 
         check(!NeverOverworldEcologyR13.aquaticSensitive(Blocks.LILY_PAD.defaultBlockState()),
             "lily pads are intentionally outside shoreline cleanup");

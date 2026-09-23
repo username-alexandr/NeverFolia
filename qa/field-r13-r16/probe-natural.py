@@ -47,6 +47,7 @@ SHORE_PLANTS = {
     'minecraft:torchflower', 'minecraft:pitcher_plant', 'minecraft:pink_petals',
     'minecraft:wildflowers', 'minecraft:cactus_flower',
     'minecraft:closed_eyeblossom', 'minecraft:open_eyeblossom',
+    'minecraft:sunflower', 'minecraft:lilac', 'minecraft:rose_bush', 'minecraft:peony',
 }
 NETHER_ROCK = {
     'minecraft:netherrack', 'minecraft:basalt', 'minecraft:smooth_basalt',

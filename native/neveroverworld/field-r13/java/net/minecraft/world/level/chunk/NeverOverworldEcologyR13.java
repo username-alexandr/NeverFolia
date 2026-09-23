@@ -1,7 +1,6 @@
 package net.minecraft.world.level.chunk;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
@@ -59,13 +58,13 @@ public final class NeverOverworldEcologyR13 {
 
     /**
      * Dry shoreline vegetation that must not survive in/over the rebuilt ocean.
-     * Minecraft 26.2 moved flowers/grass from BushBlock to VegetationBlock, so
-     * this intentionally uses the FLOWERS tag plus explicit non-flower plants.
-     * Aquatic vegetation, lily pads and sugar cane stay outside this policy.
+     * This is an explicit Minecraft 26.2 whitelist rather than a class/tag test:
+     * standalone regression bootstrap does not bind datapack tags, while broad
+     * VegetationBlock matching would also catch legitimate aquatic vegetation.
+     * Lily pads, seagrass/kelp and sugar cane stay outside this policy.
      */
     static boolean isShorelinePlant(final BlockState state) {
-        return state.is(BlockTags.FLOWERS)
-            || state.is(Blocks.SHORT_GRASS)
+        return state.is(Blocks.SHORT_GRASS)
             || state.is(Blocks.TALL_GRASS)
             || state.is(Blocks.FERN)
             || state.is(Blocks.LARGE_FERN)
@@ -75,9 +74,30 @@ public final class NeverOverworldEcologyR13 {
             || state.is(Blocks.BUSH)
             || state.is(Blocks.FIREFLY_BUSH)
             || state.is(Blocks.LEAF_LITTER)
+            || state.is(Blocks.DANDELION)
+            || state.is(Blocks.POPPY)
+            || state.is(Blocks.BLUE_ORCHID)
+            || state.is(Blocks.ALLIUM)
+            || state.is(Blocks.AZURE_BLUET)
+            || state.is(Blocks.RED_TULIP)
+            || state.is(Blocks.ORANGE_TULIP)
+            || state.is(Blocks.WHITE_TULIP)
+            || state.is(Blocks.PINK_TULIP)
+            || state.is(Blocks.OXEYE_DAISY)
+            || state.is(Blocks.CORNFLOWER)
+            || state.is(Blocks.LILY_OF_THE_VALLEY)
+            || state.is(Blocks.WITHER_ROSE)
+            || state.is(Blocks.TORCHFLOWER)
+            || state.is(Blocks.PITCHER_PLANT)
             || state.is(Blocks.PINK_PETALS)
             || state.is(Blocks.WILDFLOWERS)
-            || state.is(Blocks.CACTUS_FLOWER);
+            || state.is(Blocks.CACTUS_FLOWER)
+            || state.is(Blocks.CLOSED_EYEBLOSSOM)
+            || state.is(Blocks.OPEN_EYEBLOSSOM)
+            || state.is(Blocks.SUNFLOWER)
+            || state.is(Blocks.LILAC)
+            || state.is(Blocks.ROSE_BUSH)
+            || state.is(Blocks.PEONY);
     }
 
     static boolean aquaticSensitive(final BlockState state) {
