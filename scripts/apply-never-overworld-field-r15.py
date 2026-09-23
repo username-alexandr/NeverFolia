@@ -5,7 +5,7 @@ Install after FIELD-R14. Replaces the R14 boundary-only continuation with a scan
 of every floodable component through Y=128. Only components that already contain
 verified ocean water are filled. Lava-adjacent and dry-mine cells remain hard
 barriers. Then remove cave vines/azalea/dripleaf from flooded cave cells and
-remove cactus/melon at or below the Y=128 ocean plane.
+remove cactus/melon/oxeye daisy at or below the Y=128 ocean plane. Oxeye daisy is also height-gated before SimpleBlockFeature placement.
 """
 from __future__ import annotations
 import argparse
@@ -18,11 +18,14 @@ FLOOD15_SRC=ROOT/'native/neveroverworld/field-r15/java/net/minecraft/world/level
 FLOOD15_DST=JAVA/'net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java'
 ECO15_SRC=ROOT/'native/neveroverworld/field-r15/java/net/minecraft/world/level/chunk/NeverOverworldEcologyR15.java'
 ECO15_DST=JAVA/'net/minecraft/world/level/chunk/NeverOverworldEcologyR15.java'
+SIMPLE=JAVA/'net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java'
 
 OLD='        NeverOverworldFloodConnectivityR14.apply(level, chunk);'
 NEW='        NeverOverworldFloodConnectivityR15.apply(level, chunk);'
 ECO_ANCHOR='        NeverOverworldEcologyR13.cleanup(level, chunk);'
 ECO_NEW=ECO_ANCHOR+'\n        NeverOverworldEcologyR15.cleanup(level, chunk);'
+SIMPLE_ANCHOR='        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR13.allowSimpleBlock(level, origin, stateToPlace)) return false;'
+SIMPLE_NEW=SIMPLE_ANCHOR+'\n        if (!net.minecraft.world.level.chunk.NeverOverworldEcologyR15.allowSimpleBlock(level, origin, stateToPlace)) return false;'
 
 def patch(text:str)->str:
     if NEW in text and 'NeverOverworldEcologyR15.cleanup(level, chunk);' in text:
@@ -33,10 +36,18 @@ def patch(text:str)->str:
     text=text.replace(ECO_ANCHOR,ECO_NEW,1)
     return text
 
+def patch_simple(text:str)->str:
+    if 'NeverOverworldEcologyR15.allowSimpleBlock(level, origin, stateToPlace)' in text:
+        return text
+    if text.count(SIMPLE_ANCHOR)!=1: raise ValueError('FIELD-R15 SimpleBlockFeature anchor mismatch')
+    return text.replace(SIMPLE_ANCHOR,SIMPLE_NEW,1)
+
 def prepare(folia:Path):
     flood=folia/FLOOD
+    simple=folia/SIMPLE
     if not flood.is_file(): raise ValueError('NeverOverworldFlood missing')
-    staged={flood:patch(flood.read_text())}
+    if not simple.is_file(): raise ValueError('SimpleBlockFeature missing')
+    staged={flood:patch(flood.read_text()),simple:patch_simple(simple.read_text())}
     for src,dst in ((FLOOD15_SRC,FLOOD15_DST),(ECO15_SRC,ECO15_DST)):
         payload=src.read_text()
         target=folia/dst
@@ -51,6 +62,6 @@ def main():
     if not a.check_only:
         for path,text in staged.items():
             path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text)
-    print('[FIELD-R15] full verified-water audit Y<=128 + flooded cave flora cleanup + cactus/melon height gate '+('preflight' if a.check_only else 'installed'))
+    print('[FIELD-R15] full verified-water audit Y<=128 + flooded cave flora cleanup + cactus/melon/oxeye-daisy height gate '+('preflight' if a.check_only else 'installed'))
 
 if __name__=='__main__':main()
