@@ -1,4 +1,4 @@
-name: NeverWorldgen FIELD-R13 R16 test bundle
+name: NeverWorldgen FIELD-R13 R16 natural acceptance
 on:
   push:
     branches: [wip/neveroverworld-field-r12]
@@ -8,17 +8,22 @@ on:
       - 'scripts/apply-never-nether-experiment-r16.py'
       - 'scripts/build-never-nether-field-r16.py'
       - 'qa/nevernether-r16/**'
+      - 'qa/field-r13-r16/**'
+      - 'qa/ore-light-r12/**'
+      - 'scripts/probe-never-overworld-paired-r12.py'
+      - 'scripts/probe-never-overworld-trees-villages-r1.py'
       - '.github/workflows/never-worldgen-field-r13-r16.yml'
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  build:
+  natural:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
@@ -26,16 +31,17 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Materialize current candidate
+      - name: Materialize exact FIELD-R13/R16 candidate
         run: |
           set -euo pipefail
           mkdir -p artifacts
+          python3 -m py_compile qa/field-r13-r16/probe-natural.py
           git config --global user.email actions@github.com
           git config --global user.name 'NeverFolia CI'
           python3 scripts/prepare-never-nether-r13-upstream.py
           test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
           bash scripts/apply-folia-patches-ci.sh .work/Folia
-          bash scripts/apply-neverfolia-post-patches.sh
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
           for stage in 8 9 10 11 12 13 14; do
             python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
           done
@@ -46,7 +52,7 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldFlood.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
-            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java
+            .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia --check-only
@@ -64,6 +70,10 @@ jobs:
                 'qa/neveroverworld-field-r12/FieldR12Smoke.java',
                 'qa/neveroverworld-trees-r1/TreePreservationSmoke.java',
                 'qa/ore-light-r12/UpperOreLightR12Smoke.java',
+                'qa/neveroverworld-field-r10/VillageFoundationSmoke.java',
+                'qa/neveroverworld-field-r11/FloodBoundarySmoke.java',
+                'qa/neveroverworld-desert-r1/DesertR1Smoke.java',
+                'qa/neveroverworld-desert-r1/SandstormR1Smoke.java',
                 'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java',
                 'qa/nevernether-r16/NeverNetherFieldCleanupR16Smoke.java'
               ]
@@ -77,15 +87,19 @@ jobs:
                 r13Native:'net.minecraft.world.level.chunk.FieldR12Smoke',
                 r13Trees:'net.minecraft.world.level.chunk.TreePreservationSmoke',
                 r13Ore:'net.minecraft.world.level.chunk.UpperOreLightR12Smoke',
+                r13Village:'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke',
+                r13Boundary:'net.minecraft.world.level.chunk.FloodBoundarySmoke',
+                r13Desert:'net.minecraft.world.level.chunk.DesertR1Smoke',
+                r13Sandstorm:'net.minecraft.server.level.SandstormR1Smoke',
                 r16Old:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke',
                 r16New:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR16Smoke'
               ].each{k,v->server.tasks.register(k,JavaExec){dependsOn compileQa;classpath=cp+server.files(qaDir);mainClass=v;jvmArgs '-ea'}}
           }
           GROOVY
-          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
           cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
           cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
-      - name: Build matching datapacks
+      - name: Build matching Overworld, historical R15 Nether and candidate R16 Nether packs
         run: |
           set -euo pipefail
           if [ ! -f artifacts/pack-input-bundler.jar ]; then
@@ -106,43 +120,86 @@ jobs:
           python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
           python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
           python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
           python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13.zip
           python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13.zip --inject
           python3 scripts/build-never-nether-height-r14.py --input .work/NeverNether-R13.zip --output .work/NeverNether-R14.zip
-          python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output .work/NeverNether-R15.zip
-          python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
+          python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output artifacts/NeverNether-R15.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R15.zip --verify
+          python3 scripts/build-never-nether-field-r16.py --input artifacts/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
-      - name: Package test bundle
+      - name: Record exact R13/R16 build profile
         run: |
           set -euo pipefail
-          mkdir -p artifacts/bundle/world/datapacks
-          cp artifacts/server.jar artifacts/bundle/server.jar
-          cp artifacts/NeverOverworld.zip artifacts/bundle/world/datapacks/NeverOverworld.zip
-          cp artifacts/NeverNether.zip artifacts/bundle/world/datapacks/NeverNether.zip
-          cat > artifacts/bundle/server.properties <<EOF
-          level-name=world
-          level-seed=-2996952393010080672
-          initial-enabled-packs=vanilla,file/NeverOverworld.zip,file/NeverNether.zip
-          EOF
-          cat > artifacts/bundle/README-RU.txt <<EOF
-          FIELD-R13/R16 тестовая сборка, Java 25, только НОВЫЙ мир.
-          Деревья/тыквы/бамбук/мох/грибы: нижняя граница Y126; подводная/висящая растительность очищается после flood.
-          Генерированные underground water/lava сбрасываются перед восстановлением surface-connected океана.
-          Шахты повторно осушаются после обоих flood-проходов.
-          NeverNether R16 закрывает только подтверждённые внутренние воздушные пузыри лавового океана; большие/пограничные пещеры не угадываются.
-          Production-ready=false.
-          EOF
-          (cd artifacts/bundle && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          (cd artifacts/bundle && zip -qr ../NeverFolia-FIELD-R13-R16-TEST.zip .)
-      - uses: actions/upload-artifact@v4
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p={
+            'schema':1,'profile':'FIELD-R13-R16-NATURAL-1','source_sha':os.environ['GITHUB_SHA'],
+            'workflow_run':int(os.environ['GITHUB_RUN_ID']),
+            'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
+            'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(),
+            'r13_installed':True,'r16_installed':True,'production_ready':False
+          }
+          Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(p,indent=2)+'\n')
+          PY
+      - name: Fetch pinned delivered baseline without substituting another revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,io,os,urllib.request,urllib.error,urllib.parse,zipfile
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          request=urllib.request.Request('https://api.github.com/repos/username-alexandr/NeverFolia/actions/artifacts/10611756410/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          try:
+              with urllib.request.build_opener(NoRedirect).open(request,timeout=60) as response: raw=response.read(80000001)
+          except urllib.error.HTTPError as error:
+              if error.code!=302: raise
+              location=error.headers['Location']
+              if urllib.parse.urlsplit(location).scheme!='https': raise ValueError('insecure artifact redirect')
+              with urllib.request.urlopen(location,timeout=60) as response: raw=response.read(80000001)
+          if hashlib.sha256(raw).hexdigest()!='38f6b569afca06dccfae42d1dd8b733397e08a942e8c54301addd652ee9302a5': raise ValueError('baseline artifact changed')
+          with zipfile.ZipFile(io.BytesIO(raw)) as outer:
+              names=outer.namelist()
+              if len(names)!=1 or not names[0].endswith('.zip'): raise ValueError('unexpected baseline artifact')
+              bundle=outer.read(names[0])
+          if hashlib.sha256(bundle).hexdigest()!='783f87732256f24f0b90c66d97aff04c78f4439dcb73524a211014eabfaf3f4a': raise ValueError('baseline bundle changed')
+          with zipfile.ZipFile(io.BytesIO(bundle)) as archive: jar=archive.read('server.jar')
+          if hashlib.sha256(jar).hexdigest()!='dfdbcffce9d4404bbb610828eb804db622ab410f94b37344293ce94d2349ce11': raise ValueError('baseline JAR changed')
+          Path('.work/baseline-32c6df3.jar').write_bytes(jar)
+          print('Pinned baseline verified; R15 pack is historical-Nether compatibility only')
+          PY
+      - name: Generate independent worlds and require FIELD-R13/R16 natural acceptance
+        run: |
+          set -euo pipefail
+          python3 qa/field-r13-r16/probe-natural.py \
+            --jar artifacts/server.jar \
+            --baseline-jar .work/baseline-32c6df3.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --historical-nether artifacts/NeverNether-R15.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --build-manifest artifacts/BUILD-PROFILE.json \
+            --source-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" 2>&1 | tee artifacts/field-r13-r16-natural.log
+      - name: Publish accepted FIELD-R13/R16 manual test bundle
+        uses: actions/upload-artifact@v4
         with:
-          name: NeverFolia-FIELD-R13-R16-TEST-${{ github.sha }}
-          path: artifacts/NeverFolia-FIELD-R13-R16-TEST.zip
+          name: NeverFolia-FIELD-R13-R16-NATURAL-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-FIELD-R13-R16-NATURAL-TEST-*.zip
           retention-days: 14
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - name: Keep complete diagnostics on success or failure
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: NeverFolia-FIELD-R13-R16-DIAGNOSTICS-${{ github.sha }}
-          path: artifacts/*.log
+          name: NeverFolia-FIELD-R13-R16-NATURAL-DIAGNOSTICS-${{ github.sha }}
+          path: |
+            artifacts/**/*.json
+            artifacts/**/*.log
+            artifacts/**/*.txt
           retention-days: 14
+          if-no-files-found: warn
