@@ -61,6 +61,15 @@ public final class FieldR15FloodEcologySmoke {
             "sealed Y128 cavity must stay dry");
         check(dry.getBlockState(new BlockPos(7,128,8)).isAir(),"sealed cavity unchanged");
 
+        // Underground water alone is not an ocean seed and must never flood a whole cave/chunk.
+        var underground=fixture();
+        set(underground,2,80,8,Blocks.WATER);
+        for(int x=3;x<=12;x++)set(underground,x,80,8,Blocks.AIR);
+        check(NeverOverworldFloodConnectivityR15.floodVerifiedComponents(underground)==0,
+            "underground water pocket must not seed ocean flood");
+        check(underground.getBlockState(new BlockPos(12,80,8)).isAir(),
+            "underground connected cavity remains dry without Y128 ocean seed");
+
         // Lava contact blocks continuation.
         var lava=fixture();
         set(lava,2,127,8,Blocks.WATER);
