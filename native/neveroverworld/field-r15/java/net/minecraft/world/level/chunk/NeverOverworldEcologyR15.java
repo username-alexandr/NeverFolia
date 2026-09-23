@@ -74,10 +74,7 @@ public final class NeverOverworldEcologyR15 {
                 int y=by+ly;pos.set(baseX+x,y,baseZ+z);
                 final boolean waterContact=y<=OCEAN_Y&&touchesWater(chunk,pos,probe);
                 if(!shouldRemove(s,y,waterContact))continue;
-                final BlockState replacement=waterContact
-                    ? Blocks.WATER.defaultBlockState()
-                    : Blocks.AIR.defaultBlockState();
-                chunk.setBlockState(pos,replacement,0);++changed;
+                chunk.setBlockState(pos,replacementAfterRemoval(waterContact),0);++changed;
             }
         }
         return changed;
@@ -86,6 +83,10 @@ public final class NeverOverworldEcologyR15 {
     static boolean shouldRemove(BlockState state,int y,boolean waterContact){
         return heightPlant(state)&&y<=OCEAN_Y
             || floodedCavePlant(state)&&y<=OCEAN_Y&&waterContact;
+    }
+
+    static BlockState replacementAfterRemoval(boolean waterContact){
+        return waterContact ? Blocks.WATER.defaultBlockState() : Blocks.AIR.defaultBlockState();
     }
 
     private static boolean touchesWater(ChunkAccess chunk,BlockPos pos,BlockPos.MutableBlockPos probe){
