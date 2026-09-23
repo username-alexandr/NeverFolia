@@ -1,4 +1,4 @@
-name: NeverWorldgen FIELD-R16 / Nether-R16 natural acceptance
+name: NeverWorldgen FIELD-R17 FIXPACK / Nether-R16 natural acceptance
 on:
   push:
     branches: [wip/neveroverworld-field-r12]
@@ -10,6 +10,7 @@ on:
       - 'scripts/apply-never-overworld-field-r14.py'
       - 'scripts/apply-never-overworld-field-r15.py'
       - 'scripts/apply-never-overworld-field-r16.py'
+      - 'scripts/apply-never-overworld-fixpack-r17.py'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
       - 'qa/field-r16-r16/**'
@@ -40,7 +41,7 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Materialize exact FIELD-R16/Nether-R16 candidate
+      - name: Materialize unified FIELD-R17 FIXPACK / Nether-R16 candidate
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -62,15 +63,9 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
-          python3 scripts/apply-never-overworld-field-r13.py .work/Folia
-          python3 scripts/apply-never-overworld-field-r14.py .work/Folia
-          python3 scripts/apply-never-overworld-field-r15.py .work/Folia
-          python3 scripts/apply-never-overworld-field-r16.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r17.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-field-r13.py .work/Folia --check-only
-          python3 scripts/apply-never-overworld-field-r14.py .work/Folia --check-only
-          python3 scripts/apply-never-overworld-field-r15.py .work/Folia --check-only
-          python3 scripts/apply-never-overworld-field-r16.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r17.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
@@ -151,18 +146,18 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R15.zip --verify
           python3 scripts/build-never-nether-field-r16.py --input artifacts/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
-      - name: Record exact R15/R16 build profile
+      - name: Record exact FIELD-R17 FIXPACK / Nether-R16 build profile
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib,json,os
           from pathlib import Path
           p={
-            'schema':1,'profile':'FIELD-R15-R16-NATURAL-1','source_sha':os.environ['GITHUB_SHA'],
+            'schema':1,'profile':'FIELD-R17-NR16-NATURAL-1','source_sha':os.environ['GITHUB_SHA'],
             'workflow_run':int(os.environ['GITHUB_RUN_ID']),
             'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
             'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(),
-            'r13_installed':True,'r14_installed':True,'r15_installed':True,'r16_installed':True,'production_ready':False
+            'r17_fixpack':True,'nether_r16_installed':True,'production_ready':False
           }
           Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(p,indent=2)+'\n')
           PY
@@ -195,7 +190,7 @@ jobs:
           Path('.work/baseline-32c6df3.jar').write_bytes(jar)
           print('Pinned baseline verified; R15 pack is historical-Nether compatibility only')
           PY
-      - name: Generate independent worlds and require FIELD-R15/R16 natural acceptance
+      - name: Generate independent worlds and require FIELD-R17 FIXPACK / Nether-R16 natural acceptance
         run: |
           set -euo pipefail
           python3 qa/field-r13-r16/probe-natural.py \
@@ -208,18 +203,18 @@ jobs:
             --build-manifest artifacts/BUILD-PROFILE.json \
             --source-sha "$GITHUB_SHA" \
             --run-id "$GITHUB_RUN_ID" 2>&1 | tee artifacts/field-r13-r16-natural.log
-      - name: Publish accepted FIELD-R15/R16 manual test bundle
+      - name: Publish accepted FIELD-R17 FIXPACK / Nether-R16 manual test bundle
         uses: actions/upload-artifact@v4
         with:
-          name: NeverFolia-FIELD-R15-R16-NATURAL-TEST-${{ github.sha }}
-          path: artifacts/NeverFolia-FIELD-R13-R16-NATURAL-TEST-*.zip
+          name: NeverFolia-FIELD-R17-NR16-FIXPACK-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-FIELD-R17-NR16-FIXPACK-TEST-*.zip
           retention-days: 14
           if-no-files-found: error
       - name: Keep complete diagnostics on success or failure
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: NeverFolia-FIELD-R15-R16-NATURAL-DIAGNOSTICS-${{ github.sha }}
+          name: NeverFolia-FIELD-R17-NR16-FIXPACK-DIAGNOSTICS-${{ github.sha }}
           path: |
             artifacts/**/*.json
             artifacts/**/*.log
