@@ -93,7 +93,8 @@ def verify(folia: Path) -> None:
         require(marker in eco13, "R13 height flora marker missing: " + marker)
     for marker in ("Blocks.CAVE_VINES", "Blocks.CAVE_VINES_PLANT", "Blocks.AZALEA",
                    "Blocks.FLOWERING_AZALEA", "Blocks.SMALL_DRIPLEAF", "Blocks.BIG_DRIPLEAF",
-                   "Blocks.CACTUS", "Blocks.MELON", *DRY_FLOWERS):
+                   "Blocks.CACTUS", "Blocks.MELON", "Blocks.BAMBOO", "Blocks.BAMBOO_SAPLING",
+                   "Blocks.COCOA", "Blocks.AZURE_BLUET", "Blocks.PINK_PETALS", *DRY_FLOWERS):
         require(marker in eco15, "R17 ecology marker missing: " + marker)
     require("NeverOverworldEcologyR15.allowSimpleBlock" in simple,
             "early R17 SimpleBlock height gate missing")
