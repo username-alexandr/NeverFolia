@@ -239,7 +239,7 @@ class LifecycleTests(unittest.TestCase):
                 trace.append(('locate',self.log.name,target))
                 px,pz=points[target]
                 return (px+32,pz) if drift and self.log.name.startswith('candidate') and target=='minecraft:forest' else (px,pz)
-            def load_dimension(self,selected,dimension,dwell=0):trace.append(('load',self.log.name,selected,dimension,dwell))
+            def load_dimension(self,selected,dimension,dwell=0,serial_generation=False):trace.append(('load',self.log.name,selected,dimension,dwell,serial_generation))
             def stop(self):active[0]=False;trace.append(('stop',self.log.name));return 1 if fail_stop else 0
             def close(self):active[0]=False;trace.append(('close',self.log.name))
         def saved(observer,nbt,region,chunks,phase):
@@ -286,6 +286,9 @@ class LifecycleTests(unittest.TestCase):
             trace,out,runs=self.run_generations(Path(folder))
             self.assertEqual(len([t for t in trace if t[0]=='start']),9)
             self.assertEqual(len([t for t in trace if t[0]=='locate']),15)
+            loads=[t for t in trace if t[0]=='load']
+            self.assertTrue(all(t[-1] is True for t in loads if '-initial.log' in t[1]))
+            self.assertTrue(all(t[-1] is False for t in loads if '-initial.log' not in t[1]))
             for r in runs:self.assertEqual([p['name'] for p in r['phases']],['initial','complete','restart'])
             self.assertEqual(runs[0]['requests'],runs[1]['requests']);self.assertEqual(runs[0]['requests'],runs[2]['requests'])
             self.assertEqual(len(list(out.glob('ore-census-*.json'))),9)

@@ -217,12 +217,16 @@ def controlled_gate(report):
 
 def make_server(observer):
     class Server(observer.Server):
-        def load_dimension(self, chunks, dimension, dwell=0):
+        def load_dimension(self, chunks, dimension, dwell=0, serial_generation=False):
             require(dimension in DIMENSIONS, 'invalid dimension')
             selected=sorted(set(map(tuple,chunks)))
             require(1<=len(selected)<=324, 'unbounded runtime sample')
-            for offset in range(0,len(selected),32):
-                batch=selected[offset:offset+32]; start=len(self.text()); probes={}
+            # Fresh FEATURES generation is serialized to remove scheduler-order races
+            # at cross-chunk feature boundaries. Already generated complete/restart
+            # phases retain batched loading so the natural probe stays practical.
+            batch_size=1 if serial_generation else 32
+            for offset in range(0,len(selected),batch_size):
+                batch=selected[offset:offset+batch_size]; start=len(self.text()); probes={}
                 for x,z in batch:
                     self.send(f'execute in {dimension} run forceload add {x*16} {z*16}')
                     self.token+=1; probes[f'R12_LOADED_{self.token}_{x}_{z}']=(x,z)
@@ -231,7 +235,7 @@ def make_server(observer):
                     for token in sorted(pending):
                         x,z=probes[token]
                         self.send(f'execute in {dimension} if loaded {x*16} 0 {z*16} run say {token}')
-                    time.sleep(1); text=self.text()[start:]
+                    time.sleep(0.25 if serial_generation else 1); text=self.text()[start:]
                     require(not re.search(self.COMMAND_ERROR,text), 'chunk-load command failed: '+text[-1000:])
                     pending={t for t in pending if not re.search(self.marker_pattern(t),text)}
                     require(self.p.poll() is None, 'server exited during chunk loading')
@@ -276,11 +280,12 @@ def generate(root, observer, nbt, jar, packs, out, label, source_sha, plan=None)
         evidence['requests'].append({'phase':evidence['phases'][-1]['name'],
             'operation':'locate','kind':kind,'target':target,'origin':[x,z], 'result':list(result)})
         return result
-    def load_area(server, chunks, dimension, dwell=0):
+    def load_area(server, chunks, dimension, dwell=0, serial_generation=False):
         selected=[list(p) for p in sorted(set(map(tuple,chunks)))]
         evidence['requests'].append({'phase':evidence['phases'][-1]['name'],
-            'operation':'load','dimension':dimension,'chunks':selected,'dwell':dwell})
-        server.load_dimension(selected,dimension,dwell)
+            'operation':'load','dimension':dimension,'chunks':selected,'dwell':dwell,
+            'serial_generation':serial_generation})
+        server.load_dimension(selected,dimension,dwell,serial_generation=serial_generation)
     def census(item):
         roots={}
         for area in evidence['areas']:
@@ -305,12 +310,12 @@ def generate(root, observer, nbt, jar, packs, out, label, source_sha, plan=None)
         for target,origin in zip(observer.FORESTS,((0,0),(12000,0),(-12000,0))):
             x,z=locate(server,'biome',target,*origin); cx,cz=x//16,z//16
             chunks=[(a,b) for b in range(cz-2,cz+3) for a in range(cx-2,cx+3)]
-            load_area(server,chunks,DIMENSIONS[0])
+            load_area(server,chunks,DIMENSIONS[0],serial_generation=True)
             evidence['areas'].append({'kind':'forest','target':target,'located_xz':[x,z],'chunks':chunks})
         for target in MINE_TARGETS:
             x,z=locate(server,'structure',target,8192,8192); cx,cz=x//16,z//16
             chunks=[(a,b) for b in range(cz-2,cz+3) for a in range(cx-2,cx+3)]
-            load_area(server,chunks,DIMENSIONS[0]); initials.append((target,x,z,chunks))
+            load_area(server,chunks,DIMENSIONS[0],serial_generation=True); initials.append((target,x,z,chunks))
     first=phase('initial',initial)
     for area in evidence['areas']: saved_volume(observer,nbt,region,area['chunks'],first)
     for target,x,z,chunks in initials:
