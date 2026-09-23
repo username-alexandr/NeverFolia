@@ -76,7 +76,7 @@ public final class NeverOverworldEcologyR15 {
                 BlockState s=section.getBlockState(x,ly,z);
                 if(!floodedCavePlant(s)&&!heightPlant(s))continue;
                 int y=by+ly;pos.set(baseX+x,y,baseZ+z);
-                final boolean waterContact=y<=OCEAN_Y&&touchesWater(chunk,pos,probe);
+                final boolean waterContact=y<=OCEAN_Y&&touchesWater(level,chunk,pos,probe);
                 if(!shouldRemove(s,y,waterContact))continue;
                 chunk.setBlockState(pos,replacementAfterRemoval(waterContact),0);++changed;
             }
@@ -93,14 +93,21 @@ public final class NeverOverworldEcologyR15 {
         return waterContact ? Blocks.WATER.defaultBlockState() : Blocks.AIR.defaultBlockState();
     }
 
-    private static boolean touchesWater(ChunkAccess chunk,BlockPos pos,BlockPos.MutableBlockPos probe){
+    private static boolean touchesWater(WorldGenLevel level,ChunkAccess chunk,BlockPos pos,BlockPos.MutableBlockPos probe){
         if(chunk.getBlockState(pos).getFluidState().is(FluidTags.WATER))return true;
         int minX=chunk.getPos().getMinBlockX(),minZ=chunk.getPos().getMinBlockZ();
         int[][] d={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
         for(int[] v:d){
             int x=pos.getX()+v[0],y=pos.getY()+v[1],z=pos.getZ()+v[2];
-            if(x<minX||x>minX+15||z<minZ||z>minZ+15||y<chunk.getMinY()||y>=chunk.getMaxY())continue;
-            probe.set(x,y,z);if(chunk.getBlockState(probe).getFluidState().is(FluidTags.WATER))return true;
+            if(y<chunk.getMinY()||y>=chunk.getMaxY())continue;
+            probe.set(x,y,z);
+            // LIGHT owns writes to this chunk only, but its radius-1 generation
+            // region already has adjacent FEATURES complete. Read the immediate
+            // horizontal neighbour when the face crosses the owner boundary so
+            // flooded cave flora cannot survive on chunk seams.
+            final boolean owner=x>=minX&&x<=minX+15&&z>=minZ&&z<=minZ+15;
+            final BlockState adjacent=owner?chunk.getBlockState(probe):level.getBlockState(probe);
+            if(adjacent.getFluidState().is(FluidTags.WATER))return true;
         }
         return false;
     }
