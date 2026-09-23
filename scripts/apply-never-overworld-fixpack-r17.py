@@ -103,7 +103,9 @@ def verify(folia: Path) -> None:
     require("NeverOverworldEcologyR13.allowHeightGatedOrigin" in mushroom,
             "huge mushroom early height gate missing")
     require("NeverOverworldEcologyR13.allowHeightGatedOrigin" in bamboo,
-            "bamboo early height gate missing")
+            "bamboo R13 height gate missing")
+    require("NeverOverworldEcologyR15.allowOceanHeightOrigin" in bamboo,
+            "bamboo R17 ocean-height origin gate missing")
 
     # Village contract: VILLAGE-NOFILL stays disabled globally; only short local
     # support directly beneath actual piece columns is allowed.
