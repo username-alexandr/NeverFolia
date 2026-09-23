@@ -67,6 +67,19 @@ public final class NeverOverworldEcologyR13Smoke {
                 Blocks.BROWN_MUSHROOM.defaultBlockState(),125,false,false,false,false),
             "height-gated mushroom below Y126 must still be removed");
 
+        check(NeverOverworldEcologyR13.seamSensitive(
+                Blocks.RED_MUSHROOM.defaultBlockState(),130,0,8),
+            "R18 seam mushroom at Y130 must be removed without neighbour reads");
+        check(NeverOverworldEcologyR13.seamSensitive(
+                Blocks.TALL_GRASS.defaultBlockState(),8,15,8),
+            "sub-ocean seam grass must be removed");
+        check(!NeverOverworldEcologyR13.seamSensitive(
+                Blocks.TALL_GRASS.defaultBlockState(),130,15,8),
+            "dry shoreline grass above ocean must not be removed only for seam");
+        check(!NeverOverworldEcologyR13.seamSensitive(
+                Blocks.RED_MUSHROOM.defaultBlockState(),130,8,8),
+            "interior dry mushroom must not be treated as seam candidate");
+
         out.println("PASS NeverOverworldEcologyR13Smoke checks=" + checks);
     }
 }
