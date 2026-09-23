@@ -41,6 +41,7 @@ HEIGHT_GATED = {
 }
 OCEAN_HEIGHT_GATED = {
     'minecraft:cactus', 'minecraft:melon',
+    'minecraft:bamboo', 'minecraft:bamboo_sapling', 'minecraft:cocoa',
     'minecraft:dandelion', 'minecraft:poppy', 'minecraft:blue_orchid',
     'minecraft:allium', 'minecraft:azure_bluet', 'minecraft:red_tulip',
     'minecraft:orange_tulip', 'minecraft:white_tulip', 'minecraft:pink_tulip',
