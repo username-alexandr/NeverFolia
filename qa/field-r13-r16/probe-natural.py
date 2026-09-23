@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""FIELD-R14/R16 natural acceptance for flooded Overworld and lava-ocean Nether.
+"""FIELD-R15/R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
-R15 Nether pack. Two independent R14/R16 candidates must repeat exactly in the
+R15 Nether pack. Two independent R15/R16 candidates must repeat exactly in the
 deep ore band below Y=-64 and keep the schedule-sensitive upper vanilla FEATURES
 ore count profile within 0.5%, while passing dry-mine, ecology, fluid-contact
 and R16 lava-ocean cavity audits. The full coordinate delta remains diagnostic.
@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import zipfile
 
-PROFILE = 'FIELD-R14-R16-NATURAL-1'
+PROFILE = 'FIELD-R15-R16-NATURAL-1'
 R16_PROFILE = 'NN-R16-LAVA-OCEAN-CLEANUP-1'
 HEIGHT_PROFILE = 'NN-R14-SUBSTRATE-1-ROOF512'
 ROLES = ('historical', 'candidate-a', 'candidate-b')
@@ -29,7 +29,7 @@ MARKERS = (
     'FieldPolicyR12Test', 'FieldR12Smoke', 'TreePreservationSmoke',
     'UpperOreLightR12Smoke', 'VillageFoundationSmoke', 'FloodBoundarySmoke',
     'DesertR1Smoke', 'SandstormR1Smoke', 'NeverOverworldEcologyR13Smoke',
-    'FloodConnectivityR14Smoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
+    'FloodConnectivityR14Smoke', 'FieldR15FloodEcologySmoke', 'NeverNetherFieldCleanupR15Smoke', 'NeverNetherFieldCleanupR16Smoke',
 )
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 HEIGHT_GATED = {
@@ -457,7 +457,7 @@ def package(out, jar, packs, report, manifest, run_id):
     require(all(v is True for v in report.get('checks', {}).values()), 'incomplete natural acceptance')
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == report['source_sha']
             and manifest.get('r13_installed') is True and manifest.get('r14_installed') is True
-            and manifest.get('r16_installed') is True,
+            and manifest.get('r15_installed') is True and manifest.get('r16_installed') is True,
             'build profile mismatch')
     require(type(run_id) is int and run_id > 0 and manifest.get('workflow_run') == run_id,
             'workflow run mismatch')
@@ -486,7 +486,7 @@ def package(out, jar, packs, report, manifest, run_id):
         'Оба датапака уже лежат в world/datapacks; старый мир/region/level.dat не переносить.\n'
         'R13: грибы, тыквы, бамбук и мох не генерируются ниже Y126; трава/цветы очищаются при контакте с водой до Y130.\n'
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
-        'R14: boundary flood продолжает воду только из уже подтверждённого ocean-water компонента; изолированные шахты/пещеры остаются сухими, lava-adjacent клетки не затапливаются.\n'
+        'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR15 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются только из реально затопленных пещер; cactus/melon запрещены на Y<=128.\n'
         'R16: закрываются только подтверждённые owner-chunk воздушные полости лавового океана; большие/краевые пещеры сохраняются.\n'
         'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; сухие шахты, R13 ecology audit, R16 lava-ocean audit, roof Y512.\n'
         'Запуск: java -Xms1G -Xmx4G -jar server.jar --nogui\n'
@@ -495,7 +495,7 @@ def package(out, jar, packs, report, manifest, run_id):
     payload['SHA256SUMS.txt'] = ''.join(
         hashlib.sha256(b).hexdigest()+'  '+n+'\n' for n,b in sorted(payload.items())
     ).encode()
-    name = 'NeverFolia-FIELD-R14-R16-NATURAL-TEST-'+report['source_sha'][:7]+'.zip'
+    name = 'NeverFolia-FIELD-R15-R16-NATURAL-TEST-'+report['source_sha'][:7]+'.zip'
     dest = out/name
     with zipfile.ZipFile(dest, 'x', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for n,b in sorted(payload.items()):
