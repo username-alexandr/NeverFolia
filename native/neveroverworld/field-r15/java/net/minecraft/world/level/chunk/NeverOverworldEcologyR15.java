@@ -58,6 +58,10 @@ public final class NeverOverworldEcologyR15 {
         return !scope(level)||!heightPlant(state)||origin.getY()>OCEAN_Y;
     }
 
+    public static boolean allowOceanHeightOrigin(WorldGenLevel level,BlockPos origin){
+        return !scope(level)||origin.getY()>OCEAN_Y;
+    }
+
     public static int cleanup(WorldGenLevel level,ChunkAccess chunk){
         if(!scope(level)||chunk.getPersistedStatus().isOrAfter(ChunkStatus.FULL))return 0;
         int changed=0;int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
