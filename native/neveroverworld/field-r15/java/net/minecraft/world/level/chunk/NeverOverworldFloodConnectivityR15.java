@@ -13,8 +13,8 @@ import net.minecraft.world.level.block.state.BlockState;
  *
  * Scans every floodable component through Y=128, not only chunk-border
  * components. A dry cell is converted to water only when its own component
- * already contains verified water from the surface-ocean pass. Sealed caves and
- * mineshafts therefore stay dry. Lava-adjacent cells and dry-mine cells are hard
+ * already contains verified surface-ocean water at Y=128. Underground water pockets
+ * do not qualify as ocean seeds, so sealed caves/mineshafts stay dry. Lava-adjacent cells and dry-mine cells are hard
  * barriers.
  */
 public final class NeverOverworldFloodConnectivityR15 {
@@ -56,12 +56,12 @@ public final class NeverOverworldFloodConnectivityR15 {
                             int seedX,int seedY,int seedZ,int minY,int maxY){
         final int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();
-        int head=0,tail=0;boolean hasWater=false;
+        int head=0,tail=0;boolean hasOceanSeed=false;
         int seed=encode(seedX,seedY,seedZ,minY);visited[seed]=true;queue[tail++]=seed;
         while(head<tail){
             int e=queue[head++],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
             pos.set(baseX+x,y,baseZ+z);
-            if(chunk.getBlockState(pos).is(Blocks.WATER))hasWater=true;
+            if(y==SCAN_MAX_Y&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
             tail=enqueue(chunk,visited,queue,tail,x-1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x+1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y,z-1,minY,maxY);
@@ -69,7 +69,7 @@ public final class NeverOverworldFloodConnectivityR15 {
             tail=enqueue(chunk,visited,queue,tail,x,y-1,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y+1,z,minY,maxY);
         }
-        if(!hasWater)return 0;
+        if(!hasOceanSeed)return 0;
         int changed=0;BlockState water=Blocks.WATER.defaultBlockState();
         for(int i=0;i<tail;++i){
             int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
