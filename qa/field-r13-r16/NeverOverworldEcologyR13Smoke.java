@@ -16,6 +16,7 @@ public final class NeverOverworldEcologyR13Smoke {
     }
 
     public static void main(final String[] args) {
+        final java.io.PrintStream out = System.out;
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
 
@@ -54,6 +55,6 @@ public final class NeverOverworldEcologyR13Smoke {
         check(!NeverOverworldEcologyR13.aquaticSensitive(Blocks.SUGAR_CANE.defaultBlockState()),
             "shoreline sugar cane is intentionally outside shoreline cleanup");
 
-        System.out.println("PASS NeverOverworldEcologyR13Smoke checks=" + checks);
+        out.println("PASS NeverOverworldEcologyR13Smoke checks=" + checks);
     }
 }
