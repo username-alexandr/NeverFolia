@@ -96,6 +96,10 @@ def verify(folia: Path) -> None:
                    "Blocks.CACTUS", "Blocks.MELON", "Blocks.BAMBOO", "Blocks.BAMBOO_SAPLING",
                    "Blocks.COCOA", "Blocks.AZURE_BLUET", "Blocks.PINK_PETALS", *DRY_FLOWERS):
         require(marker in eco15, "R17 ecology marker missing: " + marker)
+    require("horizontalChunkEdge" in eco15,
+            "R17 owner-only seam flora policy missing")
+    require("level.getBlockState(" not in eco15,
+            "unsafe cross-chunk WorldGenLevel block read survived R17 ecology helper")
     require("level.getBlockState(probe)" in eco15,
             "R17 ecology must read immediate cross-chunk water faces at LIGHT")
     require("NeverOverworldEcologyR15.allowSimpleBlock" in simple,
