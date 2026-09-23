@@ -1,4 +1,4 @@
-name: NeverWorldgen FIELD-R15 R16 natural acceptance
+name: NeverWorldgen FIELD-R16 / Nether-R16 natural acceptance
 on:
   push:
     branches: [wip/neveroverworld-field-r12]
@@ -6,10 +6,13 @@ on:
       - 'native/neveroverworld/field-r13/**'
       - 'native/neveroverworld/field-r14/**'
       - 'native/neveroverworld/field-r15/**'
+      - 'native/neveroverworld/field-r16/**'
       - 'scripts/apply-never-overworld-field-r14.py'
       - 'scripts/apply-never-overworld-field-r15.py'
+      - 'scripts/apply-never-overworld-field-r16.py'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
+      - 'qa/field-r16-r16/**'
       - 'scripts/apply-never-overworld-field-r13.py'
       - 'scripts/apply-never-nether-experiment-r16.py'
       - 'scripts/build-never-nether-field-r16.py'
@@ -37,7 +40,7 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Materialize exact FIELD-R15/R16 candidate
+      - name: Materialize exact FIELD-R16/Nether-R16 candidate
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -62,10 +65,12 @@ jobs:
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia
           python3 scripts/apply-never-overworld-field-r14.py .work/Folia
           python3 scripts/apply-never-overworld-field-r15.py .work/Folia
+          python3 scripts/apply-never-overworld-field-r16.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
           python3 scripts/apply-never-overworld-field-r13.py .work/Folia --check-only
           python3 scripts/apply-never-overworld-field-r14.py .work/Folia --check-only
           python3 scripts/apply-never-overworld-field-r15.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-field-r16.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
@@ -87,6 +92,7 @@ jobs:
                 'qa/field-r13-r16/NeverOverworldEcologyR13Smoke.java',
                 'qa/field-r14-r16/FloodConnectivityR14Smoke.java',
                 'qa/field-r15-r16/FieldR15FloodEcologySmoke.java',
+                'qa/field-r16-r16/VillageFoundationR16Smoke.java',
                 'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java',
                 'qa/nevernether-r16/NeverNetherFieldCleanupR16Smoke.java'
               ]
@@ -107,12 +113,13 @@ jobs:
                 r13Ecology:'net.minecraft.world.level.chunk.NeverOverworldEcologyR13Smoke',
                 r14Flood:'net.minecraft.world.level.chunk.FloodConnectivityR14Smoke',
                 r15FloodEco:'net.minecraft.world.level.chunk.FieldR15FloodEcologySmoke',
+                r16Village:'net.minecraft.world.level.levelgen.structure.VillageFoundationR16Smoke',
                 r16Old:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke',
                 r16New:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR16Smoke'
               ].each{k,v->server.tasks.register(k,JavaExec){dependsOn compileQa;classpath=cp+server.files(qaDir);mainClass=v;jvmArgs '-ea'}}
           }
           GROOVY
-          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Village :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
           cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
           cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
       - name: Build matching Overworld, historical R15 Nether and candidate R16 Nether packs
