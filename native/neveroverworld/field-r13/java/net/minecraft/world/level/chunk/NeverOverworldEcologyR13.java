@@ -52,6 +52,8 @@ public final class NeverOverworldEcologyR13 {
             || state.is(Blocks.PUMPKIN)
             || state.is(Blocks.BAMBOO)
             || state.is(Blocks.BAMBOO_SAPLING)
+            || state.is(Blocks.MOSS_CARPET)
+            || state.is(Blocks.PALE_MOSS_CARPET)
             || state.getBlock() instanceof MossyCarpetBlock;
     }
 
