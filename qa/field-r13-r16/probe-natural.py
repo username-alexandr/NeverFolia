@@ -436,9 +436,18 @@ def evaluate(paired, runs, ores, ecology, nether, source_sha):
 
 
 def check_native(log):
+    # JavaExec output is normally a plain PASS line, but Minecraft's bootstrap
+    # may route System.out through Log4j as:
+    # [HH:MM:SS INFO]: [STDOUT]: PASS <marker> checks=N
+    # Accept only those two line shapes; do not accept arbitrary prefixes such
+    # as shell "echo PASS ..." that could forge a regression result.
+    prefix = r'(?:\\[[0-9:.]+ INFO\\]: \\[STDOUT\\]: )?'
     for name in MARKERS:
-        require(re.search(r'^PASS '+re.escape(name)+r' checks=[1-9][0-9]*(?:\s|$)', log, re.M),
-                'missing native result: '+name)
+        require(re.search(
+            r'^' + prefix + r'PASS ' + re.escape(name) + r' checks=[1-9][0-9]*(?:\\s|$)',
+            log,
+            re.M,
+        ), 'missing native result: ' + name)
     require('BUILD SUCCESSFUL' in log and 'BUILD FAILED' not in log, 'native build incomplete')
 
 
