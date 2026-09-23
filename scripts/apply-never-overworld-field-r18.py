@@ -15,6 +15,7 @@ FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 LAVA_SRC = ROOT / "native/neveroverworld/field-r18/java/net/minecraft/world/level/chunk/NeverOverworldLavaCleanupR18.java"
 LAVA_DST = JAVA / "net/minecraft/world/level/chunk/NeverOverworldLavaCleanupR18.java"
 SAFETY = JAVA / "net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java"
+FOUNDATION = JAVA / "net/minecraft/world/level/levelgen/structure/NeverOverworldVillageFoundationR16.java"
 
 FLOOD_ANCHOR = "        NeverOverworldFloodConnectivityR15.apply(level, chunk);"
 FLOOD_CALL = "        NeverOverworldLavaCleanupR18.cleanup(level, chunk);\n" + FLOOD_ANCHOR
@@ -52,7 +53,7 @@ PIECE_METHOD = r'''
                         heightAccessor,
                         randomState
                     );
-                    if (base < MIN_DRY_BASE_HEIGHT) {
+                    if (base <= MIN_DRY_BASE_HEIGHT) {
                         return false;
                     }
                 }
@@ -108,10 +109,31 @@ def patch_safety(text: str) -> str:
         text = text.replace(anchor, PIECE_METHOD + anchor, 1)
     return text
 
+def patch_foundation(text: str) -> str:
+    text = text.replace("static final int MAX_SUPPORT_DEPTH = 10;", "static final int MAX_SUPPORT_DEPTH = 24;")
+    old = """        return state.isAir()
+            || state.is(Blocks.WATER)
+            || state.is(Blocks.SNOW)
+            || state.canBeReplaced();"""
+    new = """        return state.isAir()
+            || state.is(Blocks.WATER)
+            || state.is(Blocks.SNOW)
+            || state.is(Blocks.SNOW_BLOCK)
+            || state.is(Blocks.POWDER_SNOW)
+            || state.is(Blocks.ICE)
+            || state.is(Blocks.PACKED_ICE)
+            || state.is(Blocks.BLUE_ICE)
+            || state.canBeReplaced();"""
+    require(old in text or "state.is(Blocks.BLUE_ICE)" in text, "R16 foundation gap anchor missing")
+    if old in text:
+        text = text.replace(old, new, 1)
+    return text
+
 def verify(folia: Path) -> None:
     flood = (folia / FLOOD).read_text(encoding="utf-8")
     safety = (folia / SAFETY).read_text(encoding="utf-8")
     lava = (folia / LAVA_DST).read_text(encoding="utf-8")
+    foundation = (folia / FOUNDATION).read_text(encoding="utf-8")
 
     require("NeverOverworldFloodConnectivityR15.apply(level, chunk);" in flood, "R15 flood missing")
     require("NeverOverworldLavaCleanupR18.cleanup(level, chunk);" in flood, "R18 lava cleanup hook missing")
@@ -126,6 +148,12 @@ def verify(folia: Path) -> None:
     require("for (final StructurePiece piece : start.getPieces())" in safety,
             "piece iteration missing")
     require("Heightmap.Types.WORLD_SURFACE_WG" in safety, "piece dry heightmap check missing")
+    require("base <= MIN_DRY_BASE_HEIGHT" in safety,
+            "piece gate must reject ocean-surface base height 129")
+    require("MAX_SUPPORT_DEPTH = 24" in foundation,
+            "R18 village foundation depth must be 24")
+    for marker in ("Blocks.SNOW_BLOCK", "Blocks.POWDER_SNOW", "Blocks.ICE", "Blocks.PACKED_ICE", "Blocks.BLUE_ICE"):
+        require(marker in foundation, "R18 village foundation gap marker missing: " + marker)
     require("NeverOverworldVillageReclamation.apply" not in (folia / JAVA / "net/minecraft/world/level/levelgen/structure/StructureStart.java").read_text(encoding="utf-8"),
             "whole-village reclamation was re-enabled")
 
@@ -139,6 +167,9 @@ def apply(folia: Path) -> None:
 
     flood.write_text(patch_flood(flood.read_text(encoding="utf-8")), encoding="utf-8")
     safety.write_text(patch_safety(safety.read_text(encoding="utf-8")), encoding="utf-8")
+    foundation = folia / FOUNDATION
+    require(foundation.is_file(), "R16 village foundation helper missing")
+    foundation.write_text(patch_foundation(foundation.read_text(encoding="utf-8")), encoding="utf-8")
 
     payload = LAVA_SRC.read_text(encoding="utf-8")
     target = folia / LAVA_DST
