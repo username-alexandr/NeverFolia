@@ -22,6 +22,8 @@ on:
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
       - 'scripts/apply-never-overworld-field-r20.py'
       - 'scripts/apply-never-overworld-fixpack-r20.py'
+      - 'scripts/apply-never-overworld-field-r21.py'
+      - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
