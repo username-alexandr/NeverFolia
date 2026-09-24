@@ -87,6 +87,9 @@ jobs:
       - name: Self-test NeverOverworld external dungeon pack QA
         run: python3 ./qa/field-r19/validate-external-structures-pack.py --self-test
 
+      - name: Self-test NeverOverworld external dungeon runtime QA
+        run: python3 ./qa/field-r19/probe-external-structures-runtime.py --self-test
+
       - name: Self-test NeverOverworld FIELD-R22 seam reconciliation
         run: python3 ./scripts/apply-never-overworld-field-r22.py --self-test
 
