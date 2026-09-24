@@ -79,6 +79,22 @@ def runtime_dry_seam_debug(log_path):
         })
     return rows
 
+def runtime_proximity_flood_debug(log_path):
+    text=Path(log_path).read_text(encoding='utf-8',errors='replace')
+    pattern=re.compile(
+        r'\[NeverFolia\]\[R22ProximityFlood\] chunk=(-?\d+),(-?\d+) '
+        r'size=(\d+) boundary=(\d+) span=(\d+) nearOcean=true'
+    )
+    rows=[]
+    for match in pattern.finditer(text):
+        rows.append({
+            'chunk':[int(match.group(1)),int(match.group(2))],
+            'size':int(match.group(3)),
+            'boundary_cells':int(match.group(4)),
+            'vertical_span':int(match.group(5)),
+        })
+    return rows
+
 def imported_structure_parse_errors(log_path):
     text=Path(log_path).read_text(encoding='utf-8',errors='replace')
     bad=[]
@@ -420,6 +436,7 @@ def main():
     parse_errors=imported_structure_parse_errors(log)
     seam_runtime=runtime_seam_debug(log)
     dry_seam_runtime=runtime_dry_seam_debug(log)
+    proximity_runtime=runtime_proximity_flood_debug(log)
     region=work/'world/dimensions/minecraft/overworld/region'
     roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
     volume=observer.Volume(roots)
@@ -439,6 +456,7 @@ def main():
         'external_structure_parse_pass':len(parse_errors)==0,
         'runtime_seam_reconciliation':seam_runtime,
         'runtime_dry_seam_components':dry_seam_runtime,
+        'runtime_proximity_flood_components':proximity_runtime,
         'pass':seam['pass'] and ocean_voids['pass'] and village_target_pass and len(parse_errors)==0,
         'notes':[
             'Target chunks come from user screenshots for seed -2815737126961128793.',
@@ -451,6 +469,40 @@ def main():
     }
     target=out/'field-r20-user-seed.json'
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+
+    summary={
+        'profile':report['profile'],
+        'source_sha':report['source_sha'],
+        'pass':report['pass'],
+        'max_boundary_water_air_faces':seam['max_boundary_water_air_faces'],
+        'total_boundary_water_air_faces':seam['total_boundary_water_air_faces'],
+        'water_seam_threshold':seam['threshold'],
+        'max_ocean_connected_air_cells':ocean_voids['max_ocean_connected_air_cells'],
+        'ocean_void_threshold':ocean_voids['threshold'],
+        'proximity_within_16_fraction':proximity.get('within_radius_fraction',{}).get('16'),
+        'runtime_seam_rows':len(seam_runtime),
+        'runtime_proximity_flood_components':len(proximity_runtime),
+        'runtime_dry_seam_components':len(dry_seam_runtime),
+        'village_starts':len(villages),
+        'external_structure_parse_errors':len(parse_errors),
+    }
+    (out/'field-r20-user-seed-summary.json').write_text(
+        json.dumps(summary,indent=2,ensure_ascii=False)+'\n',encoding='utf-8'
+    )
+    print('[FIELD-R22 user-seed] '+json.dumps(summary,ensure_ascii=False,sort_keys=True),flush=True)
+    if not report['pass']:
+        for boundary in sorted(
+            seam.get('boundaries',[]),
+            key=lambda item:item.get('water_air_faces',0),
+            reverse=True
+        )[:12]:
+            print(
+                '[FIELD-R22 bad-seam] chunk='+str(boundary.get('chunk'))
+                +' axis='+str(boundary.get('axis'))
+                +' neighbor='+str(boundary.get('neighbor'))
+                +' faces='+str(boundary.get('water_air_faces')),
+                flush=True
+            )
     require(report['pass'],
             'FIELD-R22 user-seed water/village regression failed; see field-r20-user-seed.json')
 
