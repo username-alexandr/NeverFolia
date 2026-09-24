@@ -10,6 +10,7 @@ COMMENT_1 = "// NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Ev
 COMMENT_2 = "// neighboring chunk that can write FEATURES into this chunk has therefore"
 COMMENT_3 = "// finished decoration before the chunk-owned flood mutates final blocks."
 CALL_FRAGMENT = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply("
+RECONCILE_FRAGMENT = "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15.reconcileSeams("
 
 
 def fail(message: str) -> None:
@@ -90,10 +91,12 @@ def normalize(source: str) -> str:
 
     context_match = re.search(r"\bWorldGenContext\s+(\w+)\b", params)
     chunk_match = re.search(r"\bChunkAccess\s+(\w+)\b", params)
-    if context_match is None or chunk_match is None:
-        fail("could not resolve WorldGenContext/ChunkAccess parameter names")
+    cache_match = re.search(r"\bStaticCache2D\s*<\s*GenerationChunkHolder\s*>\s+(\w+)\b", params)
+    if context_match is None or chunk_match is None or cache_match is None:
+        fail("could not resolve WorldGenContext/StaticCache2D/ChunkAccess parameter names")
     context_name = context_match.group(1)
     chunk_name = chunk_match.group(1)
+    cache_name = cache_match.group(1)
 
     lighted_pattern = re.compile(
         rf"(?P<indent>^[ \t]*)boolean\s+lighted\s*=\s*isLighted\(\s*{re.escape(chunk_name)}\s*\)\s*;",
@@ -118,7 +121,7 @@ def normalize(source: str) -> str:
     body = source[body_open + 1 : body_close]
     cleaned_lines: list[str] = []
     for line in body.splitlines(keepends=True):
-        if COMMENT_1 in line or COMMENT_2 in line or COMMENT_3 in line or CALL_FRAGMENT in line:
+        if COMMENT_1 in line or COMMENT_2 in line or COMMENT_3 in line or CALL_FRAGMENT in line or RECONCILE_FRAGMENT in line:
             continue
         cleaned_lines.append(line)
     cleaned_body = "".join(cleaned_lines)
@@ -128,11 +131,13 @@ def normalize(source: str) -> str:
         fail(f"expected exactly one isLighted({chunk_name}) statement in cleaned LIGHT body, got {len(body_lighted)}")
     statement = body_lighted[0]
     indent = statement.group("indent")
+    reconcile = f"net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15.reconcileSeams({cache_name}, {chunk_name});"
     call = f"net.minecraft.world.level.chunk.NeverOverworldFlood.apply({context_name}.level(), {chunk_name});"
     block = (
         f"{indent}{COMMENT_1}\n"
         f"{indent}{COMMENT_2}\n"
         f"{indent}{COMMENT_3}\n"
+        f"{indent}{reconcile}\n"
         f"{indent}{call}\n"
     )
     rebuilt_body = cleaned_body[: statement.start()] + block + cleaned_body[statement.start() :]
@@ -146,6 +151,8 @@ def normalize(source: str) -> str:
 
     if normalized.count(CALL_FRAGMENT) != 1:
         fail("normalized source does not contain exactly one flood call")
+    if normalized.count(RECONCILE_FRAGMENT) != 1:
+        fail("normalized source does not contain exactly one seam reconcile call")
 
     # Structural validation of the rebuilt method.
     methods_after = list(method_pattern.finditer(normalized))
@@ -160,10 +167,11 @@ def normalize(source: str) -> str:
     if cursor >= len(normalized) or normalized[cursor] != "{":
         fail("canonical LIGHT header is not followed by a body brace")
     b_close = matching_delimiter(normalized, cursor, "{", "}")
+    reconcile_pos = normalized.find(RECONCILE_FRAGMENT, cursor, b_close)
     call_pos = normalized.find(CALL_FRAGMENT, cursor, b_close)
     lighted_pos = normalized.find(f"boolean lighted = isLighted({chunk_name})", cursor, b_close)
-    if call_pos < 0 or lighted_pos < 0 or call_pos > lighted_pos:
-        fail("flood call is not inside LIGHT body before isLighted")
+    if reconcile_pos < 0 or call_pos < 0 or lighted_pos < 0 or not (reconcile_pos < call_pos < lighted_pos):
+        fail("seam reconcile/flood calls are not inside LIGHT body in canonical order")
     return normalized
 
 
