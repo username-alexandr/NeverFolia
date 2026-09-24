@@ -87,6 +87,9 @@ jobs:
       - name: Self-test NeverOverworld external dungeon pack QA
         run: python3 ./qa/field-r19/validate-external-structures-pack.py --self-test
 
+      - name: Self-test NeverOverworld external dungeon runtime QA
+        run: python3 ./qa/field-r19/probe-external-structures-runtime.py --self-test
+
       - name: Self-test NeverOverworld semantic hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
