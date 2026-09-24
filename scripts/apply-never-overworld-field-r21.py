@@ -30,7 +30,7 @@ def verify(folia: Path) -> None:
     owner = "NeverOverworldFlood.apply("
     require(tasks.count(reconcile) == 1, "LIGHT must contain exactly one cache-aware seam reconcile call")
     require(tasks.count(owner) == 1, "LIGHT must contain exactly one owner flood call")
-    require(tasks.find(reconcile) < tasks.find(owner), "seam reconcile must run before owner flood")
+    require(tasks.find(owner) < tasks.find(reconcile), "seam reconcile must run after owner flood reset")
 
     for marker in (
         "StaticCache2D<GenerationChunkHolder>",
