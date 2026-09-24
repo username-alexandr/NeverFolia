@@ -6,7 +6,7 @@ import argparse
 import importlib.util
 import json
 import re
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 import shutil
 
@@ -23,6 +23,7 @@ WATER_TARGETS = (
 VILLAGE_TARGETS = ((-425, -508), (-426, -509))
 MAX_WATER_AIR_SEAM_FACES = 192
 MAX_OCEAN_CONNECTED_AIR_CELLS = 64
+OCEAN_PROXIMITY_RADII = (0, 2, 4, 8, 12, 16, 24, 32)
 EXTERNAL_STRUCTURE_NAMESPACES = (
     'nova_structures:', 'explorify:', 'structory_towers:',
     'repurposed_structures:', 'betteroceanmonuments:',
@@ -86,6 +87,121 @@ def is_water(state):
 
 def is_air(state):
     return state is not None and state.get('Name') in AIR
+
+def surface_water_columns(volume, chunks):
+    columns=set()
+    for cx,cz in chunks:
+        base_x=cx*16
+        base_z=cz*16
+        for x in range(base_x,base_x+16):
+            for z in range(base_z,base_z+16):
+                if is_water(volume.at(x,128,z)):
+                    columns.add((x,z))
+    return columns
+
+def nearest_surface_water_distance(columns, x, z, max_radius=32):
+    """Chebyshev distance to a saved Y=128 ocean-water column.
+
+    This is diagnostics only: it does not alter generation. A bounded radius is
+    intentional because the user-reported samples are disjoint local envelopes.
+    """
+    if (x,z) in columns:
+        return 0
+    for radius in range(1,max_radius+1):
+        lo=-radius
+        hi=radius
+        for dx in range(lo,hi+1):
+            if (x+dx,z+lo) in columns or (x+dx,z+hi) in columns:
+                return radius
+        for dz in range(lo+1,hi):
+            if (x+lo,z+dz) in columns or (x+hi,z+dz) in columns:
+                return radius
+    return None
+
+def ocean_proximity_audit(volume, chunks):
+    """Measure whether final WATER/AIR seam defects sit near the ocean surface.
+
+    The metric answers the heuristic question without changing worldgen: for
+    every bad seam face, measure the horizontal Chebyshev distance of the AIR
+    side to the nearest saved WATER column at Y=128.
+    """
+    selected=set(chunks)
+    ocean_columns=surface_water_columns(volume,chunks)
+    cache={}
+    histogram=Counter()
+    per_boundary=[]
+    total_faces=0
+
+    def distance(x,z):
+        key=(x,z)
+        if key not in cache:
+            cache[key]=nearest_surface_water_distance(ocean_columns,x,z,max(OCEAN_PROXIMITY_RADII))
+        return cache[key]
+
+    for cx,cz in sorted(selected):
+        for axis,nbr in (('x',(cx+1,cz)),('z',(cx,cz+1))):
+            if nbr not in selected:
+                continue
+            distances=[]
+            if axis=='x':
+                x1=cx*16+15; x2=x1+1
+                for z in range(cz*16,cz*16+16):
+                    for y in range(-64,128):
+                        a=volume.at(x1,y,z); b=volume.at(x2,y,z)
+                        if not ((is_water(a) and is_air(b)) or (is_air(a) and is_water(b))):
+                            continue
+                        ax,az=(x2,z) if is_air(b) else (x1,z)
+                        distances.append(distance(ax,az))
+            else:
+                z1=cz*16+15; z2=z1+1
+                for x in range(cx*16,cx*16+16):
+                    for y in range(-64,128):
+                        a=volume.at(x,y,z1); b=volume.at(x,y,z2)
+                        if not ((is_water(a) and is_air(b)) or (is_air(a) and is_water(b))):
+                            continue
+                        ax,az=(x,z2) if is_air(b) else (x,z1)
+                        distances.append(distance(ax,az))
+
+            if not distances:
+                continue
+            total_faces+=len(distances)
+            local=Counter('gt' if d is None else d for d in distances)
+            per_boundary.append({
+                'chunk':[cx,cz],
+                'axis':axis,
+                'neighbor':list(nbr),
+                'water_air_faces':len(distances),
+                'within_radius':{
+                    str(radius):sum(1 for d in distances if d is not None and d<=radius)
+                    for radius in OCEAN_PROXIMITY_RADII
+                },
+                'beyond_max_radius':sum(1 for d in distances if d is None),
+            })
+            histogram.update('gt' if d is None else d for d in distances)
+
+    coverage={
+        str(radius):sum(count for key,count in histogram.items()
+                        if key!='gt' and int(key)<=radius)
+        for radius in OCEAN_PROXIMITY_RADII
+    }
+    return {
+        'metric':'chebyshev_xz_to_saved_y128_water',
+        'max_radius':max(OCEAN_PROXIMITY_RADII),
+        'surface_water_columns':len(ocean_columns),
+        'water_air_faces':total_faces,
+        'within_radius_faces':coverage,
+        'within_radius_fraction':{
+            radius:(coverage[radius]/total_faces if total_faces else 1.0)
+            for radius in coverage
+        },
+        'beyond_max_radius_faces':histogram.get('gt',0),
+        'distance_histogram':{
+            str(key):histogram[key]
+            for key in sorted((k for k in histogram if k!='gt'),key=int)
+        } | ({'>32':histogram['gt']} if histogram.get('gt') else {}),
+        'boundaries':sorted(per_boundary,key=lambda item:item['water_air_faces'],reverse=True)[:40],
+        'diagnostic_only':True,
+    }
 
 def seam_audit(volume, chunks):
     selected=set(chunks)
@@ -286,6 +402,7 @@ def main():
     roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
     volume=observer.Volume(roots)
     seam=seam_audit(volume,chunks)
+    proximity=ocean_proximity_audit(volume,chunks)
     ocean_voids=ocean_void_audit(volume,WATER_TARGETS)
     villages=village_starts(roots)
     village_target_pass=len(villages)==0
@@ -294,6 +411,7 @@ def main():
         'seed':SEED,'jar_sha256':sha(a.jar),'overworld_sha256':sha(a.overworld),
         'nether_sha256':sha(a.nether),'chunks':[list(p) for p in chunks],
         'water_seam':seam,'ocean_voids':ocean_voids,
+        'ocean_proximity_heuristic':proximity,
         'village_starts':villages,'village_target_pass':village_target_pass,
         'external_structure_parse_errors':parse_errors,
         'external_structure_parse_pass':len(parse_errors)==0,
@@ -303,6 +421,7 @@ def main():
             'Target chunks come from user screenshots for seed -2815737126961128793.',
             'Large WATER<->AIR planes exactly on horizontal chunk seams are gated.',
             'Large AIR pockets directly exposed to Y128-connected ocean water are gated inside reported chunks.',
+            'Ocean-proximity heuristic is measured post-generation only; it does not change flood behavior.',
             'The two user-reported cliff-village target areas must contain no persisted vanilla village start.',
             'Imported Overworld structure namespaces must load without datapack parse/tag errors.',
         ],
