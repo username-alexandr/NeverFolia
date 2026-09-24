@@ -70,6 +70,17 @@ public final class FieldR15FloodEcologySmoke {
         check(underground.getBlockState(new BlockPos(12,80,8)).isAir(),
             "underground connected cavity remains dry without Y128 ocean seed");
 
+        // R21: a FEATURES-complete neighbour is not flooded yet. Ocean connectivity
+        // must therefore travel from Y128 water through AIR/floodable cave volume to the seam.
+        var neighbor=fixture();
+        set(neighbor,2,128,8,Blocks.WATER);
+        for(int y=127;y>=80;y--)set(neighbor,2,y,8,Blocks.AIR);
+        for(int x=3;x<=15;x++)set(neighbor,x,80,8,Blocks.AIR);
+        boolean[] oceanConnected=NeverOverworldFloodConnectivityR15.oceanConnectedFloodable(neighbor,-64,128);
+        int deepSeam=((80-(-64))<<8)|(8<<4)|15;
+        check(oceanConnected[deepSeam],
+            "R21 neighbour ocean seed must propagate through unflooded AIR to deep seam");
+
         // Lava contact blocks continuation.
         var lava=fixture();
         set(lava,2,127,8,Blocks.WATER);
