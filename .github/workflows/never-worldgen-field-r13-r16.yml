@@ -1,7 +1,7 @@
 name: NeverWorldgen FIELD-R22 FIXPACK / Nether-R16 natural acceptance
 on:
   push:
-    branches: [wip/neveroverworld-field-r12]
+    branches: [wip/neveroverworld-field-r12, wip/neveroverworld-r22-r19-integration-v2]
     paths:
       - 'native/neveroverworld/field-r13/**'
       - 'native/neveroverworld/field-r14/**'
