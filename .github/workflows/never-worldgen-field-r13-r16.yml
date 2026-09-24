@@ -212,6 +212,16 @@ jobs:
           Path('.work/baseline-32c6df3.jar').write_bytes(jar)
           print('Pinned baseline verified; R15 pack is historical-Nether compatibility only')
           PY
+      - name: Reproduce user-reported FIELD-R20 seed and reject chunk water walls
+        run: |
+          set -euo pipefail
+          python3 qa/field-r20/probe-user-seed.py \
+            --jar artifacts/server.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --source-sha "$GITHUB_SHA"
+
       - name: Generate independent worlds and require FIELD-R20 FIXPACK / Nether-R16 natural acceptance
         run: |
           set -euo pipefail
