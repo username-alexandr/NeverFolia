@@ -35,7 +35,7 @@ def verify(folia: Path) -> None:
     for marker in (
         "StaticCache2D<GenerationChunkHolder>",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
-        "oceanConnectedWater",
+        "oceanConnectedFloodable",
         "externalSeeds",
         "allowSeams",
     ):
@@ -45,6 +45,8 @@ def verify(folia: Path) -> None:
             "R21 component scan must receive external seam seeds")
     require("boolean[] externalSeeds,boolean allowSeams" in flood,
             "R21 component scan seam parameters missing")
+    require("if (!traversable(chunk, pos)) return tailIn;" in flood,
+            "R21 neighbour ocean connectivity must traverse floodable volume, not existing water only")
 
     require("level.getBlockState(" not in flood,
             "R21 must not use WorldGenLevel neighbour block reads")
