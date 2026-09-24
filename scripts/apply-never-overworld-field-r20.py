@@ -12,6 +12,7 @@ from pathlib import Path
 JAVA = Path("folia-server/src/minecraft/java")
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 SAFETY = JAVA / "net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java"
+LIGHT = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
 
 MAX_SPAN = 8
 
@@ -85,6 +86,7 @@ def patch_village(text: str) -> str:
 def verify(folia: Path) -> None:
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     safety = (folia / SAFETY).read_text(encoding="utf-8")
+    light = (folia / LIGHT).read_text(encoding="utf-8")
 
     require("touchesHorizontalSeam" in flood, "R20 seam-component marker missing")
     require("horizontalSeamBelowOcean" in flood, "R20 seam helper missing")
@@ -93,6 +95,18 @@ def verify(folia: Path) -> None:
         or "if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;" in flood,
         "R20/R21 seam-safe flood guard missing"
     )
+    require("reconcileSeams" in flood, "R21 cache-aware seam reconciliation missing")
+    require("StaticCache2D<GenerationChunkHolder>" in flood,
+            "R21 generation-cache seam input missing")
+    require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
+            "R21 must only read already-generated FEATURES neighbours")
+    require("NeverOverworldFloodConnectivityR15.reconcileSeams(" in light,
+            "R21 LIGHT seam reconciliation hook missing")
+    require("NeverOverworldFlood.apply(" in light,
+            "NeverOverworld LIGHT flood hook missing")
+    require(light.find("NeverOverworldFloodConnectivityR15.reconcileSeams(")
+            < light.find("NeverOverworldFlood.apply("),
+            "R21 seam reconciliation must run before final owner flood")
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village surface-span constant missing")
     require("pieceSurfaceSpanAllowed(minBase, maxBase)" in safety,
