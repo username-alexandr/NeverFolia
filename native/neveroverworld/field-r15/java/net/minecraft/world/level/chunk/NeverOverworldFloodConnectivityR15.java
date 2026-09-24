@@ -171,13 +171,14 @@ public final class NeverOverworldFloodConnectivityR15 {
             if(visited[seed])continue;
             pos.set(baseX+x,y,baseZ+z);
             if(!traversable(chunk,pos)){visited[seed]=true;continue;}
-            changed+=scan(chunk,visited,queue,x,y,z,minY,maxY);
+            changed+=scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams);
         }
         return changed;
     }
 
     private static int scan(ChunkAccess chunk,boolean[] visited,int[] queue,
-                            int seedX,int seedY,int seedZ,int minY,int maxY){
+                            int seedX,int seedY,int seedZ,int minY,int maxY,
+                            boolean[] externalSeeds,boolean allowSeams){
         final int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();
         int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;
