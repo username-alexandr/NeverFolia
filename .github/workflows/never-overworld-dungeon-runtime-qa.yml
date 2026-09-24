@@ -96,6 +96,14 @@ jobs:
           python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
 
+      - name: Audit Better Witch Huts source ZIP and NBT mob links
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/audit-witch-source-nbt.py \
+            --source .work/external-structures-r19/witch.zip \
+            --merged artifacts/NeverOverworld.zip \
+            --output artifacts/witch-source-nbt-qa.json
+
       - name: Validate external structure graph
         run: |
           set -euo pipefail
