@@ -21,7 +21,7 @@ SCHEDULER = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/Chun
 OWNER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
 RECONCILE_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
-    "reconcileSeams(task.neverOverworldNeighbours, task.fromChunk);"
+    "reconcileSeams(task.world, task.neverOverworldNeighbours, task.fromChunk);"
 )
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
 
@@ -101,6 +101,7 @@ def verify(folia: Path) -> None:
 
     for marker in (
         "StaticCache2D<GenerationChunkHolder>",
+        "reconcileSeams(final WorldGenLevel level",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "oceanConnectedFloodable",
         "externalSeeds",

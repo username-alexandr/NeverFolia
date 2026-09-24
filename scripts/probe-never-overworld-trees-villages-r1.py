@@ -288,13 +288,16 @@ def village_plane(volume: Volume, boxes, output: Path) -> dict:
 class Server:
     COMMAND_ERROR = r'Unknown or incomplete command|Incorrect argument|Unknown command|Could not find|Couldn.t find'
 
-    def __init__(self, jar: Path, folder: Path, log: Path):
+    def __init__(self, jar: Path, folder: Path, log: Path, java_args=None):
         self.log = log; self.stream = log.open('x',encoding='utf-8'); self.token = 0
+        extra = list(java_args or [])
+        require(all(isinstance(value,str) and value.startswith('-D') for value in extra),
+                'QA java_args must contain only -D system properties')
         try:
             self.p = subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4',
                 # Natural acceptance requires deterministic cross-chunk FEATURES ordering.
                 # This affects only the disposable CI server process, never the packaged JAR.
-                '-DPaper.WorkerThreadCount=1','-jar',str(jar),'--nogui'],cwd=folder,stdin=subprocess.PIPE,
+                '-DPaper.WorkerThreadCount=1',*extra,'-jar',str(jar),'--nogui'],cwd=folder,stdin=subprocess.PIPE,
                 stdout=self.stream,stderr=subprocess.STDOUT,text=True,bufsize=1)
         except Exception:
             self.stream.close(); raise

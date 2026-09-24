@@ -32,26 +32,35 @@ public final class NeverOverworldFloodConnectivityR15 {
         return floodVerifiedComponents(chunk);
     }
 
-    public static int reconcileSeams(final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
-        if (cache == null || owner == null) return 0;
+    public static int reconcileSeams(final WorldGenLevel level, final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
+        if (level == null || cache == null || owner == null) return 0;
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
         final int minY = Math.max(SCAN_MIN_Y, owner.getMinY() + 1);
         final int maxY = Math.min(SCAN_MAX_Y, owner.getMaxY() - 1);
         if (minY > maxY) return 0;
 
         final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];
         final ChunkPos cp = owner.getPos();
-        int seeded = 0;
-
-        seeded += seedFromNeighbor(cache, owner, cp.x() - 1, cp.z(), 0, 15, true, minY, maxY, externalSeeds);
-        seeded += seedFromNeighbor(cache, owner, cp.x() + 1, cp.z(), 15, 0, true, minY, maxY, externalSeeds);
-        seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() - 1, 0, 15, false, minY, maxY, externalSeeds);
-        seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() + 1, 15, 0, false, minY, maxY, externalSeeds);
+        final int west = seedFromNeighbor(cache, owner, cp.x() - 1, cp.z(), 0, 15, true, minY, maxY, externalSeeds);
+        final int east = seedFromNeighbor(cache, owner, cp.x() + 1, cp.z(), 15, 0, true, minY, maxY, externalSeeds);
+        final int north = seedFromNeighbor(cache, owner, cp.x(), cp.z() - 1, 0, 15, false, minY, maxY, externalSeeds);
+        final int south = seedFromNeighbor(cache, owner, cp.x(), cp.z() + 1, 15, 0, false, minY, maxY, externalSeeds);
+        final int seeded = west + east + north + south;
 
         // Always run the seam-capable owner pass. A component can be
         // ocean-connected through the owner's own Y=128 seed even when no
         // immediate neighbour contributes an external seed. Returning early
         // here produced one-sided WATER/AIR chunk walls.
-        return floodVerifiedComponents(owner, externalSeeds, true);
+        final int changed = floodVerifiedComponents(owner, externalSeeds, true);
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R22Seam] chunk=" + cp.x() + "," + cp.z()
+                + " seeds=" + west + "," + east + "," + north + "," + south
+                + " total=" + seeded + " changed=" + changed
+            );
+        }
+        return changed;
     }
 
     private static int seedFromNeighbor(

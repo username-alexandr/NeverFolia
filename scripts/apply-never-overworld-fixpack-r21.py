@@ -35,6 +35,8 @@ def verify(folia: Path) -> None:
 
     require("reconcileSeams" in flood and "oceanConnectedFloodable" in flood,
             "R21 cache-aware flood helper missing")
+    require("reconcileSeams(final WorldGenLevel level" in flood,
+            "R21 seam reconciliation must receive world scope")
     require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
             "R21 must read only already-present FEATURES neighbours")
     require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
@@ -48,7 +50,7 @@ def verify(folia: Path) -> None:
 
     owner = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
     reconcile = ("net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
-                 "reconcileSeams(task.neverOverworldNeighbours, task.fromChunk);")
+                 "reconcileSeams(task.world, task.neverOverworldNeighbours, task.fromChunk);")
     require("NeverOverworldFlood.apply(" not in tasks
             and "NeverOverworldFloodConnectivityR15.reconcileSeams(" not in tasks,
             "bypassed ChunkStatusTasks must not own R21 runtime flood")
