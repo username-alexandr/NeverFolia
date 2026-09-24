@@ -22,12 +22,15 @@ REPRESENTATIVES={
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
     ],
     "source_placement":[
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
     ],
 }
 
@@ -67,7 +70,7 @@ def audit(pack:Path,spec_path:Path)->dict:
         admission=manifest.get("island_admission",{})
         radii=admission.get("radii",{})
         if admission.get("min_surface_y")!=129:fail("island surface floor must remain Y129")
-        if not isinstance(radii,dict) or len(radii)!=131:fail("R19 island radius table must contain 131 IDs")
+        if not isinstance(radii,dict) or len(radii)!=134:fail("R19 island radius table must contain 134 IDs")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
 
@@ -103,6 +106,9 @@ def audit(pack:Path,spec_path:Path)->dict:
             if payload.get("step")!="surface_structures" or payload.get("project_start_to_heightmap") not in SURFACE_PROJECTIONS:
                 bad_surface.append({"id":sid,"step":payload.get("step"),"projection":payload.get("project_start_to_heightmap")})
         if bad_surface:fail("island classification drifted: "+repr(bad_surface[:20]))
+        villa=structures.get("nova_structures:witch_villa",{})
+        if villa.get("project_start_to_heightmap")!="WORLD_SURFACE_WG" or villa.get("start_height")!={"absolute":0}:
+            fail("witch_villa was not re-anchored to NeverOverworld island surface")
 
         reps={}
         for group,ids in REPRESENTATIVES.items():
@@ -157,7 +163,7 @@ def audit(pack:Path,spec_path:Path)->dict:
 def synthetic_pack(path:Path,spec_path:Path)->None:
     unused=expected_unused(spec_path)
     surface=list(REPRESENTATIVES["surface_land"])
-    filler=[f"nova_structures:surface_{i}" for i in range(131-len(surface)-len(unused))]
+    filler=[f"nova_structures:surface_{i}" for i in range(134-len(surface)-len(unused))]
     island=surface+sorted(unused)+filler
     untouched=list(REPRESENTATIVES["source_placement"])
     radii={sid:24 for sid in island}
@@ -165,8 +171,8 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
         "profile":PROFILE,"minecraft_namespace_overrides_imported":False,
         "source_unused_structures":sorted(unused),
         "island_admission":{
-            "min_surface_y":129,"structure_count":131,
-            "spawnable_structure_count":131-len(unused),"radii":radii,
+            "min_surface_y":129,"structure_count":134,
+            "spawnable_structure_count":134-len(unused),"radii":radii,
         },
     }
     with zipfile.ZipFile(path,"w",zipfile.ZIP_DEFLATED) as z:
@@ -192,7 +198,7 @@ def self_test(spec_path:Path)->None:
     with tempfile.TemporaryDirectory(prefix="nr-external-qa-") as tmp:
         pack=Path(tmp)/"pack.zip";synthetic_pack(pack,spec_path)
         result=audit(pack,spec_path)
-        if not result["pass"] or result["counts"]["spawnable_island"]!=127:
+        if not result["pass"] or result["counts"]["spawnable_island"]!=130:
             fail("SELF-TEST valid synthetic pack rejected")
     print("[NeverFolia][External Structures QA] SELF-TEST OK")
 
