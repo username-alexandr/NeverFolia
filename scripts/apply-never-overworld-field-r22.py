@@ -231,54 +231,60 @@ def patch(text: str) -> str:
             require(text.count(old_scan_seed) == 1, "R22 scan state anchor missing")
             text = text.replace(old_scan_seed, new_scan_seed, 1)
 
-        old_external = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-        new_external = """            if(externalSeeds!=null&&externalSeeds[e]){
-                    if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
-                    else hasProximitySeed=true;
-                }
-    """
+        old_external = (
+            "            if(externalSeeds!=null&&externalSeeds[e]"
+            "&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+        )
+        new_external = (
+            "            if(externalSeeds!=null&&externalSeeds[e]){\n"
+            "                if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+            "                else hasProximitySeed=true;\n"
+            "            }\n"
+        )
         if new_external not in text:
             require(text.count(old_external) == 1, "R22 external seed classification anchor missing")
             text = text.replace(old_external, new_external, 1)
 
-        old_guard = """        if(!hasOceanSeed){
-                if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
-                    &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
-                    System.out.println(
-                        "[NeverFolia][R22DrySeam] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
-                        +" size="+tail+" boundary="+boundaryCells
-                        +" y="+componentMinY+":"+componentMaxY
-                        +" sample="+sampleSeamX+","+sampleSeamY+","+sampleSeamZ
-                    );
-                }
-                return 0;
-            }
-    """
-        new_guard = """        if(!hasOceanSeed){
-                final int verticalSpan=componentMaxY-componentMinY+1;
-                final boolean proximityFallback=allowSeams&&touchesHorizontalSeam
-                    &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);
-                if(!proximityFallback){
-                    if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
-                        &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
-                        System.out.println(
-                            "[NeverFolia][R22DrySeam] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
-                            +" size="+tail+" boundary="+boundaryCells
-                            +" y="+componentMinY+":"+componentMaxY
-                            +" sample="+sampleSeamX+","+sampleSeamY+","+sampleSeamZ
-                        );
-                    }
-                    return 0;
-                }
-                if(Boolean.getBoolean("neverfolia.debugFloodSeams")){
-                    System.out.println(
-                        "[NeverFolia][R22ProximityFlood] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
-                        +" size="+tail+" boundary="+boundaryCells
-                        +" span="+verticalSpan+" nearOcean=true"
-                    );
-                }
-            }
-    """
+        old_guard = (
+            "        if(!hasOceanSeed){\n"
+            "            if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
+            "                &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
+            "                System.out.println(\n"
+            "                    \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
+            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
+            "                    +\" y=\"+componentMinY+\":\"+componentMaxY\n"
+            "                    +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
+            "                );\n"
+            "            }\n"
+            "            return 0;\n"
+            "        }\n"
+        )
+        new_guard = (
+            "        if(!hasOceanSeed){\n"
+            "            final int verticalSpan=componentMaxY-componentMinY+1;\n"
+            "            final boolean proximityFallback=allowSeams&&touchesHorizontalSeam\n"
+            "                &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);\n"
+            "            if(!proximityFallback){\n"
+            "                if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
+            "                    &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
+            "                    System.out.println(\n"
+            "                        \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
+            "                        +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
+            "                        +\" y=\"+componentMinY+\":\"+componentMaxY\n"
+            "                        +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
+            "                    );\n"
+            "                }\n"
+            "                return 0;\n"
+            "            }\n"
+            "            if(Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
+            "                System.out.println(\n"
+            "                    \"[NeverFolia][R22ProximityFlood] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
+            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
+            "                    +\" span=\"+verticalSpan+\" nearOcean=true\"\n"
+            "                );\n"
+            "            }\n"
+            "        }\n"
+        )
         if new_guard not in text:
             require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
             text = text.replace(old_guard, new_guard, 1)
