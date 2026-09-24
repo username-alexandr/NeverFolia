@@ -4,8 +4,10 @@
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
 executes LIGHT through Moonrise ChunkLightTask. R21 therefore carries Moonrise's
 already-built neighbour StaticCache2D into ChunkLightTask and reconciles the
-owner chunk immediately after the existing owner flood, before Starlight reads
-section emptiness. No synchronous chunk loads or WorldGenLevel neighbour reads.
+owner chunk immediately after the existing owner flood. Because reconciliation
+can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
+cleanup runs once more on the same owner chunk before Starlight reads section
+emptiness. No synchronous chunk loads or WorldGenLevel neighbour reads.
 """
 from __future__ import annotations
 
@@ -23,6 +25,8 @@ RECONCILE_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
     "reconcileSeams(task.world, task.neverOverworldNeighbours, task.fromChunk);"
 )
+ECOLOGY13_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.cleanup(task.world, task.fromChunk);"
+ECOLOGY15_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
 
 def require(ok: bool, message: str) -> None:
@@ -61,6 +65,12 @@ def patch_moonrise(text: str) -> str:
     if RECONCILE_CALL not in text:
         require(text.count(OWNER_CALL) == 1, "Moonrise owner flood call missing/duplicated")
         text = text.replace(OWNER_CALL, OWNER_CALL + "\n                " + RECONCILE_CALL, 1)
+    if ECOLOGY13_CALL not in text:
+        require(text.count(RECONCILE_CALL) == 1, "Moonrise seam reconcile call missing/duplicated")
+        text = text.replace(RECONCILE_CALL, RECONCILE_CALL + "\n                " + ECOLOGY13_CALL, 1)
+    if ECOLOGY15_CALL not in text:
+        require(text.count(ECOLOGY13_CALL) == 1, "Moonrise R13 ecology call missing/duplicated")
+        text = text.replace(ECOLOGY13_CALL, ECOLOGY13_CALL + "\n                " + ECOLOGY15_CALL, 1)
     return text
 
 def patch_scheduler(text: str) -> str:
@@ -89,9 +99,12 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT must contain exactly one owner flood")
     require(moonrise.count(RECONCILE_CALL) == 1,
             "Moonrise LIGHT must contain exactly one seam reconciliation")
+    require(moonrise.count(ECOLOGY13_CALL) == 1 and moonrise.count(ECOLOGY15_CALL) == 1,
+            "Moonrise LIGHT must run post-seam ecology cleanup exactly once")
     require(moonrise.find(OWNER_CALL) < moonrise.find(RECONCILE_CALL)
+            < moonrise.find(ECOLOGY13_CALL) < moonrise.find(ECOLOGY15_CALL)
             < moonrise.find("StarLightEngine.getEmptySectionsForChunk"),
-            "Moonrise runtime order must be owner flood -> seam reconcile -> Starlight")
+            "Moonrise runtime order must be owner flood -> seam reconcile -> ecology -> Starlight")
     require(CACHE_FIELD in moonrise,
             "Moonrise LIGHT neighbour cache field missing")
     require("this.neverOverworldNeighbours = neighbours;" in moonrise,
