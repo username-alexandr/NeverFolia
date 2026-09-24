@@ -29,6 +29,19 @@ EXPECTED_SHA256="ca4ae83e5a777392d50154f4ef57d8cbd7a12cc190ed69fd2dd2a51437fd64e
 BIOMES=("birch","dark_forest","giant_tree_taiga","mangrove","oak","taiga")
 SIZES=("sm","lg","double")
 ALLOWED_MOB_IDS={"minecraft:witch","minecraft:cat"}
+EXPECTED_PILLAR_REPLACEMENTS={
+    "birch":"minecraft:stripped_birch_log",
+    "dark_forest":"minecraft:dark_oak_log",
+    "giant_tree_taiga":"minecraft:cracked_stone_bricks",
+    "mangrove":"minecraft:mangrove_log",
+    "oak":"minecraft:stripped_oak_log",
+    "taiga":"minecraft:spruce_log",
+}
+EXPECTED_DROPPED_PROCESSORS={
+    "betterwitchhuts:brewing_stand_processor",
+    "betterwitchhuts:potted_mushroom_processor",
+}
+STRUCTURAL_SOURCE_PROCESSOR="repurposed_structures:pillar_processor"
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -167,6 +180,22 @@ def processor_types(payload:dict)->set[str]:
             out.add(p["processor_type"])
     return out
 
+def rule_replacements(payload:dict)->dict[str,set[str]]:
+    out={}
+    for processor in payload.get("processors",[]):
+        if not isinstance(processor,dict) or processor.get("processor_type")!="minecraft:rule":
+            continue
+        for rule in processor.get("rules",[]):
+            if not isinstance(rule,dict): continue
+            pred=rule.get("input_predicate",{})
+            state=rule.get("output_state",{})
+            if not isinstance(pred,dict) or not isinstance(state,dict): continue
+            block=pred.get("block")
+            replacement=state.get("Name")
+            if isinstance(block,str) and isinstance(replacement,str):
+                out.setdefault(block,set()).add(replacement)
+    return out
+
 def audit(source:Path, merged:Path|None)->dict:
     raw=source.read_bytes()
     require(sha256(raw)==EXPECTED_SHA256,
@@ -230,7 +259,12 @@ def audit(source:Path, merged:Path|None)->dict:
 
             proc_name=f"data/betterwitchhuts/worldgen/processor_list/{biome}.json"
             proc=read_json(src,proc_name)
-            report["source_processor_types"][biome]=sorted(processor_types(proc))
+            source_types=processor_types(proc)
+            require(EXPECTED_DROPPED_PROCESSORS.issubset(source_types),
+                    f"{biome} source processors lost Better Witch Huts behavior markers")
+            require(STRUCTURAL_SOURCE_PROCESSOR in source_types,
+                    f"{biome} source pillar processor missing")
+            report["source_processor_types"][biome]=sorted(source_types)
 
             add_name=f"data/betterwitchhuts/rs_pool_additions/witch_huts/{biome}_start_pool.json"
             add=read_json(src,add_name)
@@ -258,6 +292,11 @@ def audit(source:Path, merged:Path|None)->dict:
                 "Witch/cat population is authoritative in structure spawn_overrides. "
                 "Any entities embedded in NBT are audited separately and must be vanilla IDs."
             ),
+            "compatibility":{
+                "dropped_mod_processors":sorted(EXPECTED_DROPPED_PROCESSORS),
+                "pillar_processor_translation":"brown_stained_glass marker -> biome support block via minecraft:rule",
+                "dynamic_downward_pillar_extension":"omitted; dry-island generated-piece admission remains the terrain safety gate",
+            },
         }
 
         if merged is not None:
@@ -281,6 +320,12 @@ def audit(source:Path, merged:Path|None)->dict:
                     types=processor_types(proc)
                     require(all(t.startswith("minecraft:") for t in types),
                             f"merged Witch processor list still requires a mod: {sorted(types)}")
+                    replacements=rule_replacements(proc)
+                    expected_replacement=EXPECTED_PILLAR_REPLACEMENTS[biome]
+                    require(
+                        expected_replacement in replacements.get("minecraft:brown_stained_glass",set()),
+                        f"merged Witch {biome} lost vanilla pillar-marker replacement to {expected_replacement}"
+                    )
                     report["merged_processor_types"][biome]=sorted(types)
 
                     pool_name=f"data/repurposed_structures/worldgen/template_pool/witch_huts/{biome}_start_pool.json"
