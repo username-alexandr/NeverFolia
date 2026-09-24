@@ -18,6 +18,7 @@ PROFILE = "NO-FIELD-R19-FIXPACK-1"
 JAVA = Path("folia-server/src/minecraft/java")
 CHUNK = JAVA / "net/minecraft/world/level/chunk/ChunkGenerator.java"
 HELPER = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java"
+FAST = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalFastLocateR19.java"
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -26,6 +27,7 @@ def require(ok: bool, message: str) -> None:
 def verify(folia: Path) -> None:
     chunk = (folia / CHUNK).read_text(encoding="utf-8")
     helper = (folia / HELPER).read_text(encoding="utf-8")
+    fast = (folia / FAST).read_text(encoding="utf-8")
     require("NeverOverworldExternalStructurePolicyR19.allows" in chunk,
             "external structure island admission hook missing")
     require(helper.count('case "') == 134,
@@ -65,6 +67,10 @@ def apply(folia: Path) -> None:
     )
     subprocess.run(
         [sys.executable, str(ROOT / "scripts/apply-never-overworld-external-structure-policy-r19.py"), str(folia)],
+        cwd=ROOT, check=True
+    )
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/apply-never-overworld-external-fast-locate-r19.py"), str(folia)],
         cwd=ROOT, check=True
     )
     verify(folia)
