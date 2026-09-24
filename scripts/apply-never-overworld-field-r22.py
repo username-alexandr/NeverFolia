@@ -95,6 +95,10 @@ def verify(folia: Path) -> None:
         require(marker in text, "R22 marker missing: " + marker)
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in text,
             "R21 scheduling-dependent WATER-only seed survived")
+    require("if (seeded == 0) return 0;" not in text,
+            "R22 must not skip owner-local ocean components when neighbours add no seed")
+    require("return floodVerifiedComponents(owner, externalSeeds, true);" in text,
+            "R22 seam-capable owner pass missing")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
     print("[FIELD-R22] existing + prospective OCEAN_FLOOR_WG seam seeds invariants OK")

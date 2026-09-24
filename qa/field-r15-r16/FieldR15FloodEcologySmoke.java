@@ -81,6 +81,26 @@ public final class FieldR15FloodEcologySmoke {
         check(oceanConnected[deepSeam],
             "R21 neighbour ocean seed must propagate through unflooded AIR to deep seam");
 
+        // R22: even with zero external neighbour seeds, the LIGHT reconciliation
+        // pass must flood a seam-touching component that has its own verified
+        // Y128 ocean seed. The pre-reconcile pass intentionally defers it.
+        var localOceanSeam=fixture();
+        set(localOceanSeam,2,128,8,Blocks.WATER);
+        for(int y=127;y>=80;y--)set(localOceanSeam,2,y,8,Blocks.AIR);
+        for(int x=3;x<=15;x++)set(localOceanSeam,x,80,8,Blocks.AIR);
+        check(NeverOverworldFloodConnectivityR15.floodVerifiedComponents(localOceanSeam)==0,
+            "pre-reconcile owner pass must defer seam-touching ocean component");
+        boolean[] noExternalSeeds=new boolean[
+            (NeverOverworldFloodConnectivityR15.SCAN_MAX_Y
+             - NeverOverworldFloodConnectivityR15.SCAN_MIN_Y + 1) * 256
+        ];
+        int localFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
+            localOceanSeam,noExternalSeeds,true);
+        check(localFlood>0,
+            "seam reconciliation must use owner's own Y128 ocean seed without external seeds");
+        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).is(Blocks.WATER),
+            "owner-local ocean seed must flood the deep seam cell");
+
         // Lava contact blocks continuation.
         var lava=fixture();
         set(lava,2,127,8,Blocks.WATER);

@@ -47,7 +47,10 @@ public final class NeverOverworldFloodConnectivityR15 {
         seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() - 1, 0, 15, false, minY, maxY, externalSeeds);
         seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() + 1, 15, 0, false, minY, maxY, externalSeeds);
 
-        if (seeded == 0) return 0;
+        // Always run the seam-capable owner pass. A component can be
+        // ocean-connected through the owner's own Y=128 seed even when no
+        // immediate neighbour contributes an external seed. Returning early
+        // here produced one-sided WATER/AIR chunk walls.
         return floodVerifiedComponents(owner, externalSeeds, true);
     }
 
@@ -153,7 +156,7 @@ public final class NeverOverworldFloodConnectivityR15 {
         return floodVerifiedComponents(chunk, null, false);
     }
 
-    private static int floodVerifiedComponents(final ChunkAccess chunk, final boolean[] externalSeeds, final boolean allowSeams) {
+    static int floodVerifiedComponents(final ChunkAccess chunk, final boolean[] externalSeeds, final boolean allowSeams) {
         final int minY=Math.max(SCAN_MIN_Y,chunk.getMinY()+1);
         final int maxY=Math.min(SCAN_MAX_Y,chunk.getMaxY()-1);
         final int layers=maxY-minY+1;
