@@ -137,8 +137,8 @@ def normalize(source: str) -> str:
         f"{indent}{COMMENT_1}\n"
         f"{indent}{COMMENT_2}\n"
         f"{indent}{COMMENT_3}\n"
-        f"{indent}{reconcile}\n"
         f"{indent}{call}\n"
+        f"{indent}{reconcile}\n"
     )
     rebuilt_body = cleaned_body[: statement.start()] + block + cleaned_body[statement.start() :]
 
@@ -170,8 +170,8 @@ def normalize(source: str) -> str:
     reconcile_pos = normalized.find(RECONCILE_FRAGMENT, cursor, b_close)
     call_pos = normalized.find(CALL_FRAGMENT, cursor, b_close)
     lighted_pos = normalized.find(f"boolean lighted = isLighted({chunk_name})", cursor, b_close)
-    if reconcile_pos < 0 or call_pos < 0 or lighted_pos < 0 or not (reconcile_pos < call_pos < lighted_pos):
-        fail("seam reconcile/flood calls are not inside LIGHT body in canonical order")
+    if reconcile_pos < 0 or call_pos < 0 or lighted_pos < 0 or not (call_pos < reconcile_pos < lighted_pos):
+        fail("owner flood/seam reconcile calls are not inside LIGHT body in canonical order")
     return normalized
 
 
