@@ -58,19 +58,20 @@ import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
 
 /**
- * Predictive locate for FIELD-R19 external land structures.
+ * Watchdog-safe predictive locate for FIELD-R19 external island structures.
  *
- * <p>Only structure IDs owned by NeverOverworldExternalStructurePolicyR19 are
- * intercepted. Candidate structure-set positions and weighted retry ordering
- * mirror ChunkGenerator#createStructures, while terrain admission uses the
- * preliminary-surface density router and therefore never synchronously loads
- * neighbour chunks.</p>
+ * <p>Natural generation has the authoritative actual-piece dry-island gate.
+ * Locate intentionally uses a cheaper 3x3 preliminary-surface approximation so
+ * the Folia global region never performs Structure#generate or synchronous
+ * chunk loads. A strict global density-probe budget bounds worst-case latency.</p>
  */
 final class NeverOverworldExternalFastLocateR19 {
     private static final int EXPECTED_MIN_Y=-512;
     private static final int EXPECTED_HEIGHT=1024;
     private static final int MIN_DRY_SURFACE_Y=129;
-    private static final int MAX_CANDIDATE_RINGS=64;
+    private static final int MAX_CANDIDATE_RINGS=16;
+    private static final int MAX_SURFACE_PROBES=512;
+    private static final int LOCATE_RADIUS_CAP=64;
 
     private NeverOverworldExternalFastLocateR19(){}
 
@@ -112,15 +113,18 @@ final class NeverOverworldExternalFastLocateR19 {
         final int originChunkX=SectionPos.blockToSectionCoord(origin.getX());
         final int originChunkZ=SectionPos.blockToSectionCoord(origin.getZ());
         final int maxRings=Math.max(0,Math.min(requestedRings,MAX_CANDIDATE_RINGS));
+        final int[] surfaceBudget={MAX_SURFACE_PROBES};
 
-        for(int radius=0;radius<=maxRings;++radius){
+        for(int radius=0;radius<=maxRings&&surfaceBudget[0]>0;++radius){
             final List<Candidate> candidates=new ArrayList<>();
             for(final SetRef setRef:sets){
                 appendRingCandidates(state,setRef,origin,originChunkX,originChunkZ,radius,candidates);
             }
             candidates.sort(CANDIDATE_ORDER);
             for(final Candidate candidate:candidates){
-                final Holder<Structure> generated=predictGeneratedStructure(generator,state,candidate);
+                if(surfaceBudget[0]<=0) return null;
+                final Holder<Structure> generated=
+                    predictGeneratedStructure(generator,state,candidate,surfaceBudget);
                 final String generatedId=generated==null?null:structureId(generated);
                 if(generatedId!=null&&wantedIds.contains(generatedId)){
                     return Pair.of(candidate.placement().getLocatePos(candidate.chunkPos()),generated);
@@ -179,7 +183,8 @@ final class NeverOverworldExternalFastLocateR19 {
     private static Holder<Structure> predictGeneratedStructure(
         final ChunkGenerator generator,
         final ChunkGeneratorStructureState state,
-        final Candidate candidate
+        final Candidate candidate,
+        final int[] surfaceBudget
     ){
         final ArrayList<StructureSet.StructureSelectionEntry> entries=
             new ArrayList<>(candidate.setRef().set().structures());
@@ -189,6 +194,12 @@ final class NeverOverworldExternalFastLocateR19 {
         int totalWeight=0;
         for(final StructureSet.StructureSelectionEntry entry:entries) totalWeight+=entry.weight();
 
+        final Holder<Biome> lowSurfaceBiome=biomeAt(
+            generator,state,candidate.chunkPos(),MIN_DRY_SURFACE_Y
+        );
+        int centerSurface=Integer.MIN_VALUE;
+        Holder<Biome> actualSurfaceBiome=null;
+
         while(!entries.isEmpty()&&totalWeight>0){
             int draw=random.nextInt(totalWeight);
             int selectedIndex=0;
@@ -197,8 +208,25 @@ final class NeverOverworldExternalFastLocateR19 {
                 if(draw<0){selectedIndex=i;break;}
             }
             final StructureSet.StructureSelectionEntry selected=entries.get(selectedIndex);
-            if(predictViable(generator,state,candidate.chunkPos(),selected.structure())){
-                return selected.structure();
+            final Holder<Structure> holder=selected.structure();
+
+            boolean biomeOk=holder.value().biomes().contains(lowSurfaceBiome);
+            if(!biomeOk){
+                if(centerSurface==Integer.MIN_VALUE){
+                    centerSurface=preliminarySurfaceY(
+                        state,candidate.chunkPos().getMiddleBlockX(),
+                        candidate.chunkPos().getMiddleBlockZ(),surfaceBudget
+                    );
+                    if(centerSurface==Integer.MIN_VALUE) return null;
+                    actualSurfaceBiome=biomeAt(generator,state,candidate.chunkPos(),centerSurface);
+                }
+                biomeOk=holder.value().biomes().contains(actualSurfaceBiome);
+            }
+
+            if(biomeOk&&predictViable(
+                state,candidate.chunkPos(),holder,centerSurface,surfaceBudget
+            )){
+                return holder;
             }
             entries.remove(selectedIndex);
             totalWeight-=selected.weight();
@@ -207,33 +235,36 @@ final class NeverOverworldExternalFastLocateR19 {
     }
 
     private static boolean predictViable(
-        final ChunkGenerator generator,
         final ChunkGeneratorStructureState state,
         final ChunkPos chunkPos,
-        final Holder<Structure> holder
+        final Holder<Structure> holder,
+        int centerSurface,
+        final int[] surfaceBudget
     ){
         final String id=structureId(holder);
         if(id==null) return false;
-
-        final int centerX=chunkPos.getMiddleBlockX();
-        final int centerZ=chunkPos.getMiddleBlockZ();
-        final int centerSurface=preliminarySurfaceY(state,centerX,centerZ);
-        if(centerSurface==Integer.MIN_VALUE) return false;
-        if(!passesBiomeAtY(generator,state,chunkPos,holder,centerSurface)) return false;
-
         final int radius=NeverOverworldExternalStructurePolicyR19.radiusForId(id);
         if(radius<=0){
-            // A non-island sibling can win a mixed source set and therefore
-            // block the requested island structure at this candidate. Preserve
-            // weighted ordering with a conservative biome-valid prediction.
+            // A non-island sibling can win a mixed source set. Its source biome
+            // result above is enough to preserve weighted blocking semantics.
             return true;
         }
 
-        final int half=Math.max(1,radius/2);
-        final int[] offsets={-radius,-half,0,half,radius};
+        final int centerX=chunkPos.getMiddleBlockX();
+        final int centerZ=chunkPos.getMiddleBlockZ();
+        if(centerSurface==Integer.MIN_VALUE){
+            centerSurface=preliminarySurfaceY(state,centerX,centerZ,surfaceBudget);
+        }
+        if(centerSurface<MIN_DRY_SURFACE_Y) return false;
+
+        // Exact generated-piece safety is authoritative. Locate only rejects
+        // obvious wet candidates with 8 extra probes, capped to 64 blocks.
+        final int probeRadius=Math.max(16,Math.min(radius,LOCATE_RADIUS_CAP));
+        final int[] offsets={-probeRadius,0,probeRadius};
         for(final int dx:offsets){
             for(final int dz:offsets){
-                if(preliminarySurfaceY(state,centerX+dx,centerZ+dz)<MIN_DRY_SURFACE_Y){
+                if(dx==0&&dz==0) continue;
+                if(preliminarySurfaceY(state,centerX+dx,centerZ+dz,surfaceBudget)<MIN_DRY_SURFACE_Y){
                     return false;
                 }
             }
@@ -244,8 +275,11 @@ final class NeverOverworldExternalFastLocateR19 {
     private static int preliminarySurfaceY(
         final ChunkGeneratorStructureState state,
         final int blockX,
-        final int blockZ
+        final int blockZ,
+        final int[] surfaceBudget
     ){
+        if(surfaceBudget[0]<=0) return Integer.MIN_VALUE;
+        --surfaceBudget[0];
         final double estimated=state.randomState()
             .router()
             .preliminarySurfaceLevel()
@@ -254,22 +288,18 @@ final class NeverOverworldExternalFastLocateR19 {
         return (int)Math.floor(estimated);
     }
 
-    private static boolean passesBiomeAtY(
+    private static Holder<Biome> biomeAt(
         final ChunkGenerator generator,
         final ChunkGeneratorStructureState state,
         final ChunkPos chunkPos,
-        final Holder<Structure> holder,
         final int biomeY
     ){
-        final int blockX=chunkPos.getMiddleBlockX();
-        final int blockZ=chunkPos.getMiddleBlockZ();
-        final Holder<Biome> biome=generator.getBiomeSource().getNoiseBiome(
-            QuartPos.fromBlock(blockX),
+        return generator.getBiomeSource().getNoiseBiome(
+            QuartPos.fromBlock(chunkPos.getMiddleBlockX()),
             QuartPos.fromBlock(biomeY),
-            QuartPos.fromBlock(blockZ),
+            QuartPos.fromBlock(chunkPos.getMiddleBlockZ()),
             state.randomState().sampler()
         );
-        return holder.value().biomes().contains(biome);
     }
 
     private static String structureId(final Holder<Structure> holder){
@@ -301,7 +331,6 @@ final class NeverOverworldExternalFastLocateR19 {
     ){}
 }
 '''
-
 def fail(message:str)->None:
     raise SystemExit("[NeverFolia][External Fast Locate R19] "+message)
 
@@ -324,7 +353,9 @@ def verify(root:Path)->None:
         "isStructureChunk",
         "DensityFunction.SinglePointContext",
         ".preliminarySurfaceLevel()",
-        "MAX_CANDIDATE_RINGS=64",
+        "MAX_CANDIDATE_RINGS=16",
+        "MAX_SURFACE_PROBES=512",
+        "LOCATE_RADIUS_CAP=64",
     ):
         if marker not in chunk+helper:
             fail("fast-locate marker missing: "+marker)
