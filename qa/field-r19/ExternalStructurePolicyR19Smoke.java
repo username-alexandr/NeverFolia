@@ -33,8 +33,17 @@ public final class ExternalStructurePolicyR19Smoke {
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("repurposed_structures:monument_jungle") == 96,
             "Better Monument jungle variant must be island-adapted");
 
-        check(NeverOverworldExternalStructurePolicyR19.radiusForId("explorify:ruins") == 0,
-            "Explorify ocean ruins must preserve original placement");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("explorify:ruins") == 48,
+            "Explorify jungle ruins must be island-adapted despite OCEAN_FLOOR_WG projection");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:stray_outlook") == 72,
+            "D&T snowy stray outlook must be island-adapted");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:witch_villa") == 72,
+            "D&T swamp witch villa must be island-adapted");
+
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:lone_citadel") == 128,
+            "D&T snowy lone citadel must move from vanilla absolute Y106 to island terrain");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:toxic_lair") == 110,
+            "D&T swamp toxic lair must move from vanilla absolute Y67 to island terrain");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("structory_towers:ocean_pillar") == 0,
             "Structory ocean pillar must preserve original placement");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:catacomb") == 0,
@@ -46,8 +55,10 @@ public final class ExternalStructurePolicyR19Smoke {
 
         check(NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("explorify:farmstead"),
             "surface farmstead classified");
-        check(!NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("explorify:ruins"),
-            "ocean ruins not classified as island surface");
+        check(NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("explorify:ruins"),
+            "jungle ruins classified as island surface");
+        check(!NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("nova_structures:conduit_ruin"),
+            "ocean conduit ruin not classified as island surface");
 
         out.println("PASS ExternalStructurePolicyR19Smoke checks=" + checks);
     }
