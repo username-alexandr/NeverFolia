@@ -109,6 +109,76 @@ PROXIMITY_METHODS = """    private static int seedOceanProximityFallback(
         return marked;
     }
 
+    private static boolean[] proximityConnectedFloodable(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess chunk,
+        final int minY,
+        final int maxY
+    ) {
+        final int capacity = (maxY - minY + 1) * 256;
+        final boolean[] accepted = new boolean[capacity];
+        final boolean[] visited = new boolean[capacity];
+        final int[] queue = new int[capacity];
+        final boolean[] nearOcean = nearOceanColumns(cache, chunk);
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = 0; z < 16; ++z) {
+                for (int x = 0; x < 16; ++x) {
+                    final int seed = encode(x, y, z, minY);
+                    if (visited[seed]) continue;
+                    pos.set(baseX + x, y, baseZ + z);
+                    if (!traversable(chunk, pos)) {
+                        visited[seed] = true;
+                        continue;
+                    }
+
+                    int head = 0;
+                    int tail = 0;
+                    int boundaryCells = 0;
+                    int componentMinY = y;
+                    int componentMaxY = y;
+                    boolean nearOceanBoundary = false;
+                    visited[seed] = true;
+                    queue[tail++] = seed;
+
+                    while (head < tail) {
+                        final int e = queue[head++];
+                        final int cx = e & 15;
+                        final int cz = (e >>> 4) & 15;
+                        final int cy = minY + (e >>> 8);
+                        componentMinY = Math.min(componentMinY, cy);
+                        componentMaxY = Math.max(componentMaxY, cy);
+                        if (horizontalSeamBelowOcean(cx, cy, cz)) {
+                            ++boundaryCells;
+                            if (nearOcean[(cz << 4) | cx]) {
+                                nearOceanBoundary = true;
+                            }
+                        }
+
+                        tail = enqueue(chunk, visited, queue, tail, cx - 1, cy, cz, minY, maxY);
+                        tail = enqueue(chunk, visited, queue, tail, cx + 1, cy, cz, minY, maxY);
+                        tail = enqueue(chunk, visited, queue, tail, cx, cy, cz - 1, minY, maxY);
+                        tail = enqueue(chunk, visited, queue, tail, cx, cy, cz + 1, minY, maxY);
+                        tail = enqueue(chunk, visited, queue, tail, cx, cy - 1, cz, minY, maxY);
+                        tail = enqueue(chunk, visited, queue, tail, cx, cy + 1, cz, minY, maxY);
+                    }
+
+                    final int verticalSpan = componentMaxY - componentMinY + 1;
+                    if (!proximityFallbackAllowed(tail, boundaryCells, verticalSpan, nearOceanBoundary)) {
+                        continue;
+                    }
+                    for (int i = 0; i < tail; ++i) {
+                        accepted[queue[i]] = true;
+                    }
+                }
+            }
+        }
+        return accepted;
+    }
+
     private static boolean[] nearOceanColumns(
         final StaticCache2D<GenerationChunkHolder> cache,
         final ChunkAccess owner
@@ -293,6 +363,23 @@ def patch(text: str) -> str:
         if new_guard not in text:
             require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
             text = text.replace(old_guard, new_guard, 1)
+
+        proximity_mask = (
+            "        final boolean[] neighborProximityWater = "
+            "proximityConnectedFloodable(cache, neighbor, minY, maxY);\n"
+        )
+        if proximity_mask not in text:
+            anchor = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
+            require(text.count(anchor) == 1, "R22 neighbour ocean mask anchor missing")
+            text = text.replace(anchor, anchor + proximity_mask, 1)
+
+        old_neighbor_gate = "                if (!neighborOceanWater[ne]) continue;\n"
+        new_neighbor_gate = (
+            "                if (!neighborOceanWater[ne] && !neighborProximityWater[ne]) continue;\n"
+        )
+        if new_neighbor_gate not in text:
+            require(text.count(old_neighbor_gate) == 1, "R22 neighbour seam gate anchor missing")
+            text = text.replace(old_neighbor_gate, new_neighbor_gate, 1)
     return text
 
 def verify(folia: Path) -> None:
@@ -322,6 +409,9 @@ def verify(folia: Path) -> None:
         "seedOceanProximityFallback",
         "nearOceanColumns",
         "proximityFallbackAllowed",
+        "proximityConnectedFloodable",
+        "neighborProximityWater",
+        "!neighborOceanWater[ne] && !neighborProximityWater[ne]",
         "componentSize >= 768",
         "boundaryCells >= 48",
         "verticalSpan >= 8",
@@ -378,6 +468,10 @@ class X {
             "SELF-TEST old WATER-only seed survived")
     require("seedOceanProximityFallback" in PROXIMITY_METHODS,
             "SELF-TEST proximity seed pass missing")
+    require("proximityConnectedFloodable" in PROXIMITY_METHODS,
+            "SELF-TEST neighbour proximity component mask missing")
+    require("proximityFallbackAllowed(tail, boundaryCells, verticalSpan, nearOceanBoundary)" in PROXIMITY_METHODS,
+            "SELF-TEST neighbour proximity qualification missing")
     require("final int radius = 16;" in PROXIMITY_METHODS,
             "SELF-TEST proximity radius missing")
     require("componentSize >= 768" in HELPER
