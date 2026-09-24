@@ -128,21 +128,17 @@ def apply(folia: Path) -> None:
 
     # Remove the dead R21 canonical hook if an earlier R21 attempt materialized it.
     tasks_text = tasks.read_text(encoding="utf-8")
-    dead_lines = (
-        "      net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);\n",
-        "      net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15.reconcileSeams(chunks, chunk);\n",
-        "   net.minecraft.world.level.chunk.NeverOverworldFlood.apply(context.level(), chunk);\n",
-        "   net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15.reconcileSeams(chunks, chunk);\n",
-    )
-    for line in dead_lines:
-        tasks_text = tasks_text.replace(line, "")
-    # Also remove the three explanatory comment lines introduced by the old normalizer.
-    for marker in (
+    dead_markers = (
+        "NeverOverworldFlood.apply(",
+        "NeverOverworldFloodConnectivityR15.reconcileSeams(",
         "// NeverFolia: LIGHT has a radius-1 INITIALIZE_LIGHT dependency. Every",
         "// neighboring chunk that can write FEATURES into this chunk has therefore",
         "// finished decoration before the chunk-owned flood mutates final blocks.",
-    ):
-        tasks_text = "\n".join(line for line in tasks_text.split("\n") if marker not in line)
+    )
+    tasks_text = "\n".join(
+        line for line in tasks_text.split("\n")
+        if not any(marker in line for marker in dead_markers)
+    )
     tasks.write_text(tasks_text, encoding="utf-8")
 
     moonrise.write_text(patch_moonrise(moonrise.read_text(encoding="utf-8")), encoding="utf-8")
