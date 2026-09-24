@@ -16,7 +16,9 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
+import time
 
 SEED=-2815737126961128793
 SURFACE_IDS=(
@@ -28,6 +30,8 @@ SURFACE_IDS=(
     "explorify:ruins",
     "nova_structures:stray_outlook",
     "nova_structures:witch_villa",
+    "nova_structures:lone_citadel",
+    "nova_structures:toxic_lair",
 )
 SOURCE_IDS=(
     "structory_towers:ocean_pillar",
@@ -102,10 +106,31 @@ def water_at_y128(volume,boxes):
                     if len(examples)<24: examples.append([x,128,z])
     return {"columns":columns,"water_columns":water,"examples":examples,"pass":water==0}
 
+def locate_optional(server,target,x,z,timeout=30):
+    command=f'execute in minecraft:overworld positioned {x} 200 {z} run locate structure {target}'
+    start=len(server.text());server.send(command)
+    deadline=time.monotonic()+timeout
+    positive=re.compile(re.escape(target)+r'.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]')
+    not_found=re.compile(r'Could not find a structure of type .*?'+re.escape(target)+r'.*? nearby')
+    while time.monotonic()<deadline:
+        segment=server.text()[start:]
+        match=positive.search(segment)
+        if match:return int(match.group(1)),int(match.group(3))
+        if not_found.search(segment):return None
+        require('FoliaWatchdogThread' not in segment,
+                f'R19 fast locate exceeded Folia watchdog budget: {target}')
+        fatal=re.search(r'Unknown or incomplete command|Incorrect argument|Unknown command',segment)
+        require(fatal is None,f'locate command failed: {command}\n{segment[-2000:]}')
+        require(server.p.poll() is None,'server exited during external locate')
+        time.sleep(.25)
+    raise TimeoutError(f'{command}: no locate acknowledgement')
+
 def plan_candidates(server,target):
     seen=set();rows=[]
     for ox,oz in ORIGINS:
-        x,z=server.locate("structure",target,ox,oz)
+        found=locate_optional(server,target,ox,oz)
+        if found is None:continue
+        x,z=found
         cx,cz=x//16,z//16
         key=(cx,cz)
         if key in seen: continue
@@ -237,7 +262,7 @@ def self_test():
     cov=piece_coverage(rows[0]["boxes"],margin=1)
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
-    require(len(SURFACE_IDS)==8 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
+    require(len(SURFACE_IDS)==10 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():
