@@ -22,6 +22,10 @@ WATER_TARGETS = (
 VILLAGE_TARGETS = ((-425, -508), (-426, -509))
 MAX_WATER_AIR_SEAM_FACES = 192
 MAX_OCEAN_CONNECTED_AIR_CELLS = 64
+EXTERNAL_STRUCTURE_NAMESPACES = (
+    'nova_structures:', 'explorify:', 'structory_towers:',
+    'repurposed_structures:', 'betteroceanmonuments:',
+)
 
 def require(ok, message):
     if not ok:
@@ -38,6 +42,17 @@ def sha(path):
     import hashlib
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+def imported_structure_parse_errors(log_path):
+    text=Path(log_path).read_text(encoding='utf-8',errors='replace')
+    bad=[]
+    for line in text.splitlines():
+        if "Couldn't parse data file" not in line and "Missing tag" not in line:
+            continue
+        if any(ns in line for ns in EXTERNAL_STRUCTURE_NAMESPACES):
+            bad.append(line.strip())
+    return bad[:100]
+
 
 def expanded_targets():
     chunks=set()
@@ -251,6 +266,7 @@ def main():
         if not normal:
             server.close()
 
+    parse_errors=imported_structure_parse_errors(log)
     region=work/'world/dimensions/minecraft/overworld/region'
     roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
     volume=observer.Volume(roots)
@@ -264,12 +280,15 @@ def main():
         'nether_sha256':sha(a.nether),'chunks':[list(p) for p in chunks],
         'water_seam':seam,'ocean_voids':ocean_voids,
         'village_starts':villages,'village_target_pass':village_target_pass,
-        'pass':seam['pass'] and ocean_voids['pass'] and village_target_pass,
+        'external_structure_parse_errors':parse_errors,
+        'external_structure_parse_pass':len(parse_errors)==0,
+        'pass':seam['pass'] and ocean_voids['pass'] and village_target_pass and len(parse_errors)==0,
         'notes':[
             'Target chunks come from user screenshots for seed -2815737126961128793.',
             'Large WATER<->AIR planes exactly on horizontal chunk seams are gated.',
             'Large AIR pockets directly exposed to Y128-connected ocean water are gated inside reported chunks.',
             'The two user-reported cliff-village target areas must contain no persisted vanilla village start.',
+            'Imported Overworld structure namespaces must load without datapack parse/tag errors.',
         ],
     }
     target=out/'field-r20-user-seed.json'
