@@ -4,6 +4,7 @@ import argparse, copy, hashlib, io, json, re, urllib.request, zipfile
 from pathlib import Path
 
 TARGET_FORMAT = 107
+SPEC = Path(__file__).resolve().parents[1] / "worldgen-spec/never-overworld-external-structures-r19.json"
 
 SOURCES = {
     "witch": {
@@ -33,6 +34,17 @@ SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_
 
 def fail(msg: str) -> None:
     raise SystemExit("[NeverFolia][External Structures R19] " + msg)
+
+def policy_radii() -> dict[str,int]:
+    data=json.loads(SPEC.read_text(encoding="utf-8"))
+    radii=data.get("island_radii",{})
+    if data.get("profile")!="NeverOverworld-External-Structures-R19":
+        fail("wrong external-structure spec profile")
+    if not isinstance(radii,dict) or len(radii)!=136:
+        fail(f"expected 136 policy island radii, got {len(radii) if isinstance(radii,dict) else 'invalid'}")
+    if any(not isinstance(k,str) or not isinstance(v,int) or v<1 for k,v in radii.items()):
+        fail("invalid policy island radius table")
+    return radii
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -443,6 +455,21 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
             "files":len(filtered),
             "sha256":sha(payload),
         }
+
+    expected_radii=policy_radii()
+    detected=set(all_land)
+    expected=set(expected_radii)
+    if detected!=expected:
+        fail(
+            "land classification/spec drift: missing="
+            +repr(sorted(expected-detected)[:20])
+            +" unexpected="+repr(sorted(detected-expected)[:20])
+        )
+    # The checked-in spec is authoritative for footprint radii. The builder
+    # discovers *which* source structures are land; the policy table controls
+    # their tuned island envelope. This keeps pack metadata, runtime admission
+    # and fast-locate prediction on the same exact radius values.
+    all_land=dict(expected_radii)
 
     manifest={
         "schema":1,

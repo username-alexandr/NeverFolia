@@ -60,6 +60,10 @@ def expected_unused(spec_path:Path)->set[str]:
 
 def audit(pack:Path,spec_path:Path)->dict:
     expected=expected_unused(spec_path)
+    spec=json.loads(spec_path.read_text(encoding="utf-8"))
+    expected_radii=spec.get("island_radii",{})
+    if not isinstance(expected_radii,dict) or len(expected_radii)!=136:
+        fail("spec island radius table must contain 136 IDs")
     with zipfile.ZipFile(pack) as archive:
         bad=archive.testzip()
         if bad is not None:fail("corrupt ZIP entry: "+bad)
@@ -74,6 +78,7 @@ def audit(pack:Path,spec_path:Path)->dict:
         radii=admission.get("radii",{})
         if admission.get("min_surface_y")!=129:fail("island surface floor must remain Y129")
         if not isinstance(radii,dict) or len(radii)!=136:fail("R19 island radius table must contain 136 IDs")
+        if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
 
@@ -175,10 +180,10 @@ def audit(pack:Path,spec_path:Path)->dict:
 def synthetic_pack(path:Path,spec_path:Path)->None:
     unused=expected_unused(spec_path)
     surface=list(REPRESENTATIVES["surface_land"])
-    filler=[f"nova_structures:surface_{i}" for i in range(136-len(surface)-len(unused))]
-    island=surface+sorted(unused)+filler
     untouched=list(REPRESENTATIVES["source_placement"])
-    radii={sid:24 for sid in island}
+    policy=json.loads(spec_path.read_text(encoding="utf-8")).get("island_radii",{})
+    island=sorted(policy)
+    radii=dict(policy)
     manifest={
         "profile":PROFILE,"minecraft_namespace_overrides_imported":False,
         "source_unused_structures":sorted(unused),
