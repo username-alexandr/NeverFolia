@@ -220,24 +220,20 @@ def should_copy_dependency(path: str) -> bool:
     return True
 
 def dat_minecraft_compat(path: str) -> bool:
-    # Dungeons & Taverns defines several NEW resources under minecraft:
-    # namespace. They are dependencies of its Overworld Jigsaw structures, not
-    # replacements for vanilla structure registrations/tags.
-    if path.startswith("data/minecraft/worldgen/configured_feature/"):
-        return "nether_fortress" not in path
-    if path.startswith("data/minecraft/worldgen/placed_feature/"):
-        return "nether_fortress" not in path
-    if path.startswith("data/minecraft/worldgen/processor_list/"):
-        return "nether_fortress" not in path
+    # Dungeons & Taverns defines NEW dependency resources under minecraft:
+    # namespace. They are not structure/structure_set/tag overrides and cannot
+    # spawn anything by themselves. Copying the complete dependency families is
+    # required because even excluded Nether/End template pools are registry
+    # entries and must resolve their processors/fallback pools while datapacks
+    # freeze. Generation remains Overworld-only because their structure sets are
+    # filtered separately.
     for prefix in (
-        "data/minecraft/worldgen/template_pool/illager_mansion/",
-        "data/minecraft/worldgen/template_pool/jungle_village/",
-        "data/minecraft/worldgen/template_pool/swamp_village/",
-        "data/minecraft/worldgen/template_pool/witch_hut/",
-        "data/minecraft/worldgen/template_pool/mangrove_witch_hut/",
-        "data/minecraft/structure/illager_mansion/",
-        "data/minecraft/structure/village_jungle/",
-        "data/minecraft/structure/village_swamp/",
+        "data/minecraft/worldgen/configured_feature/",
+        "data/minecraft/worldgen/placed_feature/",
+        "data/minecraft/worldgen/processor_list/",
+        "data/minecraft/worldgen/template_pool/",
+        "data/minecraft/structure/",
+        "data/minecraft/loot_table/",
     ):
         if path.startswith(prefix):
             return True
@@ -313,9 +309,13 @@ def filter_pack(key: str, files: dict[str, bytes]):
         required=(
             "data/minecraft/worldgen/placed_feature/donjon_base.json",
             "data/minecraft/worldgen/processor_list/ruined_town_degradation.json",
+            "data/minecraft/worldgen/processor_list/nether_fortress_generic_degradation.json",
             "data/minecraft/worldgen/template_pool/illager_mansion/illager_mansion_entry.json",
             "data/minecraft/worldgen/template_pool/jungle_village/town_center.json",
             "data/minecraft/worldgen/template_pool/swamp_village/town_center.json",
+            "data/minecraft/worldgen/template_pool/nether_fortress/nether_fortress_core.json",
+            "data/minecraft/structure/illager_mansion/illager_mansion_anchor.nbt",
+            "data/minecraft/loot_table/chests/village/village_jungle_house.json",
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
