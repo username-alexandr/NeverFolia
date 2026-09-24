@@ -28,7 +28,7 @@ SOURCES = {
     },
 }
 
-AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades"}
+AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
 
 def fail(msg: str) -> None:
