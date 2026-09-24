@@ -56,12 +56,13 @@ public final class NeverOverworldFloodConnectivityR15 {
                             int seedX,int seedY,int seedZ,int minY,int maxY){
         final int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();
-        int head=0,tail=0;boolean hasOceanSeed=false;
+        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;
         int seed=encode(seedX,seedY,seedZ,minY);visited[seed]=true;queue[tail++]=seed;
         while(head<tail){
             int e=queue[head++],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
             pos.set(baseX+x,y,baseZ+z);
             if(y==SCAN_MAX_Y&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
+            if(horizontalSeamBelowOcean(x,y,z))touchesHorizontalSeam=true;
             tail=enqueue(chunk,visited,queue,tail,x-1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x+1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y,z-1,minY,maxY);
@@ -69,7 +70,7 @@ public final class NeverOverworldFloodConnectivityR15 {
             tail=enqueue(chunk,visited,queue,tail,x,y-1,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y+1,z,minY,maxY);
         }
-        if(!hasOceanSeed)return 0;
+        if(!hasOceanSeed||touchesHorizontalSeam)return 0;
         int changed=0;BlockState water=Blocks.WATER.defaultBlockState();
         for(int i=0;i<tail;++i){
             int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
@@ -104,6 +105,10 @@ public final class NeverOverworldFloodConnectivityR15 {
             p.set(x,y,z);if(chunk.getBlockState(p).is(Blocks.LAVA))return true;
         }
         return false;
+    }
+
+    static boolean horizontalSeamBelowOcean(int x,int y,int z){
+        return y<SCAN_MAX_Y&&(x==0||x==15||z==0||z==15);
     }
 
     static boolean isFloodable(BlockState state){
