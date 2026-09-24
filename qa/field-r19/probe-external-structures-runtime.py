@@ -25,12 +25,15 @@ SURFACE_IDS=(
     "structory_towers:wizard_tower",
     "repurposed_structures:witch_hut_oak",
     "repurposed_structures:monument_jungle",
+    "explorify:ruins",
+    "nova_structures:stray_outlook",
+    "nova_structures:witch_villa",
 )
 SOURCE_IDS=(
-    "explorify:ruins",
     "structory_towers:ocean_pillar",
     "nova_structures:catacomb",
     "nova_structures:conduit_ruin",
+    "nova_structures:trident_trial_monument",
 )
 ORIGINS=(
     (0,0),(12000,0),(-12000,0),(0,12000),(0,-12000),(12000,12000),
@@ -225,7 +228,7 @@ def self_test():
     cov=piece_coverage(rows[0]["boxes"],margin=1)
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
-    require(len(SURFACE_IDS)==5 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
+    require(len(SURFACE_IDS)==8 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():

@@ -123,8 +123,60 @@ def dimension_of(struct_id: str, d: dict, tags: dict[str, list[str]]) -> str:
     if "end" in dims: return "end"
     return "overworld"
 
-def is_land_surface(d: dict) -> bool:
-    return d.get("step") == "surface_structures" and d.get("project_start_to_heightmap") in SURFACE_PROJECTIONS
+def biome_refs(d: dict) -> list[str]:
+    raw=d.get("biomes")
+    if isinstance(raw,str): return [raw]
+    if isinstance(raw,list): return [v for v in raw if isinstance(v,str)]
+    return []
+
+def explicit_ocean_biomes(d: dict, tags: dict[str, list[str]]) -> bool:
+    """True only when the structure's biome contract is explicitly oceanic."""
+    seen=set()
+    def walk(v: str) -> tuple[bool,bool]:
+        low=v.lower()
+        # Vanilla/source tag names are useful even if the referenced tag is not
+        # copied into the external pack (for example minecraft:ocean_monument).
+        if "ocean" in low or "deep_ocean" in low:
+            return True,False
+        if v.startswith("#"):
+            tid=v[1:]
+            if tid in seen: return False,False
+            seen.add(tid)
+            ocean=False;land=False
+            for x in tags.get(tid, []):
+                o,l=walk(x);ocean|=o;land|=l
+            return ocean,land
+        if v.startswith("minecraft:"):
+            return False,True
+        return False,False
+
+    refs=biome_refs(d)
+    if not refs: return False
+    ocean=False;land=False
+    for ref in refs:
+        o,l=walk(ref);ocean|=o;land|=l
+    return ocean and not land
+
+def is_land_surface(d: dict, tags: dict[str, list[str]]) -> bool:
+    # Generation step is the authoritative source intent. OCEAN_FLOOR_WG is
+    # also used by several land structures (Explorify ruins, stray outlook), so
+    # projection alone must never classify them as ocean.
+    return d.get("step") == "surface_structures" and not explicit_ocean_biomes(d,tags)
+
+def adapt_land_surface(d: dict) -> dict:
+    """Anchor all admitted land structures to NeverOverworld terrain surface."""
+    out=copy.deepcopy(d)
+    if out.get("step")!="surface_structures":
+        return out
+    # OCEAN_FLOOR_WG is valid in the source packs for some *land* structures
+    # because vanilla sea level is low. In NeverOverworld it would anchor those
+    # starts to the drowned floor below Y128. Once biome intent classifies the
+    # structure as land, WORLD_SURFACE_WG is the only correct projection.
+    out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
+    if "start_height" not in out or out.get("start_height")=={"absolute":63}:
+        # D&T witch_villa used an absolute vanilla sea-level Y=63.
+        out["start_height"]={"absolute":0}
+    return out
 
 def island_radius(d: dict) -> int:
     size = d.get("size")
@@ -251,7 +303,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         d=read_json(b,n)
         if dimension_of(sid,d,tags)!="overworld": continue
         allowed.add(sid)
-        if is_land_surface(d):
+        if is_land_surface(d,tags):
             land.add(sid); radii[sid]=island_radius(d)
 
     out={}
@@ -277,6 +329,8 @@ def filter_pack(key: str, files: dict[str, bytes]):
             d=read_json(b,n)
             if key in {"witch","monuments"}:
                 d=sanitize_repurposed_structure(d,radii.get(sid,32),sid)
+            if sid in land:
+                d=adapt_land_surface(d)
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         setid=resource_id(n,"worldgen/structure_set")

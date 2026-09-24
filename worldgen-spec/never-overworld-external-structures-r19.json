@@ -41,9 +41,10 @@
   },
   "policy": {
     "minecraft_namespace_overrides_imported": false,
-    "surface_land": "apply NeverOverworld 5x5 dry-island admission",
+    "surface_land": "all Overworld surface_structures except explicitly ocean-biome structures use NeverOverworld dry-island admission",
     "underground_ocean": "source placement unchanged",
-    "nether_end": "excluded from NeverOverworld integration"
+    "nether_end": "excluded from NeverOverworld integration",
+    "vertical_adaptation": "surface structures without a source heightmap projection are re-anchored to WORLD_SURFACE_WG with start_height 0"
   },
   "island_radii": {
     "explorify:badlands_pyramid": 72,
@@ -176,7 +177,10 @@
     "structory_towers:small_firetower": 32,
     "structory_towers:taiga_outpost": 24,
     "structory_towers:warped_greatsword": 32,
-    "structory_towers:wizard_tower": 32
+    "structory_towers:wizard_tower": 32,
+    "explorify:ruins": 48,
+    "nova_structures:stray_outlook": 72,
+    "nova_structures:witch_villa": 72
   },
   "source_unused_structures": {
     "nova_structures:bogged_camp": "Dungeons & Taverns 5.3.2 ships the structure definition without a structure_set reference; preserve source placement semantics.",
