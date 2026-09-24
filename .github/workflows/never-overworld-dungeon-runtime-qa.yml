@@ -6,6 +6,10 @@ on:
     paths:
       - 'qa/field-r19/**'
       - 'scripts/build-never-overworld-external-structures-r19.py'
+      - 'scripts/apply-never-overworld-external-structure-policy-r19.py'
+      - 'scripts/apply-never-overworld-fixpack-r19.py'
+      - 'scripts/apply-never-overworld-fixpack-r20.py'
+      - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
