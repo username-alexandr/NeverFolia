@@ -180,7 +180,9 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
         for sid in island:
             ns,name=sid.split(":",1)
             z.writestr(f"data/{ns}/worldgen/structure/{name}.json",json.dumps({
-                "step":"surface_structures","project_start_to_heightmap":"WORLD_SURFACE_WG",
+                "step":"surface_structures",
+                "start_height":{"absolute":0},
+                "project_start_to_heightmap":"WORLD_SURFACE_WG",
             }))
         for sid in untouched:
             ns,name=sid.split(":",1)
