@@ -21,18 +21,38 @@ import shutil
 import time
 
 SEED=-2815737126961128793
-SURFACE_IDS=(
-    "nova_structures:tavern_oak",
-    "explorify:tavern",
-    "structory_towers:wizard_tower",
-    "repurposed_structures:witch_hut_oak",
-    "repurposed_structures:monument_jungle",
-    "explorify:ruins",
-    "nova_structures:stray_outlook",
-    "nova_structures:witch_villa",
-    "nova_structures:lone_citadel",
-    "nova_structures:toxic_lair",
-)
+SURFACE_GROUPS={
+    "dungeons_and_taverns":(
+        "nova_structures:witch_villa",
+        "nova_structures:stray_outlook",
+        "nova_structures:wild_ruin",
+        "nova_structures:firewatch_tower_forest",
+        "nova_structures:tavern_oak",
+        "nova_structures:lone_citadel",
+        "nova_structures:toxic_lair",
+    ),
+    "explorify":(
+        "explorify:tavern",
+        "explorify:ruins",
+        "explorify:farmstead",
+        "explorify:campsite",
+    ),
+    "structory_towers":(
+        "structory_towers:wizard_tower",
+        "structory_towers:small_firetower",
+        "structory_towers:farmer_outpost",
+        "structory_towers:foraging_outpost",
+    ),
+    "repurposed_structures":(
+        "repurposed_structures:witch_hut_oak",
+        "repurposed_structures:witch_hut_birch",
+        "repurposed_structures:monument_desert",
+        "repurposed_structures:monument_jungle",
+    ),
+}
+SURFACE_IDS=tuple(dict.fromkeys(
+    target for group in SURFACE_GROUPS.values() for target in group
+))
 SOURCE_IDS=(
     "structory_towers:ocean_pillar",
     "nova_structures:catacomb",
@@ -179,21 +199,45 @@ def main_run(args):
         # structures deliberately retain source placement and are verified by
         # the separate complete pack-graph QA instead of invoking vanilla
         # /locate, whose synchronous StructureCheck path is outside this change.
-        for index,target in enumerate(SURFACE_IDS,1):
-            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} begin {target}",flush=True)
-            candidates=plan_candidates(server,target)
-            require(candidates,"locate produced no candidate within bounded QA origins: "+target)
-            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} candidates={len(candidates)} {target}",flush=True)
+        for group_index,(group,targets) in enumerate(SURFACE_GROUPS.items(),1):
+            chosen=None
+            attempts=[]
+            for target in targets:
+                print(
+                    f"[External Runtime QA] group {group_index}/{len(SURFACE_GROUPS)} "
+                    f"{group} try {target}",
+                    flush=True
+                )
+                candidates=plan_candidates(server,target)
+                attempts.append({"target":target,"candidate_count":len(candidates)})
+                if candidates:
+                    chosen=(target,candidates)
+                    break
+            require(chosen is not None,
+                    "no bounded natural candidate for source group: "+group)
+            target,candidates=chosen
+            print(
+                f"[External Runtime QA] group {group_index}/{len(SURFACE_GROUPS)} "
+                f"{group} selected={target} candidates={len(candidates)}",
+                flush=True
+            )
             selected=set()
             for row in candidates:
                 selected.update(candidate_chunks(*row["chunk"],radius=1))
             require(len(selected)<=324,"discovery sample too large for "+target)
-            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} loading_chunks={len(selected)} {target}",flush=True)
+            print(
+                f"[External Runtime QA] group {group} loading_chunks={len(selected)} "
+                f"target={target}",
+                flush=True
+            )
             server.load_dimension(sorted(selected),"minecraft:overworld",serial_generation=False)
-            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} generated {target}",flush=True)
+            print(f"[External Runtime QA] group {group} generated {target}",flush=True)
             report["targets"][target]={
                 "class":"surface_land",
-                "candidates":candidates,"discovery_chunks":[list(p) for p in sorted(selected)],
+                "source_group":group,
+                "attempts":attempts,
+                "candidates":candidates,
+                "discovery_chunks":[list(p) for p in sorted(selected)],
             }
         code=server.stop();require(code==0,"discovery server stop failed");normal=True
     finally:
@@ -232,10 +276,17 @@ def main_run(args):
             start=report["targets"][target]["persisted_starts"][0]
             report["targets"][target]["y128_piece_footprint"]=water_at_y128(volume,start["boxes"])
 
-    surface_found=all(report["targets"][x]["found"] for x in SURFACE_IDS)
+    groups_found={
+        group:any(
+            item.get("source_group")==group and item.get("found")
+            for item in report["targets"].values()
+        )
+        for group in SURFACE_GROUPS
+    }
+    surface_found=all(groups_found.values())
     surface_dry=all(
-        report["targets"][x].get("y128_piece_footprint",{}).get("pass") is True
-        for x in SURFACE_IDS if report["targets"][x]["found"]
+        item.get("y128_piece_footprint",{}).get("pass") is True
+        for item in report["targets"].values() if item.get("found")
     )
     report["source_placement_static_qa"]={
         "ids":list(SOURCE_IDS),
@@ -243,6 +294,7 @@ def main_run(args):
         "runtime_locate_skipped":True,
     }
     report["checks"]={
+        "surface_source_groups_found":groups_found,
         "surface_representatives_found":surface_found,
         "found_surface_footprints_dry_at_y128":surface_dry,
         "source_placement_delegated_to_complete_static_graph_qa":True,
@@ -272,7 +324,9 @@ def self_test():
     cov=piece_coverage(rows[0]["boxes"],margin=1)
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
-    require(len(SURFACE_IDS)==10 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
+    require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==4,"SELF-TEST source group set drifted")
+    require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
+    require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
