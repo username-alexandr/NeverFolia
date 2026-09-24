@@ -72,6 +72,7 @@ final class NeverOverworldExternalFastLocateR19 {
     private static final int MAX_CANDIDATE_RINGS=16;
     private static final int MAX_SURFACE_PROBES=512;
     private static final int LOCATE_RADIUS_CAP=64;
+    private static final int MONUMENT_LOCATE_RADIUS_CAP=32;
 
     private NeverOverworldExternalFastLocateR19(){}
 
@@ -259,7 +260,9 @@ final class NeverOverworldExternalFastLocateR19 {
 
         // Exact generated-piece safety is authoritative. Locate only rejects
         // obvious wet candidates with 8 extra probes, capped to 64 blocks.
-        final int probeRadius=Math.max(16,Math.min(radius,LOCATE_RADIUS_CAP));
+        final boolean convertedMonument=id.startsWith("repurposed_structures:monument_");
+        final int locateCap=convertedMonument?MONUMENT_LOCATE_RADIUS_CAP:LOCATE_RADIUS_CAP;
+        final int probeRadius=Math.max(16,Math.min(radius,locateCap));
         final int[] offsets={-probeRadius,0,probeRadius};
         for(final int dx:offsets){
             for(final int dz:offsets){
@@ -356,6 +359,8 @@ def verify(root:Path)->None:
         "MAX_CANDIDATE_RINGS=16",
         "MAX_SURFACE_PROBES=512",
         "LOCATE_RADIUS_CAP=64",
+        "MONUMENT_LOCATE_RADIUS_CAP=32",
+        'id.startsWith("repurposed_structures:monument_")',
     ):
         if marker not in chunk+helper:
             fail("fast-locate marker missing: "+marker)
