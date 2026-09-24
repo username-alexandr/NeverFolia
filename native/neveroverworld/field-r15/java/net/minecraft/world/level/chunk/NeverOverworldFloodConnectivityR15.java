@@ -2,6 +2,9 @@ package net.minecraft.world.level.chunk;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.server.level.GenerationChunkHolder;
+import net.minecraft.util.StaticCache2D;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
@@ -29,7 +32,128 @@ public final class NeverOverworldFloodConnectivityR15 {
         return floodVerifiedComponents(chunk);
     }
 
+    public static int reconcileSeams(final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
+        if (cache == null || owner == null) return 0;
+        final int minY = Math.max(SCAN_MIN_Y, owner.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, owner.getMaxY() - 1);
+        if (minY > maxY) return 0;
+
+        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];
+        final ChunkPos cp = owner.getPos();
+        int seeded = 0;
+
+        seeded += seedFromNeighbor(cache, owner, cp.x() - 1, cp.z(), 0, 15, true, minY, maxY, externalSeeds);
+        seeded += seedFromNeighbor(cache, owner, cp.x() + 1, cp.z(), 15, 0, true, minY, maxY, externalSeeds);
+        seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() - 1, 0, 15, false, minY, maxY, externalSeeds);
+        seeded += seedFromNeighbor(cache, owner, cp.x(), cp.z() + 1, 15, 0, false, minY, maxY, externalSeeds);
+
+        if (seeded == 0) return 0;
+        return floodVerifiedComponents(owner, externalSeeds, true);
+    }
+
+    private static int seedFromNeighbor(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int neighborChunkX,
+        final int neighborChunkZ,
+        final int ownerEdge,
+        final int neighborEdge,
+        final boolean xAxis,
+        final int minY,
+        final int maxY,
+        final boolean[] externalSeeds
+    ) {
+        if (!cache.contains(neighborChunkX, neighborChunkZ)) return 0;
+        final GenerationChunkHolder holder = cache.get(neighborChunkX, neighborChunkZ);
+        if (holder == null) return 0;
+        final ChunkAccess neighbor = holder.getChunkIfPresent(ChunkStatus.FEATURES);
+        if (neighbor == null) return 0;
+
+        final boolean[] neighborOceanWater = oceanConnectedWater(neighbor, minY, maxY);
+        final int ownerBaseX = owner.getPos().getMinBlockX();
+        final int ownerBaseZ = owner.getPos().getMinBlockZ();
+        final int neighborBaseX = neighbor.getPos().getMinBlockX();
+        final int neighborBaseZ = neighbor.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos ownerPos = new BlockPos.MutableBlockPos();
+        final BlockPos.MutableBlockPos neighborPos = new BlockPos.MutableBlockPos();
+        int seeded = 0;
+
+        for (int y = minY; y < SCAN_MAX_Y; ++y) {
+            for (int lateral = 0; lateral < 16; ++lateral) {
+                final int ox = xAxis ? ownerEdge : lateral;
+                final int oz = xAxis ? lateral : ownerEdge;
+                final int nx = xAxis ? neighborEdge : lateral;
+                final int nz = xAxis ? lateral : neighborEdge;
+                final int ne = encode(nx, y, nz, minY);
+                if (!neighborOceanWater[ne]) continue;
+
+                ownerPos.set(ownerBaseX + ox, y, ownerBaseZ + oz);
+                neighborPos.set(neighborBaseX + nx, y, neighborBaseZ + nz);
+                if (!neighbor.getBlockState(neighborPos).is(Blocks.WATER)) continue;
+                if (!traversable(owner, ownerPos)) continue;
+
+                if (!owner.getBlockState(ownerPos).is(Blocks.WATER)) {
+                    owner.setBlockState(ownerPos, Blocks.WATER.defaultBlockState(), 0);
+                }
+                final int oe = encode(ox, y, oz, minY);
+                if (!externalSeeds[oe]) {
+                    externalSeeds[oe] = true;
+                    ++seeded;
+                }
+            }
+        }
+        return seeded;
+    }
+
+    private static boolean[] oceanConnectedWater(final ChunkAccess chunk, final int minY, final int maxY) {
+        final int capacity = (maxY - minY + 1) * 256;
+        final boolean[] connected = new boolean[capacity];
+        final int[] queue = new int[capacity];
+        int head = 0, tail = 0;
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x) {
+            pos.set(baseX + x, SCAN_MAX_Y, baseZ + z);
+            if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;
+            final int e = encode(x, SCAN_MAX_Y, z, minY);
+            connected[e] = true;
+            queue[tail++] = e;
+        }
+
+        while (head < tail) {
+            final int e = queue[head++];
+            final int x = e & 15, z = (e >>> 4) & 15, y = minY + (e >>> 8);
+            tail = enqueueWater(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
+            tail = enqueueWater(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
+            tail = enqueueWater(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
+            tail = enqueueWater(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
+            tail = enqueueWater(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
+            tail = enqueueWater(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
+        }
+        return connected;
+    }
+
+    private static int enqueueWater(
+        final ChunkAccess chunk, final boolean[] connected, final int[] queue, final int tailIn,
+        final int x, final int y, final int z, final int minY, final int maxY
+    ) {
+        if (x < 0 || x > 15 || z < 0 || z > 15 || y < minY || y > maxY) return tailIn;
+        final int e = encode(x, y, z, minY);
+        if (connected[e]) return tailIn;
+        final BlockPos pos = new BlockPos(chunk.getPos().getMinBlockX() + x, y, chunk.getPos().getMinBlockZ() + z);
+        if (!chunk.getBlockState(pos).is(Blocks.WATER)) return tailIn;
+        connected[e] = true;
+        queue[tailIn] = e;
+        return tailIn + 1;
+    }
+
     static int floodVerifiedComponents(final ChunkAccess chunk) {
+        return floodVerifiedComponents(chunk, null, false);
+    }
+
+    private static int floodVerifiedComponents(final ChunkAccess chunk, final boolean[] externalSeeds, final boolean allowSeams) {
         final int minY=Math.max(SCAN_MIN_Y,chunk.getMinY()+1);
         final int maxY=Math.min(SCAN_MAX_Y,chunk.getMaxY()-1);
         final int layers=maxY-minY+1;
@@ -62,6 +186,7 @@ public final class NeverOverworldFloodConnectivityR15 {
             int e=queue[head++],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
             pos.set(baseX+x,y,baseZ+z);
             if(y==SCAN_MAX_Y&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
+            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
             if(horizontalSeamBelowOcean(x,y,z))touchesHorizontalSeam=true;
             tail=enqueue(chunk,visited,queue,tail,x-1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x+1,y,z,minY,maxY);
@@ -70,7 +195,7 @@ public final class NeverOverworldFloodConnectivityR15 {
             tail=enqueue(chunk,visited,queue,tail,x,y-1,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y+1,z,minY,maxY);
         }
-        if(!hasOceanSeed||touchesHorizontalSeam)return 0;
+        if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;
         int changed=0;BlockState water=Blocks.WATER.defaultBlockState();
         for(int i=0;i<tail;++i){
             int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
