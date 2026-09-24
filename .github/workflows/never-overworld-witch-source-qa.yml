@@ -5,6 +5,8 @@ on:
     branches: [wip/neveroverworld-field-r12]
     paths:
       - 'qa/field-r19/audit-witch-source-nbt.py'
+      - 'scripts/build-never-overworld-external-structures-r19.py'
+      - 'worldgen-spec/never-overworld-external-structures-r19.json'
       - '.github/workflows/never-overworld-witch-source-qa.yml'
   workflow_dispatch:
 
@@ -18,7 +20,7 @@ concurrency:
 jobs:
   witch-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -48,9 +50,48 @@ jobs:
             --source .work/witch.zip \
             --output artifacts/witch-source-nbt-qa.json
 
+      - name: Materialize Witch-only R19 compatibility output
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util, zipfile
+          from pathlib import Path
+
+          script=Path('scripts/build-never-overworld-external-structures-r19.py').resolve()
+          spec=importlib.util.spec_from_file_location('neverfolia_r19_builder',script)
+          if spec is None or spec.loader is None:
+              raise SystemExit('cannot import R19 builder')
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          payload=Path('.work/witch.zip').read_bytes()
+          files=module.flatten_zip(payload)
+          filtered,allowed,land,radii,source_unused=module.filter_pack('witch',files)
+          if source_unused:
+              raise SystemExit(f'Witch structures unexpectedly unused: {source_unused}')
+          if len(allowed)!=6 or len(land)!=6:
+              raise SystemExit(f'Witch structure classification drifted: allowed={len(allowed)} land={len(land)}')
+
+          out=Path('artifacts/NeverOverworld-Witch-R19-compat.zip')
+          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for name in sorted(filtered):
+                  z.writestr(name,filtered[name])
+          print('Witch-only merged compatibility ZIP',out,'files',len(filtered))
+          PY
+
+      - name: Audit merged Witch compatibility output
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/audit-witch-source-nbt.py \
+            --source .work/witch.zip \
+            --merged artifacts/NeverOverworld-Witch-R19-compat.zip \
+            --output artifacts/witch-merged-nbt-qa.json
+
       - name: Upload Witch NBT evidence
         uses: actions/upload-artifact@v4
         with:
           name: NeverOverworld-WITCH-SOURCE-NBT-QA-${{ github.sha }}
-          path: artifacts/witch-source-nbt-qa.json
+          path: |
+            artifacts/witch-source-nbt-qa.json
+            artifacts/witch-merged-nbt-qa.json
           retention-days: 14
