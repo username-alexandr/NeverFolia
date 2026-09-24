@@ -157,24 +157,35 @@ def explicit_ocean_biomes(d: dict, tags: dict[str, list[str]]) -> bool:
         o,l=walk(ref);ocean|=o;land|=l
     return ocean and not land
 
+def absolute_start_height(d: dict) -> int | None:
+    raw=d.get("start_height")
+    if not isinstance(raw,dict): return None
+    value=raw.get("absolute")
+    return value if isinstance(value,int) else None
+
 def is_land_surface(d: dict, tags: dict[str, list[str]]) -> bool:
-    # Generation step is the authoritative source intent. OCEAN_FLOOR_WG is
-    # also used by several land structures (Explorify ruins, stray outlook), so
-    # projection alone must never classify them as ocean.
-    return d.get("step") == "surface_structures" and not explicit_ocean_biomes(d,tags)
+    # Source intent is primarily generation step + biome contract.
+    # OCEAN_FLOOR_WG is also used by land structures, so projection alone is
+    # never an ocean classifier. D&T 5.3.2 additionally has two legacy
+    # surface-intent structures scheduled in underground_decoration at vanilla
+    # near-sea absolute heights (67/106); those must move to islands as well.
+    if explicit_ocean_biomes(d,tags):
+        return False
+    if d.get("step") == "surface_structures":
+        return True
+    y=absolute_start_height(d)
+    return d.get("step") == "underground_decoration" and y is not None and y >= 63
 
 def adapt_land_surface(d: dict) -> dict:
-    """Anchor all admitted land structures to NeverOverworld terrain surface."""
+    """Anchor admitted land structures to NeverOverworld terrain surface."""
     out=copy.deepcopy(d)
-    if out.get("step")!="surface_structures":
-        return out
-    # OCEAN_FLOOR_WG is valid in the source packs for some *land* structures
-    # because vanilla sea level is low. In NeverOverworld it would anchor those
-    # starts to the drowned floor below Y128. Once biome intent classifies the
-    # structure as land, WORLD_SURFACE_WG is the only correct projection.
+    source_step=out.get("step")
+    source_height=absolute_start_height(out)
     out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
-    if "start_height" not in out or out.get("start_height")=={"absolute":63}:
-        # D&T witch_villa used an absolute vanilla sea-level Y=63.
+    if source_step != "surface_structures" or source_height == 63 or "start_height" not in out:
+        # D&T witch_villa (63), toxic_lair (67) and lone_citadel (106) encode
+        # vanilla near-sea absolute Y. Once projected to our island surface,
+        # absolute zero is the neutral source offset.
         out["start_height"]={"absolute":0}
     return out
 

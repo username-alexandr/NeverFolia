@@ -39,6 +39,11 @@ public final class ExternalStructurePolicyR19Smoke {
             "D&T snowy stray outlook must be island-adapted");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:witch_villa") == 72,
             "D&T swamp witch villa must be island-adapted");
+
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:lone_citadel") == 128,
+            "D&T snowy lone citadel must move from vanilla absolute Y106 to island terrain");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:toxic_lair") == 110,
+            "D&T swamp toxic lair must move from vanilla absolute Y67 to island terrain");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("structory_towers:ocean_pillar") == 0,
             "Structory ocean pillar must preserve original placement");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:catacomb") == 0,
