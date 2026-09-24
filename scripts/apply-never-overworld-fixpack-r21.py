@@ -29,7 +29,7 @@ def verify(folia: Path) -> None:
     safety = (folia / SAFETY).read_text(encoding="utf-8")
     r19 = (folia / R19).read_text(encoding="utf-8")
 
-    require("reconcileSeams" in flood and "oceanConnectedWater" in flood,
+    require("reconcileSeams" in flood and "oceanConnectedFloodable" in flood,
             "R21 cache-aware flood helper missing")
     require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
             "R21 must read only already-present FEATURES neighbours")
@@ -37,6 +37,8 @@ def verify(folia: Path) -> None:
             "R21 component scan must receive external seam seeds")
     require("boolean[] externalSeeds,boolean allowSeams" in flood,
             "R21 component scan seam parameters missing")
+    require("if (!traversable(chunk, pos)) return tailIn;" in flood,
+            "R21 neighbour ocean connectivity must traverse floodable volume")
     require("getChunk(" not in flood and "level.getBlockState(" not in flood,
             "R21 flood helper must not synchronously load/read neighbours through level")
     require(tasks.count("NeverOverworldFloodConnectivityR15.reconcileSeams(") == 1,
