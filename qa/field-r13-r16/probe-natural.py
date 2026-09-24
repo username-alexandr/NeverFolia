@@ -516,8 +516,8 @@ def external_structure_pack_audit(path):
             'wrong R19 external structures profile')
     admission = data.get('island_admission', {})
     require(admission.get('min_surface_y') == 129, 'R19 island surface floor drifted')
-    require(admission.get('structure_count') == 131, 'R19 island-adapted structure count drifted')
-    require(len(admission.get('radii', {})) == 131, 'R19 island radius table incomplete')
+    require(admission.get('structure_count') == 134, 'R19 island-adapted structure count drifted')
+    require(len(admission.get('radii', {})) == 134, 'R19 island radius table incomplete')
     require(data.get('minecraft_namespace_overrides_imported') is False,
             'foreign minecraft namespace overrides must stay excluded')
     require(set(data.get('sources', {})) == {'witch','towers','explorify','dat','monuments'},
@@ -561,7 +561,7 @@ def package(out, jar, packs, report, manifest, run_id):
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
         'R15: финальный flood audit сканирует все компоненты до Y=128; вода добавляется только в компонент с уже подтверждённой океанской водой. Изолированные шахты/пещеры остаются сухими, lava-adjacent клетки являются барьером.\nR18 ecology: cave vines/glow berries, azalea и small/big dripleaf удаляются из реально затопленных пещер; cactus/melon/bamboo/bamboo_sapling/cocoa и вся сухая цветочная группа, включая dandelion/poppy/cornflower/wildflowers/azure_bluet/pink_petals, запрещены на Y<=128.\n'
         'R16: закрываются только подтверждённые owner-chunk воздушные полости лавового океана; большие/краевые пещеры сохраняются.\n'
-        'R19: импортированы внешние Overworld-данжи; 131 наземная структура допускается только на сухих островах Y>=129, океанские/подземные сохраняют исходное размещение; Nether/End не затрагиваются.\n'
+        'R19: импортированы внешние Overworld-данжи; 134 наземные структуры допускается только на сухих островах Y>=129, океанские/подземные сохраняют исходное размещение; Nether/End не затрагиваются.\n'
         'R20: компоненты flood, уходящие через границу чанка ниже Y128, не превращаются целиком в source-water; village pieces с перепадом поверхности более 8 блоков отклоняются.\n'
         'R21: seam-reconciliation выполняется в реальном Moonrise LIGHT-пути и использует только уже присутствующий FEATURES-кэш соседей.\n'
         'R22: FEATURES-сосед публикует будущую ocean-connected область по OCEAN_FLOOR_WG, поэтому шов WATER/AIR больше не зависит от порядка выполнения LIGHT.\n'

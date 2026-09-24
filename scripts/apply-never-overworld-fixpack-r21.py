@@ -71,7 +71,7 @@ def verify(folia: Path) -> None:
 
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village slope hardening missing")
-    require(r19.count('case "') == 131,
+    require(r19.count('case "') == 134,
             "R19 external surface structure table changed")
     require("MIN_DRY_SURFACE_Y = 129" in r19,
             "R19 island admission changed")
