@@ -28,8 +28,8 @@ def verify(folia: Path) -> None:
     helper = (folia / HELPER).read_text(encoding="utf-8")
     require("NeverOverworldExternalStructurePolicyR19.allows" in chunk,
             "external structure island admission hook missing")
-    require(helper.count('case "') == 131,
-            "external surface structure ID count must stay 131")
+    require(helper.count('case "') == 134,
+            "external surface structure ID count must stay 134")
     require("MIN_DRY_SURFACE_Y = 129" in helper,
             "R19 island dry height changed")
     require("WORLD_SURFACE_WG" in helper,

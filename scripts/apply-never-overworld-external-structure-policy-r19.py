@@ -20,8 +20,8 @@ def load_spec() -> dict:
     radii = data.get("island_radii", {})
     if data.get("profile") != "NeverOverworld-External-Structures-R19":
         fail("wrong spec profile")
-    if len(radii) != 131:
-        fail(f"expected 131 island-adapted structures, got {len(radii)}")
+    if len(radii) != 134:
+        fail(f"expected 134 island-adapted structures, got {len(radii)}")
     if any(not isinstance(k, str) or not isinstance(v, int) or v < 1 for k, v in radii.items()):
         fail("invalid island radius entry")
     return data
@@ -202,7 +202,7 @@ def verify(folia: Path) -> None:
 def self_test() -> None:
     spec = load_spec()
     helper = java_helper(spec)
-    if helper.count('case "') != 131:
+    if helper.count('case "') != 134:
         fail("SELF-TEST helper ID count mismatch")
     fixture = """class ChunkGenerator {
     private boolean tryGenerateStructure(
