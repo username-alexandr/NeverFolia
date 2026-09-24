@@ -28,8 +28,8 @@ def verify(folia: Path) -> None:
     helper = (folia / HELPER).read_text(encoding="utf-8")
     require("NeverOverworldExternalStructurePolicyR19.allows" in chunk,
             "external structure island admission hook missing")
-    require(helper.count('case "') == 131,
-            "external surface structure ID count must stay 131")
+    require(helper.count('case "') == 134,
+            "external surface structure ID count must stay 134")
     require("MIN_DRY_SURFACE_Y = 129" in helper,
             "R19 island dry height changed")
     require("WORLD_SURFACE_WG" in helper,
@@ -39,16 +39,19 @@ def verify(folia: Path) -> None:
     for marker in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
     ):
         require(marker in helper, "representative R19 surface structure missing: " + marker)
     for marker in (
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
         "minecraft:village_plains",
     ):
         require(f'case "{marker}"' not in helper,
