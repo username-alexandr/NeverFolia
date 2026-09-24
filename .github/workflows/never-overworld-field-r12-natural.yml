@@ -15,12 +15,16 @@ on:
       - '!qa/field-r14-r16/**'
       - '!qa/field-r15-r16/**'
       - '!qa/field-r16-r16/**'
-      - '!scripts/apply-never-overworld-field-r13.py'
-      - '!scripts/apply-never-overworld-field-r14.py'
-      - '!scripts/apply-never-overworld-field-r15.py'
-      - '!scripts/apply-never-overworld-field-r16.py'
-      - '!scripts/apply-never-overworld-fixpack-r17.py'
-      - '.github/workflows/never-overworld-field-r12-natural.yml'
+      - '!scripts/apply-never-overworld-field-r1[3-9].py'
+      - '!scripts/apply-never-overworld-field-r2*.py'
+      - '!scripts/apply-never-overworld-fixpack-r1[7-9].py'
+      - '!scripts/apply-never-overworld-fixpack-r2*.py'
+      - '!scripts/apply-never-overworld-external-*.py'
+      - '!scripts/build-never-overworld-external-structures-r19.py'
+      # This is a legacy R12 comparison gate. Modern R13-R22/R19 work is
+      # covered by never-worldgen-field-r13-r16.yml and the dedicated
+      # external-dungeon runtime QA, so do not launch another 20+ minute
+      # full-world comparison for those changes.
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
