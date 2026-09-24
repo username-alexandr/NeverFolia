@@ -53,11 +53,18 @@ SURFACE_GROUPS={
         "structory_towers:ancient_temple",
         "structory_towers:great_toadstool",
     ),
-    "repurposed_structures":(
+    "better_witch_huts":(
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:witch_hut_birch",
+        "repurposed_structures:witch_hut_taiga",
+        "repurposed_structures:witch_hut_dark_forest",
+        "repurposed_structures:witch_hut_mangrove",
+        "repurposed_structures:witch_hut_giant_tree_taiga",
+    ),
+    "better_monuments":(
         "repurposed_structures:monument_desert",
         "repurposed_structures:monument_jungle",
+        "repurposed_structures:monument_icy",
     ),
 }
 SURFACE_IDS=tuple(dict.fromkeys(
@@ -342,7 +349,7 @@ def self_test():
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
     require(len(ORIGINS)==13,"SELF-TEST bounded locate origin set drifted")
-    require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==6,"SELF-TEST source group set drifted")
+    require(len(SURFACE_GROUPS)==5 and len(SOURCE_IDS)==6,"SELF-TEST source group set drifted")
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
