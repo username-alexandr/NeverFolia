@@ -53,9 +53,9 @@ def verify(folia: Path) -> None:
             "R21 LIGHT seam reconciliation hook missing")
     require("NeverOverworldFlood.apply(" in tasks,
             "NeverOverworld LIGHT flood hook missing")
-    require(tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams(")
-            < tasks.find("NeverOverworldFlood.apply("),
-            "R21 seam reconciliation must run before final owner flood")
+    require(tasks.find("NeverOverworldFlood.apply(")
+            < tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams("),
+            "R21 seam reconciliation must run after final owner flood reset")
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village piece slope cap missing")
     require("pieceSurfaceSpanAllowed(minBase, maxBase)" in safety,
