@@ -40,8 +40,8 @@ def policy_radii() -> dict[str,int]:
     radii=data.get("island_radii",{})
     if data.get("profile")!="NeverOverworld-External-Structures-R19":
         fail("wrong external-structure spec profile")
-    if not isinstance(radii,dict) or len(radii)!=136:
-        fail(f"expected 136 policy island radii, got {len(radii) if isinstance(radii,dict) else 'invalid'}")
+    if not isinstance(radii,dict) or len(radii)!=134:
+        fail(f"expected 134 policy island radii, got {len(radii) if isinstance(radii,dict) else 'invalid'}")
     if any(not isinstance(k,str) or not isinstance(v,int) or v<1 for k,v in radii.items()):
         fail("invalid policy island radius table")
     return radii
@@ -176,28 +176,25 @@ def absolute_start_height(d: dict) -> int | None:
     return value if isinstance(value,int) else None
 
 def is_land_surface(d: dict, tags: dict[str, list[str]]) -> bool:
-    # Source intent is primarily generation step + biome contract.
-    # OCEAN_FLOOR_WG is also used by land structures, so projection alone is
-    # never an ocean classifier. D&T 5.3.2 additionally has two legacy
-    # surface-intent structures scheduled in underground_decoration at vanilla
-    # near-sea absolute heights (67/106); those must move to islands as well.
-    if explicit_ocean_biomes(d,tags):
-        return False
-    if d.get("step") == "surface_structures":
-        return True
-    y=absolute_start_height(d)
-    return d.get("step") == "underground_decoration" and y is not None and y >= 63
+    # Preserve source generation intent. A structure is island-adapted only
+    # when the source itself schedules it in surface_structures and its biome
+    # contract is not explicitly oceanic. OCEAN_FLOOR_WG alone is not an ocean
+    # classifier because several genuine land structures use that projection.
+    #
+    # In particular, D&T lone_citadel/toxic_lair use underground_decoration.
+    # Their fixed source Y is intentional underground placement and must remain
+    # untouched per the R19 contract.
+    return d.get("step") == "surface_structures" and not explicit_ocean_biomes(d,tags)
 
 def adapt_land_surface(d: dict) -> dict:
-    """Anchor admitted land structures to NeverOverworld terrain surface."""
+    """Anchor admitted source-surface structures to NeverOverworld terrain."""
     out=copy.deepcopy(d)
-    source_step=out.get("step")
     source_height=absolute_start_height(out)
     out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
-    if source_step != "surface_structures" or source_height == 63 or "start_height" not in out:
-        # D&T witch_villa (63), toxic_lair (67) and lone_citadel (106) encode
-        # vanilla near-sea absolute Y. Once projected to our island surface,
-        # absolute zero is the neutral source offset.
+    if source_height == 63 or "start_height" not in out:
+        # D&T witch_villa is a source surface structure anchored to vanilla
+        # sea level Y63. WORLD_SURFACE_WG + zero offset preserves its surface
+        # intent in the Y128 NeverOverworld.
         out["start_height"]={"absolute":0}
     return out
 

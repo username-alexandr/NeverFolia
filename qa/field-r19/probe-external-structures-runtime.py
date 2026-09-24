@@ -28,8 +28,6 @@ SURFACE_GROUPS={
         "nova_structures:wild_ruin",
         "nova_structures:firewatch_tower_forest",
         "nova_structures:tavern_oak",
-        "nova_structures:lone_citadel",
-        "nova_structures:toxic_lair",
     ),
     "explorify":(
         "explorify:tavern",
@@ -70,6 +68,8 @@ SOURCE_IDS=(
     "nova_structures:catacomb",
     "nova_structures:conduit_ruin",
     "nova_structures:trident_trial_monument",
+    "nova_structures:lone_citadel",
+    "nova_structures:toxic_lair",
 )
 ORIGINS=(
     (0,0),
@@ -342,7 +342,7 @@ def self_test():
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
     require(len(ORIGINS)==13,"SELF-TEST bounded locate origin set drifted")
-    require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==4,"SELF-TEST source group set drifted")
+    require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==6,"SELF-TEST source group set drifted")
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
