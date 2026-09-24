@@ -312,9 +312,12 @@ def self_test() -> None:
 }
 """
     patched = patch_source(fixture)
-    if MARKER not in patched or GENERATED_MARKER not in patched
+    if (
+        MARKER not in patched
+        or GENERATED_MARKER not in patched
         or "NeverOverworldExternalStructurePolicyR19.allows" not in patched
-        or "NeverOverworldExternalStructurePolicyR19.allowsGenerated" not in patched:
+        or "NeverOverworldExternalStructurePolicyR19.allowsGenerated" not in patched
+    ):
         fail("SELF-TEST guard injection failed")
     print("[NeverFolia][External Structure Policy R19] SELF-TEST OK")
 
