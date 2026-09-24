@@ -213,6 +213,34 @@ def sanitize_processor(proc):
     if t == "repurposed_structures:structure_surface_processor":
         delegate=proc.get("delegate")
         return sanitize_processor(delegate)
+    if t == "repurposed_structures:pillar_processor":
+        # Vanilla Folia has no registry entry for RS's downward pillar
+        # processor. Do not silently leave its template marker blocks behind:
+        # translate the marker -> support-material part into a vanilla rule
+        # processor. The dynamic downward extension itself remains intentionally
+        # omitted; R19's exact dry-island piece admission is the terrain-safety
+        # replacement for that mod-only behavior.
+        rules=[]
+        for pair in proc.get("pillar_trigger_and_replacements", []):
+            if not isinstance(pair,dict): continue
+            trigger=pair.get("trigger")
+            replacement=pair.get("replacement")
+            if not isinstance(trigger,dict) or not isinstance(replacement,dict):
+                continue
+            block=trigger.get("Name")
+            if not isinstance(block,str) or not block.startswith("minecraft:"):
+                continue
+            rules.append({
+                "input_predicate":{
+                    "predicate_type":"minecraft:block_match",
+                    "block":block,
+                },
+                "location_predicate":{"predicate_type":"minecraft:always_true"},
+                "output_state":replacement,
+            })
+        if rules:
+            return {"processor_type":"minecraft:rule","rules":rules}
+        return None
     return None
 
 def sanitize_processor_list(data: dict) -> dict:
