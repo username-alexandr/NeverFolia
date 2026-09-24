@@ -90,7 +90,9 @@ def verify(folia: Path) -> None:
     require("horizontalSeamBelowOcean" in flood, "R20 seam helper missing")
     require(
         "if(!hasOceanSeed||touchesHorizontalSeam)return 0;" in flood
-        or "if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;" in flood,
+        or "if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;" in flood
+        or ("if(!hasOceanSeed){" in flood
+            and "if(!allowSeams&&touchesHorizontalSeam)return 0;" in flood),
         "R20/R21 seam-safe flood guard missing"
     )
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
