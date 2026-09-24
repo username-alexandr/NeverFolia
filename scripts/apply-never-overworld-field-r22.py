@@ -211,53 +211,37 @@ def patch(text: str) -> str:
         require(text.count(OLD_SEEDS) == 1, "R21 existing-water seed block missing/drifted")
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
-    if "seedOceanProximityFallback(" not in text:
-        require(PROXIMITY_METHODS_ANCHOR in text, "R22 proximity method anchor missing")
-        text = text.replace(PROXIMITY_METHODS_ANCHOR, PROXIMITY_METHODS + PROXIMITY_METHODS_ANCHOR, 1)
+    if "reconcileSeams(" in text:
+        if "seedOceanProximityFallback(" not in text:
+            require(PROXIMITY_METHODS_ANCHOR in text, "R22 proximity method anchor missing")
+            text = text.replace(PROXIMITY_METHODS_ANCHOR, PROXIMITY_METHODS + PROXIMITY_METHODS_ANCHOR, 1)
 
-    if "final int proximity = seedOceanProximityFallback(" not in text:
-        anchor = "        final int seeded = west + east + north + south;\n"
-        require(anchor in text, "R22 reconcile seeded-count anchor missing")
-        text = text.replace(
-            anchor,
-            anchor + "        final int proximity = seedOceanProximityFallback(cache, owner, minY, maxY, externalSeeds);\n",
-            1,
-        )
+        if "final int proximity = seedOceanProximityFallback(" not in text:
+            anchor = "        final int seeded = west + east + north + south;\n"
+            require(anchor in text, "R22 reconcile seeded-count anchor missing")
+            text = text.replace(
+                anchor,
+                anchor + "        final int proximity = seedOceanProximityFallback(cache, owner, minY, maxY, externalSeeds);\n",
+                1,
+            )
 
-    old_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
-    new_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,hasProximitySeed=false,touchesHorizontalSeam=false;\n"
-    if new_scan_seed not in text:
-        require(text.count(old_scan_seed) == 1, "R22 scan state anchor missing")
-        text = text.replace(old_scan_seed, new_scan_seed, 1)
+        old_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
+        new_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,hasProximitySeed=false,touchesHorizontalSeam=false;\n"
+        if new_scan_seed not in text:
+            require(text.count(old_scan_seed) == 1, "R22 scan state anchor missing")
+            text = text.replace(old_scan_seed, new_scan_seed, 1)
 
-    old_external = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-    new_external = """            if(externalSeeds!=null&&externalSeeds[e]){
-                if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
-                else hasProximitySeed=true;
-            }
-"""
-    if new_external not in text:
-        require(text.count(old_external) == 1, "R22 external seed classification anchor missing")
-        text = text.replace(old_external, new_external, 1)
+        old_external = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+        new_external = """            if(externalSeeds!=null&&externalSeeds[e]){
+                    if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
+                    else hasProximitySeed=true;
+                }
+    """
+        if new_external not in text:
+            require(text.count(old_external) == 1, "R22 external seed classification anchor missing")
+            text = text.replace(old_external, new_external, 1)
 
-    old_guard = """        if(!hasOceanSeed){
-            if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
-                &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
-                System.out.println(
-                    "[NeverFolia][R22DrySeam] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
-                    +" size="+tail+" boundary="+boundaryCells
-                    +" y="+componentMinY+":"+componentMaxY
-                    +" sample="+sampleSeamX+","+sampleSeamY+","+sampleSeamZ
-                );
-            }
-            return 0;
-        }
-"""
-    new_guard = """        if(!hasOceanSeed){
-            final int verticalSpan=componentMaxY-componentMinY+1;
-            final boolean proximityFallback=allowSeams&&touchesHorizontalSeam
-                &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);
-            if(!proximityFallback){
+        old_guard = """        if(!hasOceanSeed){
                 if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
                     &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
                     System.out.println(
@@ -269,18 +253,35 @@ def patch(text: str) -> str:
                 }
                 return 0;
             }
-            if(Boolean.getBoolean("neverfolia.debugFloodSeams")){
-                System.out.println(
-                    "[NeverFolia][R22ProximityFlood] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
-                    +" size="+tail+" boundary="+boundaryCells
-                    +" span="+verticalSpan+" proximity="+proximity
-                );
+    """
+        new_guard = """        if(!hasOceanSeed){
+                final int verticalSpan=componentMaxY-componentMinY+1;
+                final boolean proximityFallback=allowSeams&&touchesHorizontalSeam
+                    &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);
+                if(!proximityFallback){
+                    if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
+                        &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
+                        System.out.println(
+                            "[NeverFolia][R22DrySeam] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
+                            +" size="+tail+" boundary="+boundaryCells
+                            +" y="+componentMinY+":"+componentMaxY
+                            +" sample="+sampleSeamX+","+sampleSeamY+","+sampleSeamZ
+                        );
+                    }
+                    return 0;
+                }
+                if(Boolean.getBoolean("neverfolia.debugFloodSeams")){
+                    System.out.println(
+                        "[NeverFolia][R22ProximityFlood] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
+                        +" size="+tail+" boundary="+boundaryCells
+                        +" span="+verticalSpan+" nearOcean=true"
+                    );
+                }
             }
-        }
-"""
-    if new_guard not in text:
-        require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
-        text = text.replace(old_guard, new_guard, 1)
+    """
+        if new_guard not in text:
+            require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
+            text = text.replace(old_guard, new_guard, 1)
     return text
 
 def verify(folia: Path) -> None:
@@ -364,9 +365,14 @@ class X {
             "SELF-TEST existing WATER preservation missing")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
-    require("seedOceanProximityFallback" in out, "SELF-TEST proximity seed pass missing")
-    require("proximityFallbackAllowed" in out, "SELF-TEST proximity fallback policy missing")
-    require("final int radius = 12;" in out, "SELF-TEST proximity radius missing")
+    require("seedOceanProximityFallback" in PROXIMITY_METHODS,
+            "SELF-TEST proximity seed pass missing")
+    require("final int radius = 12;" in PROXIMITY_METHODS,
+            "SELF-TEST proximity radius missing")
+    require("componentSize >= 768" in HELPER
+            and "boundaryCells >= 48" in HELPER
+            and "verticalSpan >= 24" in HELPER,
+            "SELF-TEST bounded proximity fallback policy missing")
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
 
     flood_fixture = """class NeverOverworldFlood {
