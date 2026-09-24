@@ -18,7 +18,10 @@ import argparse
 from pathlib import Path
 
 JAVA = Path("folia-server/src/minecraft/java")
+FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
+R8_CALL = "        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);\n"
+R15_CALL = "NeverOverworldFloodConnectivityR15.apply(level, chunk);"
 
 IMPORT = "import net.minecraft.world.level.levelgen.Heightmap;\n"
 IMPORT_ANCHOR = "import net.minecraft.world.level.block.state.BlockState;\n"
@@ -60,6 +63,28 @@ def require(ok: bool, message: str) -> None:
     if not ok:
         raise ValueError("[FIELD-R22] " + message)
 
+def patch_r8(text: str) -> str:
+    """Retire the pre-R21 geometry-only cavern heuristic.
+
+    R8 treated a large chunk-border cavern as ocean-open using only component
+    size/boundary/vertical-span thresholds. Once R21/R22 has real neighbour
+    connectivity, that heuristic is both redundant and unsafe: it can create
+    deep source-water in a non-ocean component, which the verified R15 audit
+    intentionally does not propagate into the adjacent chunk. The result is the
+    exact WATER/AIR wall seen in the user seed.
+
+    Keep the historical helper method in source for auditability, but remove its
+    production call. New-world generation then has a single authority for deep
+    flooding: verified R15/R22 ocean connectivity.
+    """
+    if R8_CALL not in text:
+        return text
+    require(text.count(R8_CALL) == 1, "R8 cavern fallback call duplicated/drifted")
+    require("floodLargeBoundaryConnectedCaverns(" in text,
+            "R8 helper method missing while its call is present")
+    require(R15_CALL in text, "final R15 verified-ocean flood call missing")
+    return text.replace(R8_CALL, "", 1)
+
 def patch(text: str) -> str:
     if IMPORT not in text:
         require(IMPORT_ANCHOR in text, "Heightmap import anchor missing")
@@ -77,9 +102,18 @@ def patch(text: str) -> str:
     return text
 
 def verify(folia: Path) -> None:
+    flood_path = folia / FLOOD
     path = folia / FLOOD15
+    require(flood_path.is_file(), "NeverOverworldFlood missing")
     require(path.is_file(), "R15/R21 flood helper missing")
+    flood = flood_path.read_text(encoding="utf-8")
     text = path.read_text(encoding="utf-8")
+    require(R8_CALL.strip() not in flood,
+            "obsolete R8 geometry-only cavern flood call survived R22")
+    require("floodLargeBoundaryConnectedCaverns(" in flood,
+            "historical R8 helper unexpectedly disappeared; only the call should be retired")
+    require(R15_CALL in flood,
+            "final verified R15 ocean-connectivity flood call missing")
     for marker in (
         "import net.minecraft.world.level.levelgen.Heightmap;",
         "prospectiveOceanSurfaceSeed",
@@ -141,6 +175,22 @@ class X {
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
+
+    flood_fixture = """class NeverOverworldFlood {
+    void apply() {
+        floodSurfaceConnectedVolume(chunk, minY, FLOOD_LEVEL, water);
+        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);
+        NeverOverworldFloodConnectivityR15.apply(level, chunk);
+    }
+    void floodLargeBoundaryConnectedCaverns(Object chunk, int minY, int maxY, Object water) {}
+}
+"""
+    retired = patch_r8(flood_fixture)
+    require(R8_CALL.strip() not in retired, "SELF-TEST R8 production call survived")
+    require("void floodLargeBoundaryConnectedCaverns(" in retired,
+            "SELF-TEST historical R8 helper should remain")
+    require(R15_CALL in retired, "SELF-TEST final R15 call was lost")
+    require(patch_r8(retired) == retired, "SELF-TEST R8 retirement is not idempotent")
     print("[FIELD-R22] SELF-TEST OK")
 
 def main() -> None:
@@ -159,11 +209,14 @@ def main() -> None:
         verify(folia)
         return
     self_test()
+    flood_path = folia / FLOOD
     path = folia / FLOOD15
+    require(flood_path.is_file(), "NeverOverworldFlood missing")
     require(path.is_file(), "R15/R21 flood helper missing")
+    flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R22] installed")
+    print("[FIELD-R22] installed: prospective seam seeds + obsolete R8 cavern fallback retired")
 
 if __name__ == "__main__":
     main()
