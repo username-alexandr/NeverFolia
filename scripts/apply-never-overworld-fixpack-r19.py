@@ -58,6 +58,18 @@ def verify(folia: Path) -> None:
     ):
         require(f'case "{marker}"' not in helper,
                 "non-R19 surface structure was island-gated: " + marker)
+    require("NeverOverworldExternalStructurePolicyR19.radiusForId" in fast,
+            "R19 external fast-locate policy link missing")
+    require("getPotentialStructureChunk" in fast and "isStructureChunk" in fast,
+            "R19 external fast-locate random-spread prediction missing")
+    require("DensityFunction.SinglePointContext" in fast and ".preliminarySurfaceLevel()" in fast,
+            "R19 external fast-locate cheap surface prediction missing")
+    require("moonrise$syncLoadNonFull" not in fast
+            and "getChunk(" not in fast
+            and "getBaseHeight(" not in fast,
+            "R19 external fast-locate must not generate/load chunks")
+    require("NeverOverworldExternalFastLocateR19.handles" in chunk,
+            "R19 external fast-locate ChunkGenerator hook missing")
     print(f"[NeverOverworld R19] {PROFILE} final invariants OK")
 
 def apply(folia: Path) -> None:
