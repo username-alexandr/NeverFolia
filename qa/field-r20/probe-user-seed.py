@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIELD-R20 targeted regression for user-reported seed/chunk seam artifacts."""
+"""FIELD-R21 targeted regression for user-reported seed/chunk seam artifacts."""
 from __future__ import annotations
 
 import argparse
@@ -179,7 +179,7 @@ def main():
     seam=seam_audit(volume,chunks)
     villages=village_starts(roots)
     report={
-        'schema':1,'profile':'FIELD-R20-USER-SEED-1','source_sha':a.source_sha,
+        'schema':1,'profile':'FIELD-R21-USER-SEED-1','source_sha':a.source_sha,
         'seed':SEED,'jar_sha256':sha(a.jar),'overworld_sha256':sha(a.overworld),
         'nether_sha256':sha(a.nether),'chunks':[list(p) for p in chunks],
         'water_seam':seam,'village_starts':villages,
@@ -193,7 +193,7 @@ def main():
     target=out/'field-r20-user-seed.json'
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     require(report['pass'],
-            'FIELD-R20 user-seed seam regression failed; see field-r20-user-seed.json')
+            'FIELD-R21 user-seed seam regression failed; see field-r20-user-seed.json')
 
 if __name__=='__main__':
     main()
