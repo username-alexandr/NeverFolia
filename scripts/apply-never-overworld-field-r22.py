@@ -22,11 +22,16 @@ FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 R8_CALL = "        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);\n"
 R15_CALL = "NeverOverworldFloodConnectivityR15.apply(level, chunk);"
-PROXIMITY_RADIUS = 12
+PROXIMITY_RADIUS = 16
 PROXIMITY_MIN_SIZE = 768
 PROXIMITY_MIN_BOUNDARY = 48
-PROXIMITY_MIN_SPAN = 24
-
+PROXIMITY_MIN_SPAN = 8
+# User-seed QA after retiring R8: 99.08% of residual WATER/AIR seam faces
+# are within 16 horizontal blocks of saved Y128 ocean water. The worst
+# remaining ocean-exposed cavities have vertical spans 9..20, so keep the
+# conservative size/boundary gates and only relax span to 8. Radius 16 is the
+# maximum that stays inside the LIGHT radius-1 (3x3) FEATURES cache.
+ 
 IMPORT = "import net.minecraft.world.level.levelgen.Heightmap;\n"
 IMPORT_ANCHOR = "import net.minecraft.world.level.block.state.BlockState;\n"
 
@@ -68,7 +73,7 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
         return nearOcean
             && componentSize >= 768
             && boundaryCells >= 48
-            && verticalSpan >= 24;
+            && verticalSpan >= 8;
     }
 
 """
@@ -108,7 +113,7 @@ PROXIMITY_METHODS = """    private static int seedOceanProximityFallback(
         final StaticCache2D<GenerationChunkHolder> cache,
         final ChunkAccess owner
     ) {
-        final int radius = 12;
+        final int radius = 16;
         final int width = 16 + 2 * radius;
         final boolean[] ocean = new boolean[width * width];
         final boolean[] near = new boolean[256];
@@ -319,15 +324,15 @@ def verify(folia: Path) -> None:
         "proximityFallbackAllowed",
         "componentSize >= 768",
         "boundaryCells >= 48",
-        "verticalSpan >= 24",
+        "verticalSpan >= 8",
     ):
         require(marker in text, "R22 marker missing: " + marker)
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in text,
             "R21 scheduling-dependent WATER-only seed survived")
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
-    require("final int radius = 12;" in text,
-            "R22 proximity radius drifted from measured 12-block bound")
+    require("final int radius = 16;" in text,
+            "R22 proximity radius drifted from cache-safe 16-block bound")
     require(
         "return floodVerifiedComponents(owner, externalSeeds, true);" in text
         or "final int changed = floodVerifiedComponents(owner, externalSeeds, true);" in text,
@@ -373,11 +378,11 @@ class X {
             "SELF-TEST old WATER-only seed survived")
     require("seedOceanProximityFallback" in PROXIMITY_METHODS,
             "SELF-TEST proximity seed pass missing")
-    require("final int radius = 12;" in PROXIMITY_METHODS,
+    require("final int radius = 16;" in PROXIMITY_METHODS,
             "SELF-TEST proximity radius missing")
     require("componentSize >= 768" in HELPER
             and "boundaryCells >= 48" in HELPER
-            and "verticalSpan >= 24" in HELPER,
+            and "verticalSpan >= 8" in HELPER,
             "SELF-TEST bounded proximity fallback policy missing")
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
 
