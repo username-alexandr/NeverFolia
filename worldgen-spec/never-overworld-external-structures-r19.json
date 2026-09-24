@@ -177,5 +177,11 @@
     "structory_towers:taiga_outpost": 24,
     "structory_towers:warped_greatsword": 32,
     "structory_towers:wizard_tower": 32
+  },
+  "source_unused_structures": {
+    "nova_structures:bogged_camp": "Dungeons & Taverns 5.3.2 ships the structure definition without a structure_set reference; preserve source placement semantics.",
+    "nova_structures:parched_camp": "Dungeons & Taverns 5.3.2 ships the structure definition without a structure_set reference; preserve source placement semantics.",
+    "nova_structures:remnant_lava_chicken": "Dungeons & Taverns 5.3.2 ships the structure definition without a structure_set reference; preserve source placement semantics.",
+    "nova_structures:stray_camp": "Dungeons & Taverns 5.3.2 ships the structure definition without a structure_set reference; preserve source placement semantics."
   }
 }

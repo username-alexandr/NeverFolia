@@ -173,6 +173,13 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-R15.zip --verify
           python3 scripts/build-never-nether-field-r16.py --input artifacts/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
+      - name: Validate imported Overworld dungeon placement graph
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/validate-external-structures-pack.py \
+            --pack artifacts/NeverOverworld.zip \
+            --spec worldgen-spec/never-overworld-external-structures-r19.json \
+            --output artifacts/external-structures-pack-qa.json
       - name: Record exact FIELD-R22 FIXPACK / Nether-R16 build profile
         run: |
           set -euo pipefail

@@ -330,7 +330,16 @@ def filter_pack(key: str, files: dict[str, bytes]):
             "placement":{"type":"minecraft:random_spread","spacing":32,"separation":5,"salt":10387313,"spread_type":"triangular"},
             "structures":[{"structure":s,"weight":1} for s in sorted(allowed)]
         },indent=2)+"\n").encode()
-    return out, allowed, land, radii
+    references=set()
+    for n,b in out.items():
+        if not resource_id(n,"worldgen/structure_set"):
+            continue
+        d=read_json(b,n)
+        for entry in d.get("structures",[]):
+            if isinstance(entry,dict) and isinstance(entry.get("structure"),str):
+                references.add(entry["structure"])
+    source_unused=sorted(allowed-references)
+    return out, allowed, land, radii, source_unused
 
 def fetch_source(key: str, cache: Path) -> bytes:
     cfg=SOURCES[key]
@@ -350,23 +359,38 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
     with zipfile.ZipFile(base) as z:
         merged={i.filename:z.read(i.filename) for i in z.infolist() if not i.is_dir()}
     all_land={}
+    all_source_unused=set()
     summary={}
     for key,payload in payloads.items():
         files=flatten_zip(payload)
-        filtered,allowed,land,radii=filter_pack(key,files)
+        filtered,allowed,land,radii,source_unused=filter_pack(key,files)
         collisions=[n for n in filtered if n in merged and merged[n]!=filtered[n]]
         if collisions:
             fail(f"{key} collisions with NeverOverworld: {collisions[:8]}")
         merged.update(filtered)
         all_land.update(radii)
-        summary[key]={"overworld_structures":len(allowed),"island_adapted":len(land),"files":len(filtered),"sha256":sha(payload)}
+        all_source_unused.update(source_unused)
+        summary[key]={
+            "overworld_structures":len(allowed),
+            "natural_spawnable":len(allowed)-len(source_unused),
+            "source_unused":source_unused,
+            "island_adapted":len(land),
+            "files":len(filtered),
+            "sha256":sha(payload),
+        }
 
     manifest={
         "schema":1,
         "profile":"NeverOverworld-External-Structures-R19",
         "target_pack_format":TARGET_FORMAT,
         "sources":summary,
-        "island_admission":{"min_surface_y":129,"structure_count":len(all_land),"radii":dict(sorted(all_land.items()))},
+        "island_admission":{
+            "min_surface_y":129,
+            "structure_count":len(all_land),
+            "spawnable_structure_count":len(set(all_land)-all_source_unused),
+            "radii":dict(sorted(all_land.items())),
+        },
+        "source_unused_structures":sorted(all_source_unused),
         "untouched_policy":"Overworld ocean/underground structures keep source placement; Nether/End structures are excluded.",
         "skipped_supplied_packs":["Amplified_Nether_v1.2.15 (no structures)","Hearths v1.0.5 (Nether-only structures)"],
         "minecraft_namespace_overrides_imported":False,

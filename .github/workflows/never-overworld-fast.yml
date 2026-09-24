@@ -84,6 +84,9 @@ jobs:
       - name: Self-test NeverFolia profiler XYZ compatibility
         run: python3 ./scripts/apply-neverfolia-profiler-xyz.py --self-test
 
+      - name: Self-test NeverOverworld external dungeon pack QA
+        run: python3 ./qa/field-r19/validate-external-structures-pack.py --self-test
+
       - name: Self-test NeverOverworld semantic hasher
         run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
 
