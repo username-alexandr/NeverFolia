@@ -88,8 +88,11 @@ def verify(folia: Path) -> None:
 
     require("touchesHorizontalSeam" in flood, "R20 seam-component marker missing")
     require("horizontalSeamBelowOcean" in flood, "R20 seam helper missing")
-    require("if(!hasOceanSeed||touchesHorizontalSeam)return 0;" in flood,
-            "R20 must refuse partial cross-chunk source-water fill")
+    require(
+        "if(!hasOceanSeed||touchesHorizontalSeam)return 0;" in flood
+        or "if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;" in flood,
+        "R20/R21 seam-safe flood guard missing"
+    )
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village surface-span constant missing")
     require("pieceSurfaceSpanAllowed(minBase, maxBase)" in safety,
