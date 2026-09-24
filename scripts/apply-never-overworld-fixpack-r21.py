@@ -33,6 +33,10 @@ def verify(folia: Path) -> None:
             "R21 cache-aware flood helper missing")
     require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
             "R21 must read only already-present FEATURES neighbours")
+    require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
+            "R21 component scan must receive external seam seeds")
+    require("boolean[] externalSeeds,boolean allowSeams" in flood,
+            "R21 component scan seam parameters missing")
     require("getChunk(" not in flood and "level.getBlockState(" not in flood,
             "R21 flood helper must not synchronously load/read neighbours through level")
     require(tasks.count("NeverOverworldFloodConnectivityR15.reconcileSeams(") == 1,
