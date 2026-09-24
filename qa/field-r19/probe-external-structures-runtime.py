@@ -38,10 +38,22 @@ SURFACE_GROUPS={
         "explorify:campsite",
     ),
     "structory_towers":(
-        "structory_towers:wizard_tower",
+        # wizard_tower is intentionally not used as a runtime representative:
+        # its source biome tag contains only optional Terralith biomes, so it
+        # legitimately has no vanilla NeverOverworld candidate. Prefer source
+        # variants with explicit vanilla biome coverage.
+        "structory_towers:taiga_outpost",
+        "structory_towers:lighthouse",
+        "structory_towers:warped_greatsword",
         "structory_towers:small_firetower",
         "structory_towers:farmer_outpost",
         "structory_towers:foraging_outpost",
+        "structory_towers:quarter_outpost",
+        "structory_towers:nomad_outpost",
+        "structory_towers:engineer_tower",
+        "structory_towers:overgrown_mangrove",
+        "structory_towers:ancient_temple",
+        "structory_towers:great_toadstool",
     ),
     "repurposed_structures":(
         "repurposed_structures:witch_hut_oak",
@@ -60,7 +72,10 @@ SOURCE_IDS=(
     "nova_structures:trident_trial_monument",
 )
 ORIGINS=(
-    (0,0),(12000,0),(-12000,0),(0,12000),(0,-12000),(12000,12000),
+    (0,0),
+    (12000,0),(-12000,0),(0,12000),(0,-12000),
+    (12000,12000),(-12000,12000),(12000,-12000),(-12000,-12000),
+    (24000,0),(-24000,0),(0,24000),(0,-24000),
 )
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
 MAX_GROUP_TARGET_CANDIDATES=2
@@ -326,7 +341,7 @@ def self_test():
     cov=piece_coverage(rows[0]["boxes"],margin=1)
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
-    require(len(ORIGINS)==6,"SELF-TEST bounded locate origin set drifted")
+    require(len(ORIGINS)==13,"SELF-TEST bounded locate origin set drifted")
     require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==4,"SELF-TEST source group set drifted")
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
