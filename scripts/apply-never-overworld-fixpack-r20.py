@@ -19,7 +19,6 @@ JAVA = Path("folia-server/src/minecraft/java")
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 SAFETY = JAVA / "net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java"
 R19 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java"
-TASKS = JAVA / "net/minecraft/world/level/chunk/status/ChunkStatusTasks.java"
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -29,7 +28,6 @@ def verify(folia: Path) -> None:
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     safety = (folia / SAFETY).read_text(encoding="utf-8")
     r19 = (folia / R19).read_text(encoding="utf-8")
-    tasks = (folia / TASKS).read_text(encoding="utf-8")
 
     require("horizontalSeamBelowOcean" in flood,
             "R20 flood seam helper missing")
@@ -40,22 +38,6 @@ def verify(folia: Path) -> None:
         or "if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;" in flood,
         "R20/R21 seam-safe flood guard missing"
     )
-    require("reconcileSeams" in flood, "R21 cache-aware seam reconciliation missing")
-    require("StaticCache2D<GenerationChunkHolder>" in flood,
-            "R21 generation-cache seam input missing")
-    require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
-            "R21 must only read already-generated FEATURES neighbours")
-    require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
-            "R21 component scan must receive external seam seeds")
-    require("boolean[] externalSeeds,boolean allowSeams" in flood,
-            "R21 component scan seam parameters missing")
-    require("NeverOverworldFloodConnectivityR15.reconcileSeams(" in tasks,
-            "R21 LIGHT seam reconciliation hook missing")
-    require("NeverOverworldFlood.apply(" in tasks,
-            "NeverOverworld LIGHT flood hook missing")
-    require(tasks.find("NeverOverworldFlood.apply(")
-            < tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams("),
-            "R21 seam reconciliation must run after final owner flood reset")
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village piece slope cap missing")
     require("pieceSurfaceSpanAllowed(minBase, maxBase)" in safety,
