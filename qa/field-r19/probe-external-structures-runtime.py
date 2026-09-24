@@ -63,6 +63,7 @@ ORIGINS=(
     (0,0),(12000,0),(-12000,0),(0,12000),(0,-12000),(12000,12000),
 )
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
+MAX_GROUP_TARGET_CANDIDATES=2
 
 def require(ok,message):
     if not ok: raise ValueError("[External Runtime QA] "+message)
@@ -198,8 +199,8 @@ def main_run(args):
         # the separate complete pack-graph QA instead of invoking vanilla
         # /locate, whose synchronous StructureCheck path is outside this change.
         for group_index,(group,targets) in enumerate(SURFACE_GROUPS.items(),1):
-            chosen=None
             attempts=[]
+            chosen=[]
             for target in targets:
                 print(
                     f"[External Runtime QA] group {group_index}/{len(SURFACE_GROUPS)} "
@@ -209,34 +210,37 @@ def main_run(args):
                 candidates=plan_candidates(server,target)
                 attempts.append({"target":target,"candidate_count":len(candidates)})
                 if candidates:
-                    chosen=(target,candidates)
-                    break
-            require(chosen is not None,
+                    chosen.append((target,candidates))
+                    if len(chosen)>=MAX_GROUP_TARGET_CANDIDATES:
+                        break
+            require(chosen,
                     "no bounded natural candidate for source group: "+group)
-            target,candidates=chosen
-            print(
-                f"[External Runtime QA] group {group_index}/{len(SURFACE_GROUPS)} "
-                f"{group} selected={target} candidates={len(candidates)}",
-                flush=True
-            )
-            selected=set()
-            for row in candidates:
-                selected.update(candidate_chunks(*row["chunk"],radius=1))
-            require(len(selected)<=324,"discovery sample too large for "+target)
-            print(
-                f"[External Runtime QA] group {group} loading_chunks={len(selected)} "
-                f"target={target}",
-                flush=True
-            )
-            server.load_dimension(sorted(selected),"minecraft:overworld",serial_generation=False)
-            print(f"[External Runtime QA] group {group} generated {target}",flush=True)
-            report["targets"][target]={
-                "class":"surface_land",
-                "source_group":group,
-                "attempts":attempts,
-                "candidates":candidates,
-                "discovery_chunks":[list(p) for p in sorted(selected)],
-            }
+
+            for target_index,(target,candidates) in enumerate(chosen,1):
+                print(
+                    f"[External Runtime QA] group {group_index}/{len(SURFACE_GROUPS)} "
+                    f"{group} selected {target_index}/{len(chosen)}={target} "
+                    f"candidates={len(candidates)}",
+                    flush=True
+                )
+                selected=set()
+                for row in candidates:
+                    selected.update(candidate_chunks(*row["chunk"],radius=1))
+                require(len(selected)<=324,"discovery sample too large for "+target)
+                print(
+                    f"[External Runtime QA] group {group} loading_chunks={len(selected)} "
+                    f"target={target}",
+                    flush=True
+                )
+                server.load_dimension(sorted(selected),"minecraft:overworld",serial_generation=False)
+                print(f"[External Runtime QA] group {group} generated {target}",flush=True)
+                report["targets"][target]={
+                    "class":"surface_land",
+                    "source_group":group,
+                    "attempts":attempts,
+                    "candidates":candidates,
+                    "discovery_chunks":[list(p) for p in sorted(selected)],
+                }
         code=server.stop();require(code==0,"discovery server stop failed");normal=True
     finally:
         if not normal: server.close()
@@ -324,6 +328,7 @@ def self_test():
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
     require(len(ORIGINS)==6,"SELF-TEST bounded locate origin set drifted")
     require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==4,"SELF-TEST source group set drifted")
+    require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
