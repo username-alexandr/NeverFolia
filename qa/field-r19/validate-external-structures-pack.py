@@ -203,9 +203,14 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
             }))
         for sid in untouched:
             ns,name=sid.split(":",1)
-            payload={"step":"underground_structures"} if sid=="nova_structures:catacomb" else {
-                "step":"surface_structures","project_start_to_heightmap":"OCEAN_FLOOR_WG",
-            }
+            if sid=="nova_structures:catacomb":
+                payload={"step":"underground_structures"}
+            elif sid=="nova_structures:lone_citadel":
+                payload={"step":"underground_decoration","start_height":{"absolute":106}}
+            elif sid=="nova_structures:toxic_lair":
+                payload={"step":"underground_decoration","start_height":{"absolute":67}}
+            else:
+                payload={"step":"surface_structures","project_start_to_heightmap":"OCEAN_FLOOR_WG"}
             z.writestr(f"data/{ns}/worldgen/structure/{name}.json",json.dumps(payload))
         spawnable=[sid for sid in island if sid not in unused]+untouched
         z.writestr("data/neverfolia/worldgen/structure_set/qa.json",json.dumps({

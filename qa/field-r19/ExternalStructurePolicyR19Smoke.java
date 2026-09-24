@@ -40,10 +40,10 @@ public final class ExternalStructurePolicyR19Smoke {
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:witch_villa") == 72,
             "D&T swamp witch villa must be island-adapted");
 
-        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:lone_citadel") == 128,
-            "D&T snowy lone citadel must move from vanilla absolute Y106 to island terrain");
-        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:toxic_lair") == 110,
-            "D&T swamp toxic lair must move from vanilla absolute Y67 to island terrain");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:lone_citadel") == 0,
+            "D&T lone citadel must preserve source underground_decoration placement");
+        check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:toxic_lair") == 0,
+            "D&T toxic lair must preserve source underground_decoration placement");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("structory_towers:ocean_pillar") == 0,
             "Structory ocean pillar must preserve original placement");
         check(NeverOverworldExternalStructurePolicyR19.radiusForId("nova_structures:catacomb") == 0,
@@ -59,6 +59,10 @@ public final class ExternalStructurePolicyR19Smoke {
             "jungle ruins classified as island surface");
         check(!NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("nova_structures:conduit_ruin"),
             "ocean conduit ruin not classified as island surface");
+        check(!NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("nova_structures:lone_citadel"),
+            "underground lone citadel not classified as island surface");
+        check(!NeverOverworldExternalStructurePolicyR19.isIslandSurfaceId("nova_structures:toxic_lair"),
+            "underground toxic lair not classified as island surface");
 
         out.println("PASS ExternalStructurePolicyR19Smoke checks=" + checks);
     }
