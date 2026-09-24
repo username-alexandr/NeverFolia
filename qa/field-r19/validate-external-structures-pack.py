@@ -106,9 +106,13 @@ def audit(pack:Path,spec_path:Path)->dict:
             if payload.get("step")!="surface_structures" or payload.get("project_start_to_heightmap") not in SURFACE_PROJECTIONS:
                 bad_surface.append({"id":sid,"step":payload.get("step"),"projection":payload.get("project_start_to_heightmap")})
         if bad_surface:fail("island classification drifted: "+repr(bad_surface[:20]))
+        for sid in ("explorify:ruins","nova_structures:stray_outlook","nova_structures:witch_villa"):
+            payload=structures.get(sid,{})
+            if payload.get("project_start_to_heightmap")!="WORLD_SURFACE_WG":
+                fail("land structure still uses drowned-floor projection: "+sid)
         villa=structures.get("nova_structures:witch_villa",{})
-        if villa.get("project_start_to_heightmap")!="WORLD_SURFACE_WG" or villa.get("start_height")!={"absolute":0}:
-            fail("witch_villa was not re-anchored to NeverOverworld island surface")
+        if villa.get("start_height")!={"absolute":0}:
+            fail("witch_villa vanilla-sea absolute height survived")
 
         reps={}
         for group,ids in REPRESENTATIVES.items():

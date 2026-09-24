@@ -164,16 +164,18 @@ def is_land_surface(d: dict, tags: dict[str, list[str]]) -> bool:
     return d.get("step") == "surface_structures" and not explicit_ocean_biomes(d,tags)
 
 def adapt_land_surface(d: dict) -> dict:
-    """Make source surface structures follow NeverOverworld island height."""
+    """Anchor all admitted land structures to NeverOverworld terrain surface."""
     out=copy.deepcopy(d)
     if out.get("step")!="surface_structures":
         return out
-    if "project_start_to_heightmap" not in out:
-        # D&T witch_villa is the only 5.3.2 surface structure with absolute
-        # vanilla-sea Y and no heightmap projection. Normalize it to terrain
-        # surface so it does not remain submerged at NeverOverworld Y=128.
+    # OCEAN_FLOOR_WG is valid in the source packs for some *land* structures
+    # because vanilla sea level is low. In NeverOverworld it would anchor those
+    # starts to the drowned floor below Y128. Once biome intent classifies the
+    # structure as land, WORLD_SURFACE_WG is the only correct projection.
+    out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
+    if "start_height" not in out or out.get("start_height")=={"absolute":63}:
+        # D&T witch_villa used an absolute vanilla sea-level Y=63.
         out["start_height"]={"absolute":0}
-        out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
     return out
 
 def island_radius(d: dict) -> int:
