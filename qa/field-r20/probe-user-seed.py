@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIELD-R21 targeted regression for user-reported seed/chunk seam artifacts."""
+"""FIELD-R22 targeted regression for user-reported seed/chunk seam artifacts."""
 from __future__ import annotations
 
 import argparse
@@ -275,7 +275,7 @@ def main():
     villages=village_starts(roots)
     village_target_pass=len(villages)==0
     report={
-        'schema':1,'profile':'FIELD-R21-USER-SEED-2','source_sha':a.source_sha,
+        'schema':1,'profile':'FIELD-R22-USER-SEED-3','source_sha':a.source_sha,
         'seed':SEED,'jar_sha256':sha(a.jar),'overworld_sha256':sha(a.overworld),
         'nether_sha256':sha(a.nether),'chunks':[list(p) for p in chunks],
         'water_seam':seam,'ocean_voids':ocean_voids,
@@ -294,7 +294,7 @@ def main():
     target=out/'field-r20-user-seed.json'
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     require(report['pass'],
-            'FIELD-R21 user-seed water/village regression failed; see field-r20-user-seed.json')
+            'FIELD-R22 user-seed water/village regression failed; see field-r20-user-seed.json')
 
 if __name__=='__main__':
     main()
