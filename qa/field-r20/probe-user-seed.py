@@ -47,7 +47,7 @@ def sha(path):
 
 def runtime_seam_debug(log_path):
     text=Path(log_path).read_text(encoding='utf-8',errors='replace')
-    pattern=re.compile(r'\\[NeverFolia\\]\\[R22Seam\\] chunk=(-?\\d+),(-?\\d+) seeds=(\\d+),(\\d+),(\\d+),(\\d+) total=(\\d+) changed=(\\d+)')
+    pattern=re.compile(r'\[NeverFolia\]\[R22Seam\] chunk=(-?\d+),(-?\d+) seeds=(\d+),(\d+),(\d+),(\d+) total=(\d+) changed=(\d+)')
     rows=[]
     for match in pattern.finditer(text):
         rows.append({
@@ -56,6 +56,8 @@ def runtime_seam_debug(log_path):
             'north':int(match.group(5)),'south':int(match.group(6)),
             'total':int(match.group(7)),'changed':int(match.group(8)),
         })
+    if '[NeverFolia][R22Seam]' in text and not rows:
+        raise ValueError('R22 seam debug markers present but parser matched none')
     return rows
 
 def imported_structure_parse_errors(log_path):
