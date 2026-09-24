@@ -106,8 +106,9 @@ def water_at_y128(volume,boxes):
                     if len(examples)<24: examples.append([x,128,z])
     return {"columns":columns,"water_columns":water,"examples":examples,"pass":water==0}
 
-def locate_optional(server,target,x,z,timeout=30):
+def locate_optional(server,target,x,z,timeout=10):
     command=f'execute in minecraft:overworld positioned {x} 200 {z} run locate structure {target}'
+    print(f"[External Runtime QA] locate start target={target} origin={x},{z}",flush=True)
     start=len(server.text());server.send(command)
     deadline=time.monotonic()+timeout
     positive=re.compile(re.escape(target)+r'.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]')
@@ -115,8 +116,13 @@ def locate_optional(server,target,x,z,timeout=30):
     while time.monotonic()<deadline:
         segment=server.text()[start:]
         match=positive.search(segment)
-        if match:return int(match.group(1)),int(match.group(3))
-        if not_found.search(segment):return None
+        if match:
+            found=(int(match.group(1)),int(match.group(3)))
+            print(f"[External Runtime QA] locate found target={target} xz={found[0]},{found[1]}",flush=True)
+            return found
+        if not_found.search(segment):
+            print(f"[External Runtime QA] locate none target={target} origin={x},{z}",flush=True)
+            return None
         require('FoliaWatchdogThread' not in segment,
                 f'R19 fast locate exceeded Folia watchdog budget: {target}')
         fatal=re.search(r'Unknown or incomplete command|Incorrect argument|Unknown command',segment)
@@ -173,14 +179,18 @@ def main_run(args):
         # structures deliberately retain source placement and are verified by
         # the separate complete pack-graph QA instead of invoking vanilla
         # /locate, whose synchronous StructureCheck path is outside this change.
-        for target in SURFACE_IDS:
+        for index,target in enumerate(SURFACE_IDS,1):
+            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} begin {target}",flush=True)
             candidates=plan_candidates(server,target)
-            require(candidates,"locate produced no candidate: "+target)
+            require(candidates,"locate produced no candidate within bounded QA origins: "+target)
+            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} candidates={len(candidates)} {target}",flush=True)
             selected=set()
             for row in candidates:
                 selected.update(candidate_chunks(*row["chunk"],radius=1))
             require(len(selected)<=324,"discovery sample too large for "+target)
+            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} loading_chunks={len(selected)} {target}",flush=True)
             server.load_dimension(sorted(selected),"minecraft:overworld",serial_generation=False)
+            print(f"[External Runtime QA] target {index}/{len(SURFACE_IDS)} generated {target}",flush=True)
             report["targets"][target]={
                 "class":"surface_land",
                 "candidates":candidates,"discovery_chunks":[list(p) for p in sorted(selected)],
@@ -263,6 +273,7 @@ def self_test():
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
     require(len(SURFACE_IDS)==10 and len(SOURCE_IDS)==4,"SELF-TEST representative set drifted")
+    require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():
