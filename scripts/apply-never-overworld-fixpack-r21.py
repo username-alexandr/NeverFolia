@@ -37,9 +37,9 @@ def verify(folia: Path) -> None:
             "R21 flood helper must not synchronously load/read neighbours through level")
     require(tasks.count("NeverOverworldFloodConnectivityR15.reconcileSeams(") == 1,
             "R21 LIGHT seam reconcile hook missing/duplicated")
-    require(tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams(")
-            < tasks.find("NeverOverworldFlood.apply("),
-            "R21 seam reconcile must precede owner flood")
+    require(tasks.find("NeverOverworldFlood.apply(")
+            < tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams("),
+            "R21 seam reconcile must follow owner flood reset")
 
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village slope hardening missing")
