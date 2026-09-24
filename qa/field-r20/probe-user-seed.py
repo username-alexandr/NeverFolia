@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+from collections import deque
 from pathlib import Path
 import shutil
 
@@ -20,6 +21,7 @@ WATER_TARGETS = (
 )
 VILLAGE_TARGETS = ((-425, -508), (-426, -509))
 MAX_WATER_AIR_SEAM_FACES = 192
+MAX_OCEAN_CONNECTED_AIR_CELLS = 64
 
 def require(ok, message):
     if not ok:
@@ -95,6 +97,82 @@ def seam_audit(volume, chunks):
             'boundaries':findings,
             'threshold':MAX_WATER_AIR_SEAM_FACES,
             'pass':max_faces <= MAX_WATER_AIR_SEAM_FACES}
+
+def ocean_void_audit(volume, targets):
+    """Reject large AIR pockets directly exposed to the Y128-connected ocean.
+
+    Each reported target gets a 3x3 loaded safety envelope. WATER connectivity
+    is traced from Y=128 through saved WATER blocks; only AIR cells inside the
+    center target chunk are counted, so unknown sample edges cannot create a
+    false positive. Lava-adjacent AIR is ignored because lava is an intentional
+    NeverOverworld flood barrier.
+    """
+    per_target=[]
+    global_max=0
+    total=0
+    sides=((1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1))
+    for cx,cz in targets:
+        minx=(cx-1)*16; maxx=(cx+2)*16-1
+        minz=(cz-1)*16; maxz=(cz+2)*16-1
+        center_minx=cx*16; center_maxx=center_minx+15
+        center_minz=cz*16; center_maxz=center_minz+15
+
+        connected=set()
+        queue=deque()
+        for x in range(minx,maxx+1):
+            for z in range(minz,maxz+1):
+                if is_water(volume.at(x,128,z)):
+                    p=(x,128,z); connected.add(p); queue.append(p)
+
+        while queue:
+            x,y,z=queue.popleft()
+            for dx,dy,dz in sides:
+                nx,ny,nz=x+dx,y+dy,z+dz
+                if nx<minx or nx>maxx or nz<minz or nz>maxz or ny<-64 or ny>128:
+                    continue
+                p=(nx,ny,nz)
+                if p in connected or not is_water(volume.at(nx,ny,nz)):
+                    continue
+                connected.add(p); queue.append(p)
+
+        exposed_air=set()
+        examples=[]
+        for x,y,z in connected:
+            if y>=128:
+                continue
+            for dx,dy,dz in sides:
+                ax,ay,az=x+dx,y+dy,z+dz
+                if ay>=128 or ax<center_minx or ax>center_maxx or az<center_minz or az>center_maxz:
+                    continue
+                state=volume.at(ax,ay,az)
+                if not is_air(state):
+                    continue
+                lava_adjacent=False
+                for ldx,ldy,ldz in sides:
+                    near=volume.at(ax+ldx,ay+ldy,az+ldz)
+                    if near is not None and near.get('Name')=='minecraft:lava':
+                        lava_adjacent=True; break
+                if lava_adjacent:
+                    continue
+                pos=(ax,ay,az)
+                if pos in exposed_air:
+                    continue
+                exposed_air.add(pos)
+                if len(examples)<16:
+                    examples.append(list(pos))
+
+        count=len(exposed_air)
+        global_max=max(global_max,count); total+=count
+        per_target.append({'chunk':[cx,cz],'ocean_connected_air_cells':count,'examples':examples})
+
+    return {
+        'max_ocean_connected_air_cells':global_max,
+        'total_ocean_connected_air_cells':total,
+        'threshold':MAX_OCEAN_CONNECTED_AIR_CELLS,
+        'targets':per_target,
+        'pass':global_max <= MAX_OCEAN_CONNECTED_AIR_CELLS,
+    }
+
 
 def village_starts(roots):
     found=[]
@@ -177,23 +255,27 @@ def main():
     roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
     volume=observer.Volume(roots)
     seam=seam_audit(volume,chunks)
+    ocean_voids=ocean_void_audit(volume,WATER_TARGETS)
     villages=village_starts(roots)
+    village_target_pass=len(villages)==0
     report={
-        'schema':1,'profile':'FIELD-R21-USER-SEED-1','source_sha':a.source_sha,
+        'schema':1,'profile':'FIELD-R21-USER-SEED-2','source_sha':a.source_sha,
         'seed':SEED,'jar_sha256':sha(a.jar),'overworld_sha256':sha(a.overworld),
         'nether_sha256':sha(a.nether),'chunks':[list(p) for p in chunks],
-        'water_seam':seam,'village_starts':villages,
-        'pass':seam['pass'],
+        'water_seam':seam,'ocean_voids':ocean_voids,
+        'village_starts':villages,'village_target_pass':village_target_pass,
+        'pass':seam['pass'] and ocean_voids['pass'] and village_target_pass,
         'notes':[
             'Target chunks come from user screenshots for seed -2815737126961128793.',
-            'Only large WATER<->AIR planes exactly on horizontal chunk seams are gated.',
-            'Village starts are persisted as diagnostics; steep-piece rejection is enforced by FieldR20Smoke/runtime admission.',
+            'Large WATER<->AIR planes exactly on horizontal chunk seams are gated.',
+            'Large AIR pockets directly exposed to Y128-connected ocean water are gated inside reported chunks.',
+            'The two user-reported cliff-village target areas must contain no persisted vanilla village start.',
         ],
     }
     target=out/'field-r20-user-seed.json'
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     require(report['pass'],
-            'FIELD-R21 user-seed seam regression failed; see field-r20-user-seed.json')
+            'FIELD-R21 user-seed water/village regression failed; see field-r20-user-seed.json')
 
 if __name__=='__main__':
     main()
