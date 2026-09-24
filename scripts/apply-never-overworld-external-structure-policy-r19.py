@@ -176,6 +176,9 @@ def verify(folia: Path) -> None:
     for sid in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
@@ -186,10 +189,10 @@ def verify(folia: Path) -> None:
         fail("generated helper island ID count mismatch")
     for untouched in (
         "minecraft:village_plains",
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
     ):
         if f'case "{untouched}"' in helper:
             fail("untouched structure accidentally island-gated: " + untouched)

@@ -39,16 +39,19 @@ def verify(folia: Path) -> None:
     for marker in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
     ):
         require(marker in helper, "representative R19 surface structure missing: " + marker)
     for marker in (
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
         "minecraft:village_plains",
     ):
         require(f'case "{marker}"' not in helper,
