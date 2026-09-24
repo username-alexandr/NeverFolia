@@ -87,6 +87,9 @@ jobs:
       - name: Self-test NeverOverworld external dungeon pack QA
         run: python3 ./qa/field-r19/validate-external-structures-pack.py --self-test
 
+      - name: Self-test NeverOverworld external fast locate R19
+        run: python3 ./scripts/apply-never-overworld-external-fast-locate-r19.py --self-test
+
       - name: Self-test NeverOverworld external dungeon runtime QA
         run: python3 ./qa/field-r19/probe-external-structures-runtime.py --self-test
 
