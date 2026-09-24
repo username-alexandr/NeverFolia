@@ -104,7 +104,7 @@ jobs:
       - name: Run bounded runtime dungeon QA
         run: |
           set -euo pipefail
-          python3 qa/field-r19/probe-external-structures-runtime.py             --jar artifacts/server.jar             --overworld artifacts/NeverOverworld.zip             --nether artifacts/NeverNether.zip             --output artifacts
+          python3 qa/field-r19/probe-external-structures-runtime.py             --jar artifacts/server.jar             --overworld artifacts/NeverOverworld.zip             --nether artifacts/NeverNether.zip             --output artifacts             --strict
 
       - name: Upload runtime QA evidence
         if: always()
