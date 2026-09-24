@@ -152,17 +152,15 @@ def locate_optional(server,target,x,z,timeout=10):
     raise TimeoutError(f'{command}: no locate acknowledgement')
 
 def plan_candidates(server,target):
-    seen=set();rows=[]
+    # Runtime QA needs one real persisted start, not an exhaustive locate
+    # census. Stop on the first distinct bounded candidate so one rare structure
+    # cannot turn this gate into a long-running world scan.
     for ox,oz in ORIGINS:
         found=locate_optional(server,target,ox,oz)
         if found is None:continue
         x,z=found
-        cx,cz=x//16,z//16
-        key=(cx,cz)
-        if key in seen: continue
-        seen.add(key)
-        rows.append({"origin":[ox,oz],"located_xz":[x,z],"chunk":[cx,cz]})
-    return rows
+        return [{"origin":[ox,oz],"located_xz":[x,z],"chunk":[x//16,z//16]}]
+    return []
 
 def make_work(root,overworld,nether):
     work=root/".work"/"external-structures-runtime-qa"
@@ -324,6 +322,7 @@ def self_test():
     cov=piece_coverage(rows[0]["boxes"],margin=1)
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
+    require(len(ORIGINS)==6,"SELF-TEST bounded locate origin set drifted")
     require(len(SURFACE_GROUPS)==4 and len(SOURCE_IDS)==4,"SELF-TEST source group set drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
