@@ -11,6 +11,7 @@ SPEC = ROOT / "worldgen-spec/never-overworld-external-structures-r19.json"
 CHUNK_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java")
 MARKER = "// NeverFolia R19: external surface structures require a dry island footprint."
+GENERATED_MARKER = "// NeverFolia R19: generated external-land pieces must stay on dry island terrain."
 
 def fail(message: str) -> None:
     raise SystemExit("[NeverFolia][External Structure Policy R19] " + message)
@@ -20,8 +21,8 @@ def load_spec() -> dict:
     radii = data.get("island_radii", {})
     if data.get("profile") != "NeverOverworld-External-Structures-R19":
         fail("wrong spec profile")
-    if len(radii) != 131:
-        fail(f"expected 131 island-adapted structures, got {len(radii)}")
+    if len(radii) != 136:
+        fail(f"expected 136 island-adapted structures, got {len(radii)}")
     if any(not isinstance(k, str) or not isinstance(v, int) or v < 1 for k, v in radii.items()):
         fail("invalid island radius entry")
     return data
@@ -40,19 +41,25 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructurePiece;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 
 /**
- * FIELD-R19 island admission for imported surface-land structures.
+ * FIELD-R19 island admission for imported land structures.
  *
- * Only external structure IDs listed in the R19 spec are handled here.
- * Vanilla, ocean and underground structures return true unchanged.
- * Decisions use WORLD_SURFACE_WG only; no neighbouring chunk reads/writes.
+ * <p>The pre-generation gate is intentionally cheap: the candidate centre must
+ * be above the Y=128 ocean. The authoritative gate runs after the deterministic
+ * StructureStart exists and verifies every X/Z column covered by every actual
+ * generated piece. Ocean/underground structures are not listed and therefore
+ * preserve source placement.</p>
  */
 final class NeverOverworldExternalStructurePolicyR19 {{
     static final int EXPECTED_MIN_Y = -512;
     static final int EXPECTED_HEIGHT = 1024;
     static final int MIN_DRY_SURFACE_Y = 129;
+    static final int MAX_PIECE_SPAN = 256;
 
     private NeverOverworldExternalStructurePolicyR19() {{}}
 
@@ -67,6 +74,21 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         return radiusForId(id) > 0;
     }}
 
+    private static boolean inScope(
+        final ResourceKey<Level> dimension,
+        final ChunkAccess heightAccessor
+    ) {{
+        return Level.OVERWORLD.equals(dimension)
+            && heightAccessor.getMinY() == EXPECTED_MIN_Y
+            && heightAccessor.getHeight() == EXPECTED_HEIGHT;
+    }}
+
+    private static String structureId(final Holder<Structure> structure) {{
+        return structure.unwrapKey()
+            .map(key -> key.identifier().toString())
+            .orElse("");
+    }}
+
     static boolean allows(
         final ChunkGenerator generator,
         final Holder<Structure> structure,
@@ -75,32 +97,49 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         final ChunkPos chunkPos,
         final ResourceKey<Level> dimension
     ) {{
-        if (!Level.OVERWORLD.equals(dimension)
-            || heightAccessor.getMinY() != EXPECTED_MIN_Y
-            || heightAccessor.getHeight() != EXPECTED_HEIGHT) {{
-            return true;
-        }}
-
-        final String id = structure.unwrapKey()
-            .map(key -> key.identifier().toString())
-            .orElse("");
-        final int radius = radiusForId(id);
+        if (!inScope(dimension, heightAccessor)) return true;
+        final int radius = radiusForId(structureId(structure));
         if (radius <= 0) return true;
+        final int base = generator.getBaseHeight(
+            chunkPos.getMiddleBlockX(),
+            chunkPos.getMiddleBlockZ(),
+            Heightmap.Types.WORLD_SURFACE_WG,
+            heightAccessor,
+            randomState
+        );
+        return base >= MIN_DRY_SURFACE_Y;
+    }}
 
-        final int half = Math.max(1, radius / 2);
-        final int centerX = chunkPos.getMiddleBlockX();
-        final int centerZ = chunkPos.getMiddleBlockZ();
-        final int[] offsets = {{-radius, -half, 0, half, radius}};
-        for (final int dx : offsets) {{
-            for (final int dz : offsets) {{
-                final int base = generator.getBaseHeight(
-                    centerX + dx,
-                    centerZ + dz,
-                    Heightmap.Types.WORLD_SURFACE_WG,
-                    heightAccessor,
-                    randomState
-                );
-                if (base < MIN_DRY_SURFACE_Y) return false;
+    static boolean allowsGenerated(
+        final ChunkGenerator generator,
+        final Holder<Structure> structure,
+        final RandomState randomState,
+        final ChunkAccess heightAccessor,
+        final StructureStart start,
+        final ResourceKey<Level> dimension
+    ) {{
+        if (!inScope(dimension, heightAccessor)) return true;
+        if (radiusForId(structureId(structure)) <= 0) return true;
+        if (start == null || !start.isValid()) return false;
+
+        for (final StructurePiece piece : start.getPieces()) {{
+            final BoundingBox box = piece.getBoundingBox();
+            final long width = (long)box.maxX() - box.minX() + 1L;
+            final long depth = (long)box.maxZ() - box.minZ() + 1L;
+            if (width <= 0L || depth <= 0L || width > MAX_PIECE_SPAN || depth > MAX_PIECE_SPAN) {{
+                return false;
+            }}
+            for (int z = box.minZ(); z <= box.maxZ(); ++z) {{
+                for (int x = box.minX(); x <= box.maxX(); ++x) {{
+                    final int base = generator.getBaseHeight(
+                        x,
+                        z,
+                        Heightmap.Types.WORLD_SURFACE_WG,
+                        heightAccessor,
+                        randomState
+                    );
+                    if (base < MIN_DRY_SURFACE_Y) return false;
+                }}
             }}
         }}
         return true;
@@ -126,8 +165,6 @@ def param_name(params: str, pattern: str) -> str:
     return m.group(1)
 
 def patch_source(source: str) -> str:
-    if MARKER in source:
-        return source
     method = source.find("private boolean tryGenerateStructure(")
     if method < 0:
         fail("tryGenerateStructure method not found")
@@ -145,25 +182,63 @@ def patch_source(source: str) -> str:
     bo = source.find("{", pc)
     bc = matching_brace(source, bo)
     body = source[bo + 1:bc]
-    m = re.search(
-        rf"(?P<indent>^[ \t]*)Structure\s+(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{re.escape(entry)}\.structure\(\)\.value\(\);",
-        body,
-        re.MULTILINE,
-    )
-    if m is None:
-        fail("structure declaration not found")
-    indent = m.group("indent")
-    insert = bo + 1 + m.end()
-    guard = (
-        "\n" + indent + MARKER + "\n"
-        + indent + f"if (!NeverOverworldExternalStructurePolicyR19.allows(this, {entry}.structure(), {random_state}, {chunk}, {chunk_pos}, {dimension})) {{\n"
-        + indent + "    return false;\n"
-        + indent + "}"
-    )
-    patched = source[:insert] + guard + source[insert:]
-    if patched.count(MARKER) != 1:
-        fail("R19 guard was not injected exactly once")
-    return patched
+
+    if MARKER not in source:
+        m = re.search(
+            rf"(?P<indent>^[ \t]*)Structure\s+(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{re.escape(entry)}\.structure\(\)\.value\(\);",
+            body,
+            re.MULTILINE,
+        )
+        if m is None:
+            fail("structure declaration not found")
+        indent = m.group("indent")
+        insert = bo + 1 + m.end()
+        guard = (
+            "\n" + indent + MARKER + "\n"
+            + indent + f"if (!NeverOverworldExternalStructurePolicyR19.allows(this, {entry}.structure(), {random_state}, {chunk}, {chunk_pos}, {dimension})) {{\n"
+            + indent + "    return false;\n"
+            + indent + "}"
+        )
+        source = source[:insert] + guard + source[insert:]
+
+    if GENERATED_MARKER not in source:
+        method = source.find("private boolean tryGenerateStructure(")
+        _, method_end = method, matching_brace(source, source.find("{", source.find(")", method))) + 1
+        method_text = source[method:method_end]
+        start_match = re.search(
+            r"(?P<indent>^[ \t]*)StructureStart\s+(?P<start>[A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*[A-Za-z_$][A-Za-z0-9_$]*\.generate\s*\(",
+            method_text,
+            re.MULTILINE,
+        )
+        if start_match is None:
+            fail("StructureStart generation assignment not found")
+        start_var = start_match.group("start")
+        valid_match = re.compile(
+            rf"(?P<indent>^[ \t]*)if\s*\(\s*{re.escape(start_var)}\.isValid\(\)\s*\)\s*\{{",
+            re.MULTILINE,
+        ).search(method_text, start_match.end())
+        if valid_match is None:
+            fail("StructureStart valid block not found")
+        insert = method + valid_match.end()
+        indent = valid_match.group("indent") + "    "
+        guard = (
+            "\n" + indent + GENERATED_MARKER + "\n"
+            + indent + f"if (!NeverOverworldExternalStructurePolicyR19.allowsGenerated(\n"
+            + indent + "    this,\n"
+            + indent + f"    {entry}.structure(),\n"
+            + indent + f"    {random_state},\n"
+            + indent + f"    {chunk},\n"
+            + indent + f"    {start_var},\n"
+            + indent + f"    {dimension}\n"
+            + indent + ")) {\n"
+            + indent + "    return false;\n"
+            + indent + "}"
+        )
+        source = source[:insert] + guard + source[insert:]
+
+    if source.count(MARKER) != 1 or source.count(GENERATED_MARKER) != 1:
+        fail("R19 generation guards were not injected exactly once")
+    return source
 
 def verify(folia: Path) -> None:
     spec = load_spec()
@@ -173,9 +248,16 @@ def verify(folia: Path) -> None:
         fail("R19 ChunkGenerator guard missing")
     if "NeverOverworldExternalStructurePolicyR19.allows" not in chunk:
         fail("R19 policy call missing")
+    if GENERATED_MARKER not in chunk or "NeverOverworldExternalStructurePolicyR19.allowsGenerated" not in chunk:
+        fail("R19 generated-piece dry-island gate missing")
     for sid in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
+        "nova_structures:lone_citadel",
+        "nova_structures:toxic_lair",
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
@@ -186,15 +268,18 @@ def verify(folia: Path) -> None:
         fail("generated helper island ID count mismatch")
     for untouched in (
         "minecraft:village_plains",
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
     ):
         if f'case "{untouched}"' in helper:
             fail("untouched structure accidentally island-gated: " + untouched)
     if "WORLD_SURFACE_WG" not in helper or "MIN_DRY_SURFACE_Y = 129" not in helper:
         fail("R19 dry island height policy missing")
+    for marker in ("allowsGenerated(", "for (final StructurePiece piece : start.getPieces())", "MAX_PIECE_SPAN = 256"):
+        if marker not in helper:
+            fail("R19 generated-piece safety marker missing: " + marker)
     if "getChunk(" in helper or "getBlockState(" in helper:
         fail("R19 policy must not read generated neighbour chunk state")
     print("[NeverFolia][External Structure Policy R19] final invariants OK")
@@ -202,7 +287,7 @@ def verify(folia: Path) -> None:
 def self_test() -> None:
     spec = load_spec()
     helper = java_helper(spec)
-    if helper.count('case "') != 131:
+    if helper.count('case "') != 136:
         fail("SELF-TEST helper ID count mismatch")
     fixture = """class ChunkGenerator {
     private boolean tryGenerateStructure(
@@ -218,12 +303,18 @@ def self_test() -> None:
         ResourceKey<Level> dimension
     ) {
         Structure structure = entry.structure().value();
-        return true;
+        StructureStart start = structure.generate(entry.structure(), dimension, access, this, null, randomState, templates, seed, chunkPos, 0, chunk, x -> true);
+        if (start.isValid()) {
+            return true;
+        }
+        return false;
     }
 }
 """
     patched = patch_source(fixture)
-    if MARKER not in patched or "NeverOverworldExternalStructurePolicyR19.allows" not in patched:
+    if MARKER not in patched or GENERATED_MARKER not in patched
+        or "NeverOverworldExternalStructurePolicyR19.allows" not in patched
+        or "NeverOverworldExternalStructurePolicyR19.allowsGenerated" not in patched:
         fail("SELF-TEST guard injection failed")
     print("[NeverFolia][External Structure Policy R19] SELF-TEST OK")
 

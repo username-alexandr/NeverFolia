@@ -18,6 +18,7 @@ PROFILE = "NO-FIELD-R19-FIXPACK-1"
 JAVA = Path("folia-server/src/minecraft/java")
 CHUNK = JAVA / "net/minecraft/world/level/chunk/ChunkGenerator.java"
 HELPER = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java"
+FAST = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalFastLocateR19.java"
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -26,10 +27,11 @@ def require(ok: bool, message: str) -> None:
 def verify(folia: Path) -> None:
     chunk = (folia / CHUNK).read_text(encoding="utf-8")
     helper = (folia / HELPER).read_text(encoding="utf-8")
+    fast = (folia / FAST).read_text(encoding="utf-8")
     require("NeverOverworldExternalStructurePolicyR19.allows" in chunk,
             "external structure island admission hook missing")
-    require(helper.count('case "') == 131,
-            "external surface structure ID count must stay 131")
+    require(helper.count('case "') == 136,
+            "external surface structure ID count must stay 136")
     require("MIN_DRY_SURFACE_Y = 129" in helper,
             "R19 island dry height changed")
     require("WORLD_SURFACE_WG" in helper,
@@ -39,20 +41,35 @@ def verify(folia: Path) -> None:
     for marker in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
+        "explorify:ruins",
+        "nova_structures:stray_outlook",
+        "nova_structures:witch_villa",
         "structory_towers:wizard_tower",
         "repurposed_structures:witch_hut_oak",
         "repurposed_structures:monument_jungle",
     ):
         require(marker in helper, "representative R19 surface structure missing: " + marker)
     for marker in (
-        "explorify:ruins",
         "structory_towers:ocean_pillar",
         "nova_structures:catacomb",
         "nova_structures:conduit_ruin",
+        "nova_structures:trident_trial_monument",
         "minecraft:village_plains",
     ):
         require(f'case "{marker}"' not in helper,
                 "non-R19 surface structure was island-gated: " + marker)
+    require("NeverOverworldExternalStructurePolicyR19.radiusForId" in fast,
+            "R19 external fast-locate policy link missing")
+    require("getPotentialStructureChunk" in fast and "isStructureChunk" in fast,
+            "R19 external fast-locate random-spread prediction missing")
+    require("DensityFunction.SinglePointContext" in fast and ".preliminarySurfaceLevel()" in fast,
+            "R19 external fast-locate cheap surface prediction missing")
+    require("moonrise$syncLoadNonFull" not in fast
+            and "getChunk(" not in fast
+            and "getBaseHeight(" not in fast,
+            "R19 external fast-locate must not generate/load chunks")
+    require("NeverOverworldExternalFastLocateR19.handles" in chunk,
+            "R19 external fast-locate ChunkGenerator hook missing")
     print(f"[NeverOverworld R19] {PROFILE} final invariants OK")
 
 def apply(folia: Path) -> None:
@@ -62,6 +79,10 @@ def apply(folia: Path) -> None:
     )
     subprocess.run(
         [sys.executable, str(ROOT / "scripts/apply-never-overworld-external-structure-policy-r19.py"), str(folia)],
+        cwd=ROOT, check=True
+    )
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/apply-never-overworld-external-fast-locate-r19.py"), str(folia)],
         cwd=ROOT, check=True
     )
     verify(folia)

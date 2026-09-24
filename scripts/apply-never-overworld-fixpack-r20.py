@@ -49,7 +49,7 @@ def verify(folia: Path) -> None:
     require("getChunk(" not in safety,
             "R20 village admission must not synchronously load neighbours")
 
-    require(r19.count('case "') == 131,
+    require(r19.count('case "') == 136,
             "R19 external surface structure table changed")
     require("MIN_DRY_SURFACE_Y = 129" in r19,
             "R19 island admission changed")
