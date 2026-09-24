@@ -599,7 +599,7 @@ def main():
     manifest = json.loads(args.build_manifest.read_text(encoding='utf-8'))
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
-            and manifest.get('r18_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r19_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'missing exact R19/Nether-R16 build profile')
     external_manifest = external_structure_pack_audit(args.overworld.resolve())
     write_json(out/'external-structures-r19.json', external_manifest)
