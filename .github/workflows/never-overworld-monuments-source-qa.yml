@@ -1,0 +1,46 @@
+name: NeverOverworld Better Monuments source QA
+
+on:
+  push:
+    branches: [wip/neveroverworld-monument-qa-r1]
+    paths:
+      - 'qa/field-r19/audit-better-monuments-source.py'
+      - 'scripts/build-never-overworld-external-structures-r19.py'
+      - '.github/workflows/never-overworld-monuments-source-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monuments-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch exact pinned Better Monuments v7 archive
+        run: |
+          set -euo pipefail
+          mkdir -p .work artifacts
+          python3 - <<'PY'
+          import hashlib,urllib.request
+          from pathlib import Path
+          url='https://cdn.modrinth.com/data/WQ8xE11Z/versions/EU6PZcdv/Repurposed_Structures-Better_Monuments_v7.zip'
+          expected='c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9'
+          req=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-Monuments-QA/1'})
+          with urllib.request.urlopen(req,timeout=60) as response: raw=response.read()
+          got=hashlib.sha256(raw).hexdigest()
+          if got!=expected: raise SystemExit(f'Monuments ZIP SHA mismatch: {got}')
+          Path('.work/monuments.zip').write_bytes(raw)
+          print('Better Monuments ZIP verified',got,'bytes',len(raw))
+          PY
+      - name: Audit source and R19 vanilla conversion
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/audit-better-monuments-source.py             --source .work/monuments.zip             --output artifacts/better-monuments-source-qa.json
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-BETTER-MONUMENTS-SOURCE-QA-${{ github.sha }}
+          path: artifacts/better-monuments-source-qa.json
+          retention-days: 14
