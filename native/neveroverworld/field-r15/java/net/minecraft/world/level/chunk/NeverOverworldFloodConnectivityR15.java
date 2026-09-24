@@ -194,13 +194,21 @@ public final class NeverOverworldFloodConnectivityR15 {
         final int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos=new BlockPos.MutableBlockPos();
         int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;
+        int boundaryCells=0,componentMinY=seedY,componentMaxY=seedY;
+        int sampleSeamX=Integer.MIN_VALUE,sampleSeamY=Integer.MIN_VALUE,sampleSeamZ=Integer.MIN_VALUE;
         int seed=encode(seedX,seedY,seedZ,minY);visited[seed]=true;queue[tail++]=seed;
         while(head<tail){
             int e=queue[head++],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
+            componentMinY=Math.min(componentMinY,y);componentMaxY=Math.max(componentMaxY,y);
             pos.set(baseX+x,y,baseZ+z);
             if(y==SCAN_MAX_Y&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
             if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
-            if(horizontalSeamBelowOcean(x,y,z))touchesHorizontalSeam=true;
+            if(horizontalSeamBelowOcean(x,y,z)){
+                touchesHorizontalSeam=true;++boundaryCells;
+                if(sampleSeamX==Integer.MIN_VALUE){
+                    sampleSeamX=baseX+x;sampleSeamY=y;sampleSeamZ=baseZ+z;
+                }
+            }
             tail=enqueue(chunk,visited,queue,tail,x-1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x+1,y,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y,z-1,minY,maxY);
@@ -208,7 +216,19 @@ public final class NeverOverworldFloodConnectivityR15 {
             tail=enqueue(chunk,visited,queue,tail,x,y-1,z,minY,maxY);
             tail=enqueue(chunk,visited,queue,tail,x,y+1,z,minY,maxY);
         }
-        if(!hasOceanSeed||(!allowSeams&&touchesHorizontalSeam))return 0;
+        if(!hasOceanSeed){
+            if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
+                &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
+                System.out.println(
+                    "[NeverFolia][R22DrySeam] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
+                    +" size="+tail+" boundary="+boundaryCells
+                    +" y="+componentMinY+":"+componentMaxY
+                    +" sample="+sampleSeamX+","+sampleSeamY+","+sampleSeamZ
+                );
+            }
+            return 0;
+        }
+        if(!allowSeams&&touchesHorizontalSeam)return 0;
         int changed=0;BlockState water=Blocks.WATER.defaultBlockState();
         for(int i=0;i<tail;++i){
             int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);

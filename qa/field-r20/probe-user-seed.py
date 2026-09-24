@@ -60,6 +60,25 @@ def runtime_seam_debug(log_path):
         raise ValueError('R22 seam debug markers present but parser matched none')
     return rows
 
+def runtime_dry_seam_debug(log_path):
+    text=Path(log_path).read_text(encoding='utf-8',errors='replace')
+    pattern=re.compile(
+        r'\[NeverFolia\]\[R22DrySeam\] chunk=(-?\d+),(-?\d+) '
+        r'size=(\d+) boundary=(\d+) y=(-?\d+):(-?\d+) '
+        r'sample=(-?\d+),(-?\d+),(-?\d+)'
+    )
+    rows=[]
+    for match in pattern.finditer(text):
+        rows.append({
+            'chunk':[int(match.group(1)),int(match.group(2))],
+            'size':int(match.group(3)),
+            'boundary_cells':int(match.group(4)),
+            'min_y':int(match.group(5)),
+            'max_y':int(match.group(6)),
+            'sample':[int(match.group(7)),int(match.group(8)),int(match.group(9))],
+        })
+    return rows
+
 def imported_structure_parse_errors(log_path):
     text=Path(log_path).read_text(encoding='utf-8',errors='replace')
     bad=[]
@@ -400,6 +419,7 @@ def main():
 
     parse_errors=imported_structure_parse_errors(log)
     seam_runtime=runtime_seam_debug(log)
+    dry_seam_runtime=runtime_dry_seam_debug(log)
     region=work/'world/dimensions/minecraft/overworld/region'
     roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
     volume=observer.Volume(roots)
@@ -418,6 +438,7 @@ def main():
         'external_structure_parse_errors':parse_errors,
         'external_structure_parse_pass':len(parse_errors)==0,
         'runtime_seam_reconciliation':seam_runtime,
+        'runtime_dry_seam_components':dry_seam_runtime,
         'pass':seam['pass'] and ocean_voids['pass'] and village_target_pass and len(parse_errors)==0,
         'notes':[
             'Target chunks come from user screenshots for seed -2815737126961128793.',
