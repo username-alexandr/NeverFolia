@@ -150,25 +150,47 @@ def sanitize_processor_list(data: dict) -> dict:
         if q is not None: out.append(q)
     return {"processors": out}
 
-def sanitize_pool(data: dict) -> dict:
+def sanitize_pool(data: dict, drop_legacy_features: bool=False) -> dict:
     data=copy.deepcopy(data)
     data.pop("name", None)
+    elements=[]
     for entry in data.get("elements", []):
         el=entry.get("element")
-        if not isinstance(el, dict): continue
+        if not isinstance(el, dict):
+            elements.append(entry); continue
         if el.get("element_type") == "yungsapi:max_count_single_element":
             el["element_type"]="minecraft:single_pool_element"
             el.pop("max_count",None)
             el.pop("name",None)
+        if drop_legacy_features and el.get("element_type") == "minecraft:feature_pool_element":
+            feature=el.get("feature","")
+            if isinstance(feature,str) and feature.startswith("betteroceanmonuments:"):
+                continue
+        elements.append(entry)
+    data["elements"]=elements
     return data
 
-def sanitize_repurposed_structure(data: dict, radius: int) -> dict:
+RS_BIOMES = {
+    "repurposed_structures:witch_hut_birch": ["minecraft:birch_forest","minecraft:old_growth_birch_forest"],
+    "repurposed_structures:witch_hut_dark_forest": ["minecraft:dark_forest"],
+    "repurposed_structures:witch_hut_giant_tree_taiga": ["minecraft:old_growth_pine_taiga","minecraft:old_growth_spruce_taiga"],
+    "repurposed_structures:witch_hut_mangrove": ["minecraft:mangrove_swamp"],
+    "repurposed_structures:witch_hut_oak": ["minecraft:forest","minecraft:flower_forest"],
+    "repurposed_structures:witch_hut_taiga": ["minecraft:taiga","minecraft:snowy_taiga"],
+    "repurposed_structures:monument_desert": ["minecraft:desert"],
+    "repurposed_structures:monument_icy": ["minecraft:snowy_plains","minecraft:ice_spikes","minecraft:snowy_slopes","minecraft:frozen_peaks","minecraft:jagged_peaks","minecraft:grove"],
+    "repurposed_structures:monument_jungle": ["minecraft:jungle","minecraft:sparse_jungle","minecraft:bamboo_jungle"],
+}
+
+def sanitize_repurposed_structure(data: dict, radius: int, structure_id: str) -> dict:
     d=copy.deepcopy(data)
     d["type"]="minecraft:jigsaw"
     for key in ("burying_type","valid_biome_radius_check"):
         d.pop(key,None)
     d.setdefault("max_distance_from_center", max(80, radius))
     d.setdefault("use_expansion_hack", False)
+    if structure_id in RS_BIOMES:
+        d["biomes"]=RS_BIOMES[structure_id]
     return d
 
 def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
@@ -194,7 +216,32 @@ def should_copy_dependency(path: str) -> bool:
     if ns=="minecraft": return False
     if category in AUTO_EXCLUDED_CATEGORIES: return False
     if category=="rs_pool_additions": return False
+    if "/tags/worldgen/structure/" in path: return False
     return True
+
+def dat_minecraft_compat(path: str) -> bool:
+    # Dungeons & Taverns defines several NEW resources under minecraft:
+    # namespace. They are dependencies of its Overworld Jigsaw structures, not
+    # replacements for vanilla structure registrations/tags.
+    if path.startswith("data/minecraft/worldgen/configured_feature/"):
+        return "nether_fortress" not in path
+    if path.startswith("data/minecraft/worldgen/placed_feature/"):
+        return "nether_fortress" not in path
+    if path.startswith("data/minecraft/worldgen/processor_list/"):
+        return "nether_fortress" not in path
+    for prefix in (
+        "data/minecraft/worldgen/template_pool/illager_mansion/",
+        "data/minecraft/worldgen/template_pool/jungle_village/",
+        "data/minecraft/worldgen/template_pool/swamp_village/",
+        "data/minecraft/worldgen/template_pool/witch_hut/",
+        "data/minecraft/worldgen/template_pool/mangrove_witch_hut/",
+        "data/minecraft/structure/illager_mansion/",
+        "data/minecraft/structure/village_jungle/",
+        "data/minecraft/structure/village_swamp/",
+    ):
+        if path.startswith(prefix):
+            return True
+    return False
 
 def filter_pack(key: str, files: dict[str, bytes]):
     files=dict(files)
@@ -213,13 +260,27 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
+        if key=="dat" and dat_minecraft_compat(n):
+            out[n]=b
+            continue
         if not should_copy_dependency(n): continue
+        if key in {"witch","monuments"} and "/tags/worldgen/biome/" in n:
+            # Converted RS structures carry direct vanilla biome lists and must
+            # not depend on the missing base Repurposed Structures tag pack.
+            continue
+        if key=="monuments" and (
+            "/worldgen/configured_feature/" in n or "/worldgen/placed_feature/" in n
+        ):
+            # These seven decorative random_patch features target an older
+            # feature registry. Their pool elements are removed below; monument
+            # geometry, pools, templates and loot remain intact.
+            continue
         sid=resource_id(n,"worldgen/structure")
         if sid:
             if sid not in allowed: continue
             d=read_json(b,n)
             if key in {"witch","monuments"}:
-                d=sanitize_repurposed_structure(d,radii.get(sid,32))
+                d=sanitize_repurposed_structure(d,radii.get(sid,32),sid)
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         setid=resource_id(n,"worldgen/structure_set")
@@ -235,10 +296,29 @@ def filter_pack(key: str, files: dict[str, bytes]):
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         if "/worldgen/template_pool/" in n and n.endswith(".json") and key in {"witch","monuments"}:
-            d=sanitize_pool(read_json(b,n))
+            d=sanitize_pool(read_json(b,n),drop_legacy_features=(key=="monuments"))
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         out[n]=b
+
+    # Final compatibility guards for the vanilla-only Folia runtime.
+    if key in {"witch","monuments"}:
+        for n in out:
+            if "/tags/worldgen/biome/" in n and n.startswith("data/repurposed_structures/"):
+                fail("base Repurposed Structures biome-tag dependency survived: "+n)
+    if key=="monuments":
+        if any("/worldgen/configured_feature/" in n or "/worldgen/placed_feature/" in n for n in out if n.startswith("data/betteroceanmonuments/")):
+            fail("legacy Better Monuments random_patch feature survived")
+    if key=="dat":
+        required=(
+            "data/minecraft/worldgen/placed_feature/donjon_base.json",
+            "data/minecraft/worldgen/processor_list/ruined_town_degradation.json",
+            "data/minecraft/worldgen/template_pool/illager_mansion/illager_mansion_entry.json",
+            "data/minecraft/worldgen/template_pool/jungle_village/town_center.json",
+            "data/minecraft/worldgen/template_pool/swamp_village/town_center.json",
+        )
+        for n in required:
+            if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
