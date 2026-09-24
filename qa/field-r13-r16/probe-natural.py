@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIELD-R20/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
+"""FIELD-R21/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
 R15 Nether pack. Two independent R20/Nether-R16 candidates must repeat exactly in the
@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import zipfile
 
-PROFILE = 'FIELD-R20-NR16-NATURAL-1'
+PROFILE = 'FIELD-R21-NR16-NATURAL-1'
 R16_PROFILE = 'NN-R16-LAVA-OCEAN-CLEANUP-1'
 HEIGHT_PROFILE = 'NN-R14-SUBSTRATE-1-ROOF512'
 ROLES = ('historical', 'candidate-a', 'candidate-b')
@@ -530,7 +530,7 @@ def package(out, jar, packs, report, manifest, run_id):
             and report.get('production_ready') is False, 'candidate not eligible')
     require(all(v is True for v in report.get('checks', {}).values()), 'incomplete natural acceptance')
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == report['source_sha']
-            and manifest.get('r20_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r21_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'build profile mismatch')
     require(type(run_id) is int and run_id > 0 and manifest.get('workflow_run') == run_id,
             'workflow run mismatch')
@@ -555,7 +555,7 @@ def package(out, jar, packs, report, manifest, run_id):
                 nether_profile=R16_PROFILE, natural_acceptance_profile=PROFILE)
     payload['BUILD-INFO.json'] = (json.dumps(info, indent=2)+'\n').encode()
     payload['README-RU.txt'] = (
-        'NeverFolia FIELD-R20/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
+        'NeverFolia FIELD-R21/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
         'Оба датапака уже лежат в world/datapacks; старый мир/region/level.dat не переносить.\n'
         'R13: грибы, тыквы, бамбук и мох не генерируются ниже Y126; трава/цветы очищаются при контакте с водой до Y130.\n'
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
@@ -570,7 +570,7 @@ def package(out, jar, packs, report, manifest, run_id):
     payload['SHA256SUMS.txt'] = ''.join(
         hashlib.sha256(b).hexdigest()+'  '+n+'\n' for n,b in sorted(payload.items())
     ).encode()
-    name = 'NeverFolia-FIELD-R20-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
+    name = 'NeverFolia-FIELD-R21-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
     dest = out/name
     with zipfile.ZipFile(dest, 'x', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for n,b in sorted(payload.items()):
@@ -600,7 +600,7 @@ def main():
     manifest = json.loads(args.build_manifest.read_text(encoding='utf-8'))
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
-            and manifest.get('r20_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r21_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'missing exact R20/Nether-R16 build profile')
     external_manifest = external_structure_pack_audit(args.overworld.resolve())
     write_json(out/'external-structures-r19.json', external_manifest)
@@ -625,7 +625,7 @@ def main():
             write_json(out/(role+'-vs-historical-full-delta.json'),
                        paired.ore_delta(ores['historical'], ores[role]))
         write_json(target, report)
-        require(report['manual_test_eligible'], 'FIELD-R20/Nether-R16 natural acceptance rejected; see report')
+        require(report['manual_test_eligible'], 'FIELD-R21/Nether-R16 natural acceptance rejected; see report')
         bundle = package(out, args.jar.resolve(), current_packs, report, manifest, args.run_id)
         write_json(out/'field-r13-r16-natural-bundle.json', bundle)
         print(json.dumps(bundle, indent=2), flush=True)
