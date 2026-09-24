@@ -69,7 +69,7 @@ public final class NeverOverworldFloodConnectivityR15 {
         final ChunkAccess neighbor = holder.getChunkIfPresent(ChunkStatus.FEATURES);
         if (neighbor == null) return 0;
 
-        final boolean[] neighborOceanWater = oceanConnectedWater(neighbor, minY, maxY);
+        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);
         final int ownerBaseX = owner.getPos().getMinBlockX();
         final int ownerBaseZ = owner.getPos().getMinBlockZ();
         final int neighborBaseX = neighbor.getPos().getMinBlockX();
@@ -89,7 +89,7 @@ public final class NeverOverworldFloodConnectivityR15 {
 
                 ownerPos.set(ownerBaseX + ox, y, ownerBaseZ + oz);
                 neighborPos.set(neighborBaseX + nx, y, neighborBaseZ + nz);
-                if (!neighbor.getBlockState(neighborPos).is(Blocks.WATER)) continue;
+                if (!traversable(neighbor, neighborPos)) continue;
                 if (!traversable(owner, ownerPos)) continue;
 
                 if (!owner.getBlockState(ownerPos).is(Blocks.WATER)) {
@@ -105,7 +105,7 @@ public final class NeverOverworldFloodConnectivityR15 {
         return seeded;
     }
 
-    private static boolean[] oceanConnectedWater(final ChunkAccess chunk, final int minY, final int maxY) {
+    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {
         final int capacity = (maxY - minY + 1) * 256;
         final boolean[] connected = new boolean[capacity];
         final int[] queue = new int[capacity];
@@ -125,17 +125,17 @@ public final class NeverOverworldFloodConnectivityR15 {
         while (head < tail) {
             final int e = queue[head++];
             final int x = e & 15, z = (e >>> 4) & 15, y = minY + (e >>> 8);
-            tail = enqueueWater(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
-            tail = enqueueWater(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
-            tail = enqueueWater(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
-            tail = enqueueWater(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
-            tail = enqueueWater(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
-            tail = enqueueWater(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
         }
         return connected;
     }
 
-    private static int enqueueWater(
+    private static int enqueueFloodable(
         final ChunkAccess chunk, final boolean[] connected, final int[] queue, final int tailIn,
         final int x, final int y, final int z, final int minY, final int maxY
     ) {
@@ -143,7 +143,7 @@ public final class NeverOverworldFloodConnectivityR15 {
         final int e = encode(x, y, z, minY);
         if (connected[e]) return tailIn;
         final BlockPos pos = new BlockPos(chunk.getPos().getMinBlockX() + x, y, chunk.getPos().getMinBlockZ() + z);
-        if (!chunk.getBlockState(pos).is(Blocks.WATER)) return tailIn;
+        if (!traversable(chunk, pos)) return tailIn;
         connected[e] = true;
         queue[tailIn] = e;
         return tailIn + 1;
