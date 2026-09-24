@@ -16,6 +16,8 @@ PROFILE = "NO-FIELD-R21-FIXPACK-1"
 JAVA = Path("folia-server/src/minecraft/java")
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 TASKS = JAVA / "net/minecraft/world/level/chunk/status/ChunkStatusTasks.java"
+MOONRISE = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
+SCHEDULER = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java"
 SAFETY = JAVA / "net/minecraft/world/level/chunk/NeverOverworldGeneratedVillageSafety.java"
 R19 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java"
 
@@ -26,6 +28,8 @@ def require(ok: bool, message: str) -> None:
 def verify(folia: Path) -> None:
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     tasks = (folia / TASKS).read_text(encoding="utf-8")
+    moonrise = (folia / MOONRISE).read_text(encoding="utf-8")
+    scheduler = (folia / SCHEDULER).read_text(encoding="utf-8")
     safety = (folia / SAFETY).read_text(encoding="utf-8")
     r19 = (folia / R19).read_text(encoding="utf-8")
 
@@ -41,11 +45,22 @@ def verify(folia: Path) -> None:
             "R21 neighbour ocean connectivity must traverse floodable volume")
     require("getChunk(" not in flood and "level.getBlockState(" not in flood,
             "R21 flood helper must not synchronously load/read neighbours through level")
-    require(tasks.count("NeverOverworldFloodConnectivityR15.reconcileSeams(") == 1,
-            "R21 LIGHT seam reconcile hook missing/duplicated")
-    require(tasks.find("NeverOverworldFlood.apply(")
-            < tasks.find("NeverOverworldFloodConnectivityR15.reconcileSeams("),
-            "R21 seam reconcile must follow owner flood reset")
+
+    owner = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
+    reconcile = ("net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
+                 "reconcileSeams(task.neverOverworldNeighbours, task.fromChunk);")
+    require("NeverOverworldFlood.apply(" not in tasks
+            and "NeverOverworldFloodConnectivityR15.reconcileSeams(" not in tasks,
+            "bypassed ChunkStatusTasks must not own R21 runtime flood")
+    require(moonrise.count(owner) == 1 and moonrise.count(reconcile) == 1,
+            "R21 Moonrise owner/reconcile hook missing or duplicated")
+    require(moonrise.find(owner) < moonrise.find(reconcile)
+            < moonrise.find("StarLightEngine.getEmptySectionsForChunk"),
+            "R21 Moonrise runtime order is not owner flood -> reconcile -> Starlight")
+    require("StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours" in moonrise,
+            "R21 Moonrise neighbour cache field missing")
+    require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
+            "R21 scheduler does not pass LIGHT neighbour cache")
 
     require("MAX_PIECE_SURFACE_SPAN = 8" in safety,
             "R20 village slope hardening missing")
