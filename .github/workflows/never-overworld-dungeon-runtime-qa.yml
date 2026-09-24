@@ -1,0 +1,114 @@
+name: NeverOverworld external dungeon runtime QA
+
+on:
+  push:
+    branches: [wip/neveroverworld-dungeon-runtime-r1]
+    paths:
+      - 'qa/field-r19/**'
+      - 'scripts/build-never-overworld-external-structures-r19.py'
+      - 'scripts/apply-never-overworld-field-r22.py'
+      - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'worldgen-spec/never-overworld-external-structures-r19.json'
+      - '.github/workflows/never-overworld-dungeon-runtime-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Materialize current NeverFolia candidate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
+          python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace)
+          cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
+          cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
+
+      - name: Build exact matching datapacks
+        run: |
+          set -euo pipefail
+          if [ ! -f artifacts/pack-input-bundler.jar ]; then
+            python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          found=[]
+          for p in Path('.work/Folia/folia-server/build/libs').glob('*.jar'):
+              try:
+                  with zipfile.ZipFile(p) as z:
+                      if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                          found.append(p)
+              except zipfile.BadZipFile:
+                  pass
+          if len(found)!=1:
+              raise SystemExit('pack-input bundler not uniquely found')
+          shutil.copyfile(found[0],'artifacts/pack-input-bundler.jar')
+          PY
+          fi
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-external-structures-r19.py             --input artifacts/NeverOverworld.zip             --output artifacts/NeverOverworld-R19.zip
+          mv artifacts/NeverOverworld-R19.zip artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+
+          python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13.zip --inject
+          python3 scripts/build-never-nether-height-r14.py --input .work/NeverNether-R13.zip --output .work/NeverNether-R14.zip
+          python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output .work/NeverNether-R15.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R15.zip --verify
+          python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
+
+      - name: Validate external structure graph
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/validate-external-structures-pack.py             --pack artifacts/NeverOverworld.zip             --spec worldgen-spec/never-overworld-external-structures-r19.json             --output artifacts/external-structures-pack-qa.json
+
+      - name: Run bounded runtime dungeon QA
+        run: |
+          set -euo pipefail
+          python3 qa/field-r19/probe-external-structures-runtime.py             --jar artifacts/server.jar             --overworld artifacts/NeverOverworld.zip             --nether artifacts/NeverNether.zip             --output artifacts
+
+      - name: Upload runtime QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-DUNGEON-RUNTIME-QA-${{ github.sha }}
+          path: |
+            artifacts/**/*.json
+            artifacts/**/*.log
+            artifacts/**/*.txt
+          retention-days: 14
+          if-no-files-found: warn
