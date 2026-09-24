@@ -41,6 +41,11 @@ def verify(folia: Path) -> None:
     ):
         require(marker in flood, "R21 flood helper marker missing: " + marker)
 
+    require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
+            "R21 component scan must receive external seam seeds")
+    require("boolean[] externalSeeds,boolean allowSeams" in flood,
+            "R21 component scan seam parameters missing")
+
     require("level.getBlockState(" not in flood,
             "R21 must not use WorldGenLevel neighbour block reads")
     require("getChunk(" not in flood,
