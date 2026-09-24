@@ -6,8 +6,9 @@ classified a FEATURES neighbour as ocean-connected only when that neighbour had
 already been flooded and therefore already contained WATER at Y=128. LIGHT task
 order could consequently leave deterministic WATER/AIR walls.
 
-R22 derives the neighbour's *prospective* surface-ocean seed from the same
-OCEAN_FLOOR_WG rule used by NeverOverworldFlood. It reads only the already-built
+R22 keeps an already-present Y=128 WATER block as an authoritative ocean seed
+and additionally derives a *prospective* seed from OCEAN_FLOOR_WG when the
+FEATURES neighbour has not been flooded yet. It reads only the already-built
 FEATURES ChunkAccess from R21's StaticCache2D, never synchronously loads a chunk,
 and never writes the neighbour.
 """
@@ -34,7 +35,8 @@ OLD_SEEDS = """        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
 NEW_SEEDS = """        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x) {
             final int surfaceY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z);
             pos.set(baseX + x, SCAN_MAX_Y, baseZ + z);
-            if (!prospectiveOceanSurfaceSeed(surfaceY, chunk.getBlockState(pos))) continue;
+            final BlockState state = chunk.getBlockState(pos);
+            if (!surfaceOceanSeed(surfaceY, state)) continue;
             if (!traversable(chunk, pos)) continue;
             final int e = encode(x, SCAN_MAX_Y, z, minY);
             connected[e] = true;
@@ -44,6 +46,10 @@ NEW_SEEDS = """        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
 
 HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, final BlockState state) {
         return surfaceY < SCAN_MAX_Y && isFloodable(state);
+    }
+
+    static boolean surfaceOceanSeed(final int surfaceY, final BlockState state) {
+        return state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed(surfaceY, state);
     }
 
 """
@@ -59,7 +65,9 @@ def patch(text: str) -> str:
         require(IMPORT_ANCHOR in text, "Heightmap import anchor missing")
         text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + IMPORT, 1)
 
-    if "static boolean prospectiveOceanSurfaceSeed(" not in text:
+    if "static boolean surfaceOceanSeed(" not in text:
+        require("static boolean prospectiveOceanSurfaceSeed(" not in text,
+                "partial R22 helper set found")
         require(HELPER_ANCHOR in text, "oceanConnectedFloodable anchor missing")
         text = text.replace(HELPER_ANCHOR, HELPER + HELPER_ANCHOR, 1)
 
@@ -75,18 +83,21 @@ def verify(folia: Path) -> None:
     for marker in (
         "import net.minecraft.world.level.levelgen.Heightmap;",
         "prospectiveOceanSurfaceSeed",
+        "surfaceOceanSeed",
         "chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, x, z)",
         "surfaceY < SCAN_MAX_Y && isFloodable(state)",
+        "state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed(surfaceY, state)",
+        "if (!surfaceOceanSeed(surfaceY, state)) continue;",
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
     ):
         require(marker in text, "R22 marker missing: " + marker)
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in text,
-            "R21 scheduling-dependent neighbour WATER seed survived")
+            "R21 scheduling-dependent WATER-only seed survived")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
-    print("[FIELD-R22] prospective OCEAN_FLOOR_WG seam seeds invariants OK")
+    print("[FIELD-R22] existing + prospective OCEAN_FLOOR_WG seam seeds invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -117,7 +128,11 @@ class X {
 """
     out = patch(fixture)
     require("OCEAN_FLOOR_WG" in out, "SELF-TEST prospective seed not installed")
-    require("is(Blocks.WATER)) continue" not in out, "SELF-TEST old WATER-only seed survived")
+    require("surfaceOceanSeed" in out, "SELF-TEST combined seed predicate not installed")
+    require("state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed" in out,
+            "SELF-TEST existing WATER preservation missing")
+    require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
+            "SELF-TEST old WATER-only seed survived")
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
     print("[FIELD-R22] SELF-TEST OK")
 
