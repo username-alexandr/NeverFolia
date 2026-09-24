@@ -45,6 +45,10 @@ def verify(folia: Path) -> None:
             "R21 generation-cache seam input missing")
     require("getChunkIfPresent(ChunkStatus.FEATURES)" in flood,
             "R21 must only read already-generated FEATURES neighbours")
+    require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
+            "R21 component scan must receive external seam seeds")
+    require("boolean[] externalSeeds,boolean allowSeams" in flood,
+            "R21 component scan seam parameters missing")
     require("NeverOverworldFloodConnectivityR15.reconcileSeams(" in light,
             "R21 LIGHT seam reconciliation hook missing")
     require("NeverOverworldFlood.apply(" in light,
