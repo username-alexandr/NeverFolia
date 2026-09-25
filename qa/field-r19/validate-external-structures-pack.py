@@ -15,6 +15,38 @@ PROFILE="NeverOverworld-External-Structures-R19"
 QA_PROFILE="NeverOverworld-External-Structures-QA1"
 EXTERNAL_NAMESPACES={"nova_structures","explorify","structory_towers","repurposed_structures"}
 SURFACE_PROJECTIONS={"WORLD_SURFACE_WG","WORLD_SURFACE","MOTION_BLOCKING_NO_LEAVES"}
+DAT_RUNTIME_KEEP={
+    "nova_structures:phantom_boss_vanish",
+    "nova_structures:spawn_cave_spider_minion",
+    "nova_structures:spawn_guardian_minion",
+    "nova_structures:spawn_spider_minion",
+    "nova_structures:ghast_boss_defeat_chain",
+    "nova_structures:ghast_boss_fireball_damage",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghast_boss_summon_child",
+    "nova_structures:ghasted",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
+    "nova_structures:gravity_particles",
+    "nova_structures:hydro_veil_heal",
+    "nova_structures:jockey/spawn_bogged_horseman",
+    "nova_structures:jockey/spawn_camel_husk_jockey",
+    "nova_structures:jockey/spawn_chicken_jockey",
+    "nova_structures:jockey/spawn_hoglin_jockey",
+    "nova_structures:jockey/spawn_ravager_jockey",
+    "nova_structures:jockey/spawn_skeleton_horseman",
+    "nova_structures:jockey/spawn_stray_horseman",
+    "nova_structures:jockey/spawn_zautilus_jockey",
+    "nova_structures:jockey/spawn_zombie_horseman",
+}
+DAT_RUNTIME_DISABLED={
+    "nova_structures:jockey/make_drowned_into_jockey",
+    "nova_structures:swift_soar_1",
+    "nova_structures:swift_soar_2",
+    "nova_structures:swift_soar_3",
+    "nova_structures:quest/saddle_trade_checker",
+}
 REPRESENTATIVES={
     "surface_land":[
         "nova_structures:tavern_oak",
@@ -103,6 +135,19 @@ def audit(pack:Path,spec_path:Path)->dict:
         if not isinstance(radii,dict) or len(radii)!=134:fail("R19 island radius table must contain 134 IDs")
         if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
+        if admission.get("wet_candidate_fallback")!="WORLD_SURFACE_WG + Y1 + beard_box synthetic island":
+            fail("R24 synthetic-island fallback missing from manifest")
+        if admission.get("liquid_settings")!="ignore_waterlogging":
+            fail("R24 synthetic-island liquid policy missing")
+        if manifest.get("dat_runtime_mode")!="selective-enchantment-runtime-r24":
+            fail("R24 selective D&T runtime manifest missing")
+        if set(manifest.get("dat_runtime_functions",[]))!=DAT_RUNTIME_KEEP:
+            fail("R24 runtime manifest function set mismatch")
+        if set(manifest.get("dat_runtime_disabled",[]))!=DAT_RUNTIME_DISABLED:
+            fail("R24 runtime disabled set mismatch")
+        density=manifest.get("placement_density_scale",{})
+        if density!={"spacing_numerator":3,"spacing_denominator":4,"minimum_spacing":16}:
+            fail("R24 dungeon density scale mismatch")
         island=set(radii)
 
         run_function_refs=set()
@@ -113,25 +158,53 @@ def audit(pack:Path,spec_path:Path)->dict:
             except Exception as exc:
                 fail(f"invalid JSON {name}: {exc}")
             run_function_refs |= collect_run_function_refs(payload)
-        external_run_functions=sorted(
+        external_run_functions={
             rid for rid in run_function_refs if not rid.startswith("minecraft:")
-        )
-        if external_run_functions:
+        }
+        if external_run_functions != DAT_RUNTIME_KEEP:
             fail(
-                "structure-only import retained scripted run_function effects: "
-                +repr(external_run_functions[:40])
+                "R24 retained run_function set mismatch: missing="
+                +repr(sorted(DAT_RUNTIME_KEEP-external_run_functions))
+                +" unexpected="+repr(sorted(external_run_functions-DAT_RUNTIME_KEEP))
             )
+        if external_run_functions & DAT_RUNTIME_DISABLED:
+            fail("disabled D&T runtime refs survived: "+repr(sorted(external_run_functions & DAT_RUNTIME_DISABLED)))
+
         imported_external_functions=sorted(
             name for name in names
             if ("/function/" in name or "/functions/" in name)
             and name.startswith("data/nova_structures/")
             and name.endswith(".mcfunction")
         )
-        if imported_external_functions:
+        imported_function_ids=set()
+        for name in imported_external_functions:
+            m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction",name)
+            if m: imported_function_ids.add(f"{m.group(1)}:{m.group(2)}")
+        if imported_function_ids != DAT_RUNTIME_KEEP:
             fail(
-                "structure-only import unexpectedly contains D&T mcfunctions: "
-                +repr(imported_external_functions[:40])
+                "R24 imported function closure mismatch: missing="
+                +repr(sorted(DAT_RUNTIME_KEEP-imported_function_ids))
+                +" unexpected="+repr(sorted(imported_function_ids-DAT_RUNTIME_KEEP))
             )
+        unresolved=[]
+        for rid in sorted(external_run_functions):
+            if not any(candidate in names for candidate in function_path_candidates(rid)):
+                unresolved.append(rid)
+        if unresolved:
+            fail("run_function references missing imported functions: "+repr(unresolved))
+        forbidden_tags={
+            "data/minecraft/tags/function/load.json",
+            "data/minecraft/tags/functions/load.json",
+            "data/minecraft/tags/function/tick.json",
+            "data/minecraft/tags/functions/tick.json",
+            "data/nova_structures/tags/function/load.json",
+            "data/nova_structures/tags/functions/load.json",
+            "data/nova_structures/tags/function/tick.json",
+            "data/nova_structures/tags/functions/tick.json",
+        }
+        leaked_tags=sorted(forbidden_tags & names)
+        if leaked_tags:
+            fail("D&T global load/tick tags leaked into R24 pack: "+repr(leaked_tags))
 
         structures={}
         sets={}
@@ -176,8 +249,15 @@ def audit(pack:Path,spec_path:Path)->dict:
             if payload.get("project_start_to_heightmap")!="WORLD_SURFACE_WG":
                 fail("land structure still uses drowned-floor projection: "+sid)
         villa=structures.get("nova_structures:witch_villa",{})
-        if villa.get("start_height")!={"absolute":0}:
-            fail("witch_villa vanilla-sea absolute height survived")
+        if villa.get("start_height")!={"absolute":1}:
+            fail("witch_villa R24 Y+1 synthetic-island anchor missing")
+        for sid in sorted(island):
+            payload=structures[sid]
+            if payload.get("type") in ("minecraft:jigsaw","jigsaw"):
+                if payload.get("terrain_adaptation")!="beard_box":
+                    fail("R24 jigsaw land structure missing beard_box: "+sid)
+                if payload.get("liquid_settings")!="ignore_waterlogging":
+                    fail("R24 jigsaw land structure missing ignore_waterlogging: "+sid)
 
         reps={}
         for group,ids in REPRESENTATIVES.items():
@@ -217,6 +297,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
                 "run_function_refs":len(run_function_refs),
+                "approved_runtime_functions":len(imported_function_ids),
                 "imported_external_functions":len(imported_external_functions),
             },
             "source_unused":sorted(expected),
