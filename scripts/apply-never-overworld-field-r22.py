@@ -117,12 +117,16 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
     }
 """
 
-CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
+CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
+    private static final int CACHE_CHUNK_WIDTH = CACHE_CHUNK_RADIUS * 2 + 1;
     private static final int CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16;
+    private static final int CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16;
     private static final int CACHE_BLOCK_AREA = CACHE_BLOCK_WIDTH * CACHE_BLOCK_WIDTH;
 
     /**
-     * Exact radius-1 FEATURES-cache flood solver.
+     * Exact cache-bounded FEATURES flood solver. Prefer radius 2 when the
+     * scheduler exposes it; missing outer holders remain null and are never
+     * synchronously loaded.
      *
      * Seeds come only from Y=128 columns that are actual/prospective flooded
      * exterior according to OCEAN_FLOOR_WG. BFS then traverses real floodable
@@ -138,9 +142,9 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
     ) {
         final ChunkAccess[] chunks = new ChunkAccess[CACHE_CHUNK_WIDTH * CACHE_CHUNK_WIDTH];
         final ChunkPos ownerPos = owner.getPos();
-        for (int dz = -1; dz <= 1; ++dz) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                final int slot = (dz + 1) * CACHE_CHUNK_WIDTH + (dx + 1);
+        for (int dz = -CACHE_CHUNK_RADIUS; dz <= CACHE_CHUNK_RADIUS; ++dz) {
+            for (int dx = -CACHE_CHUNK_RADIUS; dx <= CACHE_CHUNK_RADIUS; ++dx) {
+                final int slot = (dz + CACHE_CHUNK_RADIUS) * CACHE_CHUNK_WIDTH + (dx + CACHE_CHUNK_RADIUS);
                 if (dx == 0 && dz == 0) {
                     chunks[slot] = owner;
                     continue;
@@ -164,7 +168,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         final BlockPos.MutableBlockPos adjacent = new BlockPos.MutableBlockPos();
 
-        // Seed every real/prospective exterior-water column in the 3x3 cache.
+        // Seed every real/prospective exterior-water column exposed by the cache.
         for (int tileZ = 0; tileZ < CACHE_CHUNK_WIDTH; ++tileZ) {
             for (int tileX = 0; tileX < CACHE_CHUNK_WIDTH; ++tileX) {
                 final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
@@ -215,12 +219,12 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
         for (int y = minY; y <= maxY; ++y) {
             for (int localZ = 0; localZ < 16; ++localZ) {
                 for (int localX = 0; localX < 16; ++localX) {
-                    final int e = encodeCache(localX + 16, y, localZ + 16, minY);
+                    final int e = encodeCache(localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, minY);
                     if (!connected[e]) continue;
                     pos.set(ownerBaseX + localX, y, ownerBaseZ + localZ);
                     final BlockState state = owner.getBlockState(pos);
                     if (!state.is(Blocks.WATER)
-                        && traversableCache(chunks, localX + 16, y, localZ + 16, pos, adjacent)) {
+                        && traversableCache(chunks, localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, pos, adjacent)) {
                         owner.setBlockState(pos, water, 0);
                         ++changed;
                     }
@@ -407,7 +411,9 @@ def verify(folia: Path) -> None:
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
         "floodCacheConnectedOwner",
+        "CACHE_CHUNK_RADIUS = 2",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
+        "CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16",
         "enqueueCache",
         "traversableCache",
         "lavaAtCache",
@@ -434,7 +440,7 @@ def verify(folia: Path) -> None:
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
-    print("[FIELD-R23] exact 3x3 ocean-connectivity seam invariants OK")
+    print("[FIELD-R23] exact cache-bounded ocean-connectivity seam invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -541,7 +547,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R23] installed: exact 3x3 ocean connectivity; proximity cave flood disabled")
+    print("[FIELD-R23] installed: exact cache-bounded ocean connectivity; proximity cave flood disabled")
 
 if __name__ == "__main__":
     main()
