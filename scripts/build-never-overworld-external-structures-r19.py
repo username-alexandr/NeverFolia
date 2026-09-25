@@ -339,6 +339,65 @@ def dat_minecraft_compat(path: str) -> bool:
             return True
     return False
 
+
+def dat_runtime_compat(path: str) -> bool:
+    """Keep D&T runtime resources required by imported enchantments/functions.
+
+    R19 originally excluded all functions and predicates while still importing
+    D&T enchantments. That leaves valid minecraft:run_function effects pointing
+    at resources that no longer exist and causes runtime console spam.
+    Functions are inert unless explicitly invoked; predicates are dependencies
+    of those functions. Function tags remain covered by the normal dependency
+    copier (category 'tags').
+    """
+    return path.startswith((
+        "data/nova_structures/function/",
+        "data/nova_structures/functions/",
+        "data/nova_structures/predicate/",
+        "data/nova_structures/predicates/",
+    ))
+
+
+def run_function_refs(payload) -> set[str]:
+    refs=set()
+    def walk(value):
+        if isinstance(value,dict):
+            if value.get("type")=="minecraft:run_function" and isinstance(value.get("function"),str):
+                refs.add(value["function"])
+            for child in value.values():
+                walk(child)
+        elif isinstance(value,list):
+            for child in value:
+                walk(child)
+    walk(payload)
+    return refs
+
+
+def validate_run_function_closure(files: dict[str, bytes]) -> set[str]:
+    refs=set()
+    for name,payload in files.items():
+        if not name.endswith(".json"):
+            continue
+        try:
+            data=json.loads(payload)
+        except Exception:
+            continue
+        refs.update(run_function_refs(data))
+    missing=[]
+    for rid in sorted(refs):
+        if ":" not in rid:
+            continue
+        ns,fn=rid.split(":",1)
+        candidates=(
+            f"data/{ns}/function/{fn}.mcfunction",
+            f"data/{ns}/functions/{fn}.mcfunction",
+        )
+        if not any(candidate in files for candidate in candidates):
+            missing.append(rid)
+    if missing:
+        fail("run_function targets missing after filtering: "+repr(missing[:40]))
+    return refs
+
 def filter_pack(key: str, files: dict[str, bytes]):
     files=dict(files)
     if key=="witch":
@@ -356,7 +415,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and dat_minecraft_compat(n):
+        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_compat(n)):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -421,6 +480,16 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        required_runtime=(
+            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
+            "data/nova_structures/function/jockey/spawn_bogged_horseman.mcfunction",
+            "data/nova_structures/function/jockey/spawn_chicken_jockey.mcfunction",
+        )
+        for n in required_runtime:
+            if n not in out: fail("Dungeons & Taverns runtime function missing: "+n)
+        refs=validate_run_function_closure(out)
+        if "nova_structures:jockey/spawn_zautilus_jockey" not in refs:
+            fail("Dungeons & Taverns zautilus enchantment runtime reference disappeared")
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
