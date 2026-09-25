@@ -22,16 +22,7 @@ FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 R8_CALL = "        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);\n"
 R15_CALL = "NeverOverworldFloodConnectivityR15.apply(level, chunk);"
-PROXIMITY_RADIUS = 16
-PROXIMITY_MIN_SIZE = 768
-PROXIMITY_MIN_BOUNDARY = 48
-PROXIMITY_MIN_SPAN = 8
-# User-seed QA after retiring R8: 99.08% of residual WATER/AIR seam faces
-# are within 16 horizontal blocks of saved Y128 ocean water. The worst
-# remaining ocean-exposed cavities have vertical spans 9..20, so keep the
-# conservative size/boundary gates and only relax span to 8. Radius 16 is the
-# maximum that stays inside the LIGHT radius-1 (3x3) FEATURES cache.
- 
+
 IMPORT = "import net.minecraft.world.level.levelgen.Heightmap;\n"
 IMPORT_ANCHOR = "import net.minecraft.world.level.block.state.BlockState;\n"
 
@@ -62,18 +53,6 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 
     static boolean surfaceOceanSeed(final int surfaceY, final BlockState state) {
         return state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed(surfaceY, state);
-    }
-
-    static boolean proximityFallbackAllowed(
-        final int componentSize,
-        final int boundaryCells,
-        final int verticalSpan,
-        final boolean nearOcean
-    ) {
-        return nearOcean
-            && componentSize >= 768
-            && boundaryCells >= 48
-            && verticalSpan >= 8;
     }
 
 """
@@ -287,99 +266,11 @@ def patch(text: str) -> str:
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
     if "reconcileSeams(" in text:
-        if "seedOceanProximityFallback(" not in text:
-            require(PROXIMITY_METHODS_ANCHOR in text, "R22 proximity method anchor missing")
-            text = text.replace(PROXIMITY_METHODS_ANCHOR, PROXIMITY_METHODS + PROXIMITY_METHODS_ANCHOR, 1)
 
-        if "final int proximity = seedOceanProximityFallback(" not in text:
-            anchor = "        final int seeded = west + east + north + south;\n"
-            require(anchor in text, "R22 reconcile seeded-count anchor missing")
-            text = text.replace(
-                anchor,
-                anchor + "        final int proximity = seedOceanProximityFallback(cache, owner, minY, maxY, externalSeeds);\n",
-                1,
-            )
 
-        old_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
-        new_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,hasProximitySeed=false,touchesHorizontalSeam=false;\n"
-        if new_scan_seed not in text:
-            require(text.count(old_scan_seed) == 1, "R22 scan state anchor missing")
-            text = text.replace(old_scan_seed, new_scan_seed, 1)
 
-        old_external = (
-            "            if(externalSeeds!=null&&externalSeeds[e]"
-            "&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-        )
-        new_external = (
-            "            if(externalSeeds!=null&&externalSeeds[e]){\n"
-            "                if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-            "                else hasProximitySeed=true;\n"
-            "            }\n"
-        )
-        if new_external not in text:
-            require(text.count(old_external) == 1, "R22 external seed classification anchor missing")
-            text = text.replace(old_external, new_external, 1)
 
-        old_guard = (
-            "        if(!hasOceanSeed){\n"
-            "            if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
-            "                &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                System.out.println(\n"
-            "                    \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                    +\" y=\"+componentMinY+\":\"+componentMaxY\n"
-            "                    +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
-            "                );\n"
-            "            }\n"
-            "            return 0;\n"
-            "        }\n"
-        )
-        new_guard = (
-            "        if(!hasOceanSeed){\n"
-            "            final int verticalSpan=componentMaxY-componentMinY+1;\n"
-            "            final boolean proximityFallback=allowSeams&&touchesHorizontalSeam\n"
-            "                &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);\n"
-            "            if(!proximityFallback){\n"
-            "                if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
-            "                    &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                    System.out.println(\n"
-            "                        \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                        +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                        +\" y=\"+componentMinY+\":\"+componentMaxY\n"
-            "                        +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
-            "                    );\n"
-            "                }\n"
-            "                return 0;\n"
-            "            }\n"
-            "            if(Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                System.out.println(\n"
-            "                    \"[NeverFolia][R22ProximityFlood] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                    +\" span=\"+verticalSpan+\" nearOcean=true\"\n"
-            "                );\n"
-            "            }\n"
-            "        }\n"
-        )
-        if new_guard not in text:
-            require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
-            text = text.replace(old_guard, new_guard, 1)
 
-        proximity_mask = (
-            "        final boolean[] neighborProximityWater = "
-            "proximityConnectedFloodable(cache, neighbor, minY, maxY);\n"
-        )
-        if proximity_mask not in text:
-            anchor = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
-            require(text.count(anchor) == 1, "R22 neighbour ocean mask anchor missing")
-            text = text.replace(anchor, anchor + proximity_mask, 1)
-
-        old_neighbor_gate = "                if (!neighborOceanWater[ne]) continue;\n"
-        new_neighbor_gate = (
-            "                if (!neighborOceanWater[ne] && !neighborProximityWater[ne]) continue;\n"
-        )
-        if new_neighbor_gate not in text:
-            require(text.count(old_neighbor_gate) == 1, "R22 neighbour seam gate anchor missing")
-            text = text.replace(old_neighbor_gate, new_neighbor_gate, 1)
     return text
 
 def verify(folia: Path) -> None:
@@ -406,23 +297,23 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
-        "seedOceanProximityFallback",
-        "nearOceanColumns",
-        "proximityFallbackAllowed",
-        "proximityConnectedFloodable",
-        "neighborProximityWater",
-        "!neighborOceanWater[ne] && !neighborProximityWater[ne]",
-        "componentSize >= 768",
-        "boundaryCells >= 48",
-        "verticalSpan >= 8",
     ):
         require(marker in text, "R22 marker missing: " + marker)
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in text,
             "R21 scheduling-dependent WATER-only seed survived")
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
-    require("final int radius = 16;" in text,
-            "R22 proximity radius drifted from cache-safe 16-block bound")
+    for forbidden in (
+        "seedOceanProximityFallback",
+        "nearOceanColumns",
+        "proximityFallbackAllowed",
+        "proximityConnectedFloodable",
+        "neighborProximityWater",
+        "hasProximitySeed",
+        "R22ProximityFlood",
+    ):
+        require(forbidden not in text,
+                "R22 must not infer ocean connectivity from proximity: " + forbidden)
     require(
         "return floodVerifiedComponents(owner, externalSeeds, true);" in text
         or "final int changed = floodVerifiedComponents(owner, externalSeeds, true);" in text,
@@ -466,18 +357,6 @@ class X {
             "SELF-TEST existing WATER preservation missing")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
-    require("seedOceanProximityFallback" in PROXIMITY_METHODS,
-            "SELF-TEST proximity seed pass missing")
-    require("proximityConnectedFloodable" in PROXIMITY_METHODS,
-            "SELF-TEST neighbour proximity component mask missing")
-    require("proximityFallbackAllowed(tail, boundaryCells, verticalSpan, nearOceanBoundary)" in PROXIMITY_METHODS,
-            "SELF-TEST neighbour proximity qualification missing")
-    require("final int radius = 16;" in PROXIMITY_METHODS,
-            "SELF-TEST proximity radius missing")
-    require("componentSize >= 768" in HELPER
-            and "boundaryCells >= 48" in HELPER
-            and "verticalSpan >= 8" in HELPER,
-            "SELF-TEST bounded proximity fallback policy missing")
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
 
     flood_fixture = """class NeverOverworldFlood {
