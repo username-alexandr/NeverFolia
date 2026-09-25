@@ -166,11 +166,11 @@ jobs:
           python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia
           python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia --check-only
 
-      - name: Apply integrated NeverOverworld R22 + R19 fixpack
+      - name: Apply integrated NeverOverworld R23 + R19 fixpack
         run: |
           set -euo pipefail
-          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia
-          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
+          python3 ./scripts/apply-never-overworld-fixpack-r23.py ./.work/Folia
+          python3 ./scripts/apply-never-overworld-fixpack-r23.py ./.work/Folia --check-only
 
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
@@ -199,7 +199,7 @@ jobs:
             echo "Overworld core: NR-DEV-1 native-final + structures-v1 + external-structures-r19"
             echo "Overworld mode: VANILLA_FLOODED"
             echo "Overworld flood level: Y=128"
-            echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
+            echo "Overworld flood phase: Moonrise ChunkLightTask / strict verified-ocean / chunk-owned FIELD-R23"
             echo "Overworld aquifer: native lava branch disabled"
             echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; vanilla-like all-ore balance v3"
             echo "Overworld vanilla resource ores: original 26.2 vertical anchors + original write bounds Y=-64..319"
