@@ -31,11 +31,7 @@ DNT_SAFE_RUNTIME_FUNCTIONS={
     "nova_structures:spawn_spider_minion",
     "nova_structures:ghast_boss_defeat_chain",
     "nova_structures:ghast_boss_fireball_damage",
-    "nova_structures:ghast_boss_fireball_possess",
     "nova_structures:ghasted",
-    "nova_structures:ghasted_fireball_1",
-    "nova_structures:ghasted_fireball_2",
-    "nova_structures:ghasted_fireball_3",
     "nova_structures:gravity_particles",
     "nova_structures:hydro_veil_heal",
 }
