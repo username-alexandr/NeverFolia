@@ -2,9 +2,7 @@
 """NeverOverworld FIELD-R23 unified fixpack.
 
 Extends FIELD-R22 with strict physical ocean connectivity for cave flooding.
-R23 removes the R22 near-ocean proximity fallback while preserving prospective
-Y128 ocean seeds, Moonrise neighbour-cache seam reconciliation, R19 external
-structures and all prior worldgen hardening.
+R23 freezes strict physical ocean connectivity: no distance/proximity/size heuristic may flood a cave.\nIt preserves prospective Y128 ocean seeds, symmetric pair-domain Moonrise cache reconciliation,\nR19 external structures and all prior worldgen hardening.
 """
 from __future__ import annotations
 
