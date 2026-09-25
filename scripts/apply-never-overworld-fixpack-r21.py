@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = "NO-FIELD-R21-FIXPACK-1"
 JAVA = Path("folia-server/src/minecraft/java")
+FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 TASKS = JAVA / "net/minecraft/world/level/chunk/status/ChunkStatusTasks.java"
 MOONRISE = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
@@ -26,6 +27,7 @@ def require(ok: bool, message: str) -> None:
         raise ValueError("[NeverOverworld R21] " + message)
 
 def verify(folia: Path) -> None:
+    owner_flood = (folia / FLOOD).read_text(encoding="utf-8")
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     tasks = (folia / TASKS).read_text(encoding="utf-8")
     moonrise = (folia / MOONRISE).read_text(encoding="utf-8")
@@ -33,6 +35,10 @@ def verify(folia: Path) -> None:
     safety = (folia / SAFETY).read_text(encoding="utf-8")
     r19 = (folia / R19).read_text(encoding="utf-8")
 
+    require(owner_flood.count("public static void reweatherSubmergedSurface(") == 1,
+            "R21 post-seam weathering entry point missing or duplicated")
+    require("weatherSubmergedSurface(chunk, level.getMinY() + 1, FLOOD_LEVEL);" in owner_flood,
+            "R21 post-seam weathering must reuse the canonical drowned-surface pass")
     require("reconcileSeams" in flood and "oceanConnectedFloodable" in flood,
             "R21 cache-aware flood helper missing")
     require("reconcileSeams(final WorldGenLevel level" in flood,
