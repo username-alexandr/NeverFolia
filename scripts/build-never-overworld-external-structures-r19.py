@@ -339,25 +339,6 @@ def dat_minecraft_compat(path: str) -> bool:
             return True
     return False
 
-def dat_runtime_compat(path: str) -> bool:
-    """Keep D&T runtime resources required by imported enchantments/mobs.
-
-    R19 originally excluded all function/predicate families because they do
-    not affect structure placement. D&T 5.3.2 enchantments, however, execute
-    nova_structures functions at runtime (for example Zautilus jockey spawn).
-    Dropping those files leaves valid enchantments pointing at missing
-    functions and floods the server log every time the effect triggers.
-    """
-    return path.startswith((
-        "data/nova_structures/function/",
-        "data/nova_structures/functions/",
-        "data/nova_structures/predicate/",
-        "data/nova_structures/predicates/",
-        "data/nova_structures/tags/function/",
-        "data/nova_structures/tags/functions/",
-    ))
-
-
 def run_function_refs(files: dict[str, bytes]) -> set[str]:
     refs: set[str] = set()
 
@@ -381,6 +362,41 @@ def run_function_refs(files: dict[str, bytes]) -> set[str]:
         except SystemExit:
             raise
     return refs
+
+
+def copy_required_run_functions(out: dict[str, bytes], source: dict[str, bytes]) -> None:
+    """Copy only mcfunctions referenced by JSON resources that survived filtering.
+
+    This avoids importing unrelated D&T quest/runtime functions whose tags or
+    commands depend on content intentionally excluded from NeverOverworld.
+    """
+    pending=list(sorted(run_function_refs(out)))
+    seen=set()
+    while pending:
+        rid=pending.pop(0)
+        if rid in seen:
+            continue
+        seen.add(rid)
+        ns,rel=rid.split(":",1)
+        candidates=(
+            f"data/{ns}/function/{rel}.mcfunction",
+            f"data/{ns}/functions/{rel}.mcfunction",
+        )
+        src=next((p for p in candidates if p in source),None)
+        if src is None:
+            continue
+        out[src]=source[src]
+
+        # Follow explicit function calls from copied mcfunctions only.
+        text=source[src].decode("utf-8",errors="replace")
+        for match in re.finditer(
+            r"(?:^|\\s)(?:function|run\\s+function)\\s+([a-z0-9_.-]+:[a-z0-9_./-]+)",
+            text,
+            re.M,
+        ):
+            child=match.group(1)
+            if child not in seen:
+                pending.append(child)
 
 
 def require_run_function_targets(files: dict[str, bytes]) -> None:
@@ -414,7 +430,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_compat(n)):
+        if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -466,6 +482,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         if any("/worldgen/configured_feature/" in n or "/worldgen/placed_feature/" in n for n in out if n.startswith("data/betteroceanmonuments/")):
             fail("legacy Better Monuments random_patch feature survived")
     if key=="dat":
+        copy_required_run_functions(out, files)
         required=(
             "data/minecraft/worldgen/placed_feature/donjon_base.json",
             "data/minecraft/worldgen/processor_list/ruined_town_degradation.json",
