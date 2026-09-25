@@ -1,0 +1,5 @@
+name: NN-WORLDGEN-R7-QA
+version: 0.1.0
+main: NeverNetherWorldgenQa
+api-version: '26.2'
+folia-supported: true

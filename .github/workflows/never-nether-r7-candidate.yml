@@ -1,0 +1,72 @@
+name: NeverNether R7 Paperclip Candidate
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/never-nether-r7-candidate.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Compile normal production sources and package Paperclip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git rev-parse HEAD^{tree} > artifacts/SOURCE-TREE.txt
+          git archive --format=zip HEAD -o artifacts/NeverFolia-source.zip
+          git ls-files native/nevernether | xargs sha256sum > artifacts/NATIVE-SOURCES.txt
+          bash scripts/prepare-upstream.sh
+          git -C .work/Folia rev-parse HEAD > artifacts/FOLIA-SHA.txt
+          test "$(cat artifacts/FOLIA-SHA.txt)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --stacktrace) 2>&1 | tee artifacts/paperclip-build.log
+          python3 - <<'PY'
+          import os, pathlib, shutil, zipfile
+          candidates=[]
+          for p in pathlib.Path('.work/Folia/folia-server/build/libs').glob('*.jar'):
+              with zipfile.ZipFile(p) as z:
+                  if 'META-INF/patches.list' in z.namelist() and 'META-INF/download-context' in z.namelist():
+                      assert z.testzip() is None
+                      candidates.append(p)
+          if len(candidates)!=1: raise SystemExit(f'Expected one runnable Paperclip JAR, got {candidates}')
+          out=pathlib.Path('artifacts') / ('NeverFolia-NN-R7-'+os.environ['GITHUB_SHA'][:7]+'.jar')
+          shutil.copyfile(candidates[0],out)
+          with zipfile.ZipFile(out) as z:
+              pathlib.Path('artifacts/DOWNLOAD-CONTEXT.txt').write_bytes(z.read('META-INF/download-context'))
+          PY
+      - name: Verify actual bootstrap patching without creating a world
+        run: |
+          set -euo pipefail
+          mkdir -p .work/r7-bootstrap
+          JAR="$(realpath "$(find artifacts -maxdepth 1 -name '*.jar')")"
+          (cd .work/r7-bootstrap && java -Dpaperclip.patchonly=true -jar "$JAR") 2>&1 | tee artifacts/paperclip-bootstrap.log
+          test -d .work/r7-bootstrap/cache
+          (cd .work/r7-bootstrap && zip -qr ../../artifacts/offline-bootstrap-cache.zip cache)
+          printf '%s\n' 'EXPERIMENTAL: compiled Paperclip candidate, normal production chain. No full source datapack/world acceptance in this CI job. Never replace a live world or bypass its fingerprint lock.' > artifacts/STATUS.txt
+      - name: Checksums
+        if: always()
+        run: |
+          mkdir -p artifacts
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-r7-paperclip-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

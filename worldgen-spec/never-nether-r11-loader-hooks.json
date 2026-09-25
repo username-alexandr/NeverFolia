@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "files": {
+    "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLoadTask.java": {
+      "sha256": "507dd2007992d14f1454918a6cc8826e310cc9caf9dc2575766168e201c6c0f2",
+      "replacements": [
+        {
+          "old": "            } catch (final Throwable thr2) {\n                LOGGER.error(\"Failed to parse chunk data for task: \" + this.toString() + \", chunk data will be lost\", thr2);\n                return new TaskResult<>(null, null);\n            }",
+          "new": "            } catch (final Throwable thr2) {\n                // R11: metadata validation must propagate, not regenerate a supposedly empty chunk.\n                if (net.minecraft.world.level.levelgen.placement.NeverNetherLoadGuardR11.persistenceFailure(thr2)) {\n                    LOGGER.error(\"Refusing R11 substrate load; no empty-chunk fallback for task: \" + this.toString(), thr2);\n                    return new TaskResult<>(null, thr2);\n                }\n                LOGGER.error(\"Failed to parse chunk data for task: \" + this.toString() + \", chunk data will be lost\", thr2);\n                return new TaskResult<>(null, null);\n            }",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

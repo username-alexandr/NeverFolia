@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "worldgen_version": "NE-DEV-1",
+  "dimension": {
+    "key": "minecraft:the_end",
+    "min_y": 0,
+    "height": 256,
+    "max_y": 255
+  },
+  "implementation": {
+    "custom_generator_reserved": true,
+    "custom_generator_enabled": false,
+    "test1_mode": "vanilla_compatible_fallback",
+    "owner": "NeverFolia"
+  },
+  "future_contract": {
+    "deterministic": true,
+    "folia_safe": true,
+    "chunk_order_independent": true,
+    "custom_terrain": true,
+    "custom_biomes": true,
+    "custom_structures": true
+  },
+  "notes": [
+    "TEST1 intentionally preserves vanilla End generation while NeverEnd remains disabled.",
+    "The minecraft:the_end routing slot is reserved for the future NeverEnd generator.",
+    "Future NeverEnd work must pass the same strict seed/chunk-order determinism gates as NeverNether and NeverOverworld."
+  ]
+}

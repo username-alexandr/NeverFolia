@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "stage": "SOURCE-R9",
+  "base_commit": "6d1ddf46b2172ffd74a77e515d8bf7ac38196b01",
+  "code_commit": "9d132aa4a3b2abc432e4d21220b51da92bddb76f",
+  "code_tree": "131207e44662fd9de8f258a946dfcd200589c571",
+  "candidate_ci_run": 34791271615,
+  "candidate_ci_status": "success",
+  "field_ci_run": 34791271426,
+  "candidate_ci_artifact_sha256": "35313403f2f06863ebefcdee2e79923c97cd05ae00bf999f6253d1333f5a7bab",
+  "field_ci_artifact_sha256": "a767ac3af4c79b9c54dd72fe00624be3df801ba766f07732f243aa05b9ee7259",
+  "checksums_and_source_hashes_verified": true,
+  "local_python_tests": 255,
+  "ci_existing_python_tests": 197,
+  "ci_new_python_tests": 21,
+  "native_checks_ci_and_local": 6151,
+  "production_entry_point_changed": false,
+  "candidate_opt_in_only": true,
+  "release_ready": false,
+  "strict_generation_gate": "BLOCKED",
+  "sample_chunks": 25,
+  "range_y": [
+    -128,
+    895
+  ],
+  "per_phase_compared_block_states": 6553600,
+  "primary_seed": 7270913,
+  "secondary_seed": 123456789,
+  "primary_differences": {
+    "carvers": 0,
+    "light": 59,
+    "settled": 59
+  },
+  "secondary_differences": {
+    "carvers": 0,
+    "light": 5,
+    "settled": 5
+  },
+  "primary_different_chunks": 10,
+  "secondary_different_chunks": 3,
+  "same_order_controls": {
+    "primary": true,
+    "secondary": true
+  },
+  "first_to_settled_differences": {
+    "primary": {
+      "left": 0,
+      "right": 0
+    },
+    "secondary": {
+      "left": 0,
+      "right": 0
+    }
+  },
+  "primary_residual": {
+    "ore_material": 36,
+    "small_flora": 23
+  },
+  "reproduced_R8": 255,
+  "support_only": 176,
+  "support_and_cell_random": 59,
+  "difference_reduction_percent": 76.86274509803923,
+  "before_own_decoration_snapshot_experiment": "REJECTED: no improvement, still 59 differences",
+  "invalid_preliminary_probe_names": [
+    "origin-a",
+    "final-ci-a"
+  ],
+  "invalid_preliminary_reason": "Status changed during observation; excluded as invalid, not equality passes",
+  "accepted_final_runs": 6,
+  "accepted_final_normal_exit_codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "accepted_final_startup_gates": [
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS",
+    "PASS"
+  ],
+  "core_resource_payloads_identical_to_R8": 24,
+  "all_five_original_zip_hashes_unchanged": true,
+  "complete_pack_sha256": "e0b7ae7b8cf94b2b8bf44a31e12410793e1132b800a34949c63b9093cb818906",
+  "comparison_evidence_sha256": {
+    "final-ci-comparison.json": "cd71a2fac4d7f74db5e40ed6329874a46cad3cd78d945a448cf141e92d8c55d0",
+    "final-ci-control.json": "a5a7a8b912a432ccf06656ef008893d99353f480fd0d1951e6c60f1bcae5d957",
+    "second-seed-comparison.json": "cd5100450aa45605cf96b2d186c97a979804df5eb3de43a655ee4b796fcb6199",
+    "second-seed-control.json": "dd5e42772d733742fa67038286bce18cde87c38d1bd14e4da14bd424070107ca",
+    "trace-evidence.json": "db21886d049f2beb2ff786ce57fc3029301560345e689137ce2c96a4bc33be6b"
+  },
+  "scope": "Two seeds, same selected 25-chunk square, frozen stage observations. Not the full R7 1599-chunk acceptance or visual, performance, or original user-world defect validation."
+}

@@ -1,0 +1,480 @@
+name: NeverOverworld DESERT-R1 + Monument Natural Audit
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'native/neveroverworld/field-r11/**'
+      - 'native/neveroverworld/desert-r1/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'qa/neveroverworld-field-r11/**'
+      - 'qa/neveroverworld-desert-r1/**'
+      - 'scripts/*never-overworld*.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/apply-neverfolia-post-patches-core.sh'
+      - '.github/workflows/never-overworld-desert-monument-natural.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  natural-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build exact current candidate Paperclip and pack-input bundler
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          libs=Path('.work/Folia/folia-server/build/libs')
+          paperclips=list(libs.glob('folia-paperclip-*.jar'))
+          if len(paperclips)!=1:
+              raise ValueError(f'Expected one Paperclip, got {paperclips}')
+          shutil.copyfile(paperclips[0],'artifacts/server.jar')
+          bundlers=[]
+          for p in libs.glob('*.jar'):
+              try:
+                  with zipfile.ZipFile(p) as z:
+                      if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                          bundlers.append(p)
+              except zipfile.BadZipFile:
+                  pass
+          if len(bundlers)!=1:
+              raise ValueError(f'Expected one Folia bundler pack input, got {bundlers}')
+          shutil.copyfile(bundlers[0],'artifacts/pack-input-bundler.jar')
+          print('paperclip:',paperclips[0])
+          print('pack input:',bundlers[0])
+          PY
+      - name: Build matching NeverOverworld pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+      - name: Locate desert regions and generate deterministic oasis candidates plus one monument
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,json,re,shutil,subprocess,time
+          from pathlib import Path
+          root=Path.cwd(); run=root/'.work/desert-monument-natural';run.mkdir(parents=True,exist_ok=False)
+          (run/'world/datapacks').mkdir(parents=True)
+          shutil.copyfile(root/'artifacts/NeverOverworld.zip',run/'world/datapacks/NeverOverworld.zip')
+          (run/'eula.txt').write_text('eula=true\n')
+          (run/'server.properties').write_text('level-name=world\nlevel-seed=-2996952393010080672\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip\nonline-mode=false\nenforce-secure-profile=false\nserver-ip=127.0.0.1\nserver-port=25598\nview-distance=2\nsimulation-distance=2\nspawn-protection=0\nenable-status=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n')
+          log=root/'artifacts/feature-natural.log'
+          sp=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py')
+          nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
+          region=run/'world/dimensions/minecraft/overworld/region'
+          def wait_for(pattern,start_pos,timeout=90):
+            end=time.monotonic()+timeout
+            rx=re.compile(pattern)
+            while time.monotonic()<end:
+              txt=log.read_text(errors='replace') if log.exists() else ''
+              for line in txt[start_pos:].splitlines():
+                m=rx.search(line)
+                if m:return m
+              time.sleep(1)
+            raise RuntimeError('timeout waiting for '+pattern)
+          def saved_statuses(chunks):
+            result={}
+            for cx,cz in chunks:
+              key=f'{cx},{cz}'
+              try:
+                r=nbt.read_chunk_nbt(region,cx,cz)
+                result[key]=r.get('Status',r.get('status'))
+              except Exception as exc:
+                result[key]='missing:'+str(exc)
+            return result
+          progress_path=root/'artifacts/generation-progress.json'
+          generation_progress=[]
+          def record_progress(entry):
+            generation_progress.append(entry)
+            progress_path.write_text(json.dumps({'schema':2,'entries':generation_progress},indent=2)+'\n')
+          with log.open('w') as out:
+            p=subprocess.Popen(['java','-Xms1G','-Xmx4G','-XX:ActiveProcessorCount=4','-jar',str(root/'artifacts/server.jar'),'--nogui'],cwd=run,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,text=True,bufsize=1)
+            try:
+              wait_for(r'Done \(',0,240)
+              origins=[
+                (0,0),(12000,0),(-12000,0),(0,12000),(0,-12000),
+                (12000,12000),(-12000,12000),(12000,-12000),(-12000,-12000),
+                (30000,0),(-30000,0),(0,30000),(0,-30000),
+                (30000,30000),(-30000,30000),(30000,-30000),(-30000,-30000)
+              ]
+              desert_by_xz={}
+              for sx,sz in origins:
+                before=len(log.read_text(errors='replace'))
+                p.stdin.write(f'execute in minecraft:overworld positioned {sx} 200 {sz} run locate biome minecraft:desert\n');p.stdin.flush()
+                m=wait_for(r'minecraft:desert.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+                pos=[int(m.group(1)),int(m.group(2)),int(m.group(3))]
+                desert_by_xz[(pos[0],pos[2])]=pos
+              desert=list(desert_by_xz.values())
+              before=len(log.read_text(errors='replace'))
+              p.stdin.write('execute in minecraft:overworld positioned 0 200 0 run locate structure minecraft:monument\n');p.stdin.flush()
+              m=wait_for(r'minecraft:monument.*?\[\s*(-?\d+)\s*,\s*(~|-?\d+)\s*,\s*(-?\d+)\s*\]',before,120)
+              monument=[int(m.group(1)),m.group(2),int(m.group(3))]
+
+              MASK=(1<<64)-1
+              SEED=-2996952393010080672
+              OASIS_DENOMINATOR=96
+              CELL_SALT=0x4E4F574F41534953
+              def s64(v):
+                v &= MASK
+                return v-(1<<64) if v&(1<<63) else v
+              def urshift(v,n): return (v&MASK)>>n
+              def mul64(a,b): return s64((a&MASK)*(b&MASK))
+              def mix(v):
+                v=s64(v ^ urshift(v,30)); v=mul64(v,0xBF58476D1CE4E5B9)
+                v=s64(v ^ urshift(v,27)); v=mul64(v,0x94D049BB133111EB)
+                return s64(v ^ urshift(v,31))
+              def selected(cx,cz):
+                h=mix(s64(SEED ^ CELL_SALT ^ mul64(cx,0x9E3779B97F4A7C15) ^ mul64(cz,0xC2B2AE3D27D4EB4F)))
+                return h%OASIS_DENOMINATOR == 0
+
+              candidate_set=set()
+              search_radius=15
+              per_desert_limit=1
+              for x,y,z in desert:
+                dcx=x//16;dcz=z//16
+                local=[]
+                for cz in range(dcz-search_radius,dcz+search_radius+1):
+                  for cx in range(dcx-search_radius,dcx+search_radius+1):
+                    if selected(cx,cz):
+                      local.append(((cx-dcx)*(cx-dcx)+(cz-dcz)*(cz-dcz),cx,cz))
+                local.sort()
+                for _,cx,cz in local[:per_desert_limit]:
+                  candidate_set.add((cx,cz))
+              candidates=sorted(candidate_set)
+              if not candidates:
+                raise RuntimeError('no deterministic DESERT-R1 candidates near located deserts')
+              if len(candidates)>192:
+                raise RuntimeError(f'too many force-load candidates: {len(candidates)}')
+
+              batch_size=8
+              batch_wait_seconds=60
+              batch_reports=[]
+              for batch_index,start in enumerate(range(0,len(candidates),batch_size),1):
+                batch=candidates[start:start+batch_size]
+                for cx,cz in batch:
+                  p.stdin.write(f'forceload add {cx*16} {cz*16}\n')
+                p.stdin.flush()
+                record_progress({'label':f'oasis-batch-{batch_index}','phase':'force-loaded','chunks':[list(v) for v in batch]})
+                time.sleep(batch_wait_seconds)
+                p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(3)
+                batch_reports.append({'label':f'oasis-batch-{batch_index}','chunks':[list(v) for v in batch],'force_loaded_seconds':batch_wait_seconds})
+                record_progress({'label':f'oasis-batch-{batch_index}','phase':'released'})
+
+              mcx=monument[0]//16;mcz=monument[2]//16
+              marea=[mcx-4,mcx+4,mcz-4,mcz+4]
+              p.stdin.write(f'forceload add {marea[0]*16} {marea[2]*16} {marea[1]*16+15} {marea[3]*16+15}\n');p.stdin.flush()
+              record_progress({'label':'monument-area','phase':'force-loaded','area':marea})
+              time.sleep(90)
+              p.stdin.write('forceload remove all\n');p.stdin.flush();time.sleep(3)
+              p.stdin.write('stop\n');p.stdin.flush();p.wait(timeout=180)
+              final_candidate_statuses=saved_statuses(candidates)
+              monument_statuses=saved_statuses([(mcx,mcz)])
+              candidate_all_full=all(v=='minecraft:full' for v in final_candidate_statuses.values())
+              monument_full=all(v=='minecraft:full' for v in monument_statuses.values())
+              record_progress({'label':'post-stop','candidate_statuses':final_candidate_statuses,'candidate_all_full':candidate_all_full,'monument_statuses':monument_statuses,'monument_full':monument_full})
+              result={
+                'desert_positions':desert,
+                'oasis_candidate_chunks':[list(v) for v in candidates],
+                'candidate_search_radius_chunks':search_radius,
+                'candidate_limit_per_desert':per_desert_limit,
+                'candidate_batch_size':batch_size,
+                'candidate_batch_wait_seconds':batch_wait_seconds,
+                'candidate_generation_batches':batch_reports,
+                'final_candidate_statuses':final_candidate_statuses,
+                'candidate_all_full':candidate_all_full,
+                'monument_generation':{'center_chunk':[mcx,mcz],'statuses':monument_statuses,'full':monument_full},
+                'monument_position':monument,'monument_chunk_area':marea,'exit_code':p.returncode
+              }
+              (root/'artifacts/located-features.json').write_text(json.dumps(result,indent=2)+'\n')
+              if p.returncode!=0:raise RuntimeError('server exit '+str(p.returncode))
+              if not candidate_all_full:
+                bad={k:v for k,v in final_candidate_statuses.items() if v!='minecraft:full'}
+                raise RuntimeError(f'candidate chunks not FULL after graceful stop: {bad}')
+              if not monument_full:raise RuntimeError(f'monument center not FULL after graceful stop: {monument_statuses}')
+            finally:
+              if p.poll() is None:p.terminate();p.wait(timeout=30)
+          PY
+      - name: Audit saved palms and monument elevation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,json
+          from pathlib import Path
+          root=Path.cwd();loc=json.loads((root/'artifacts/located-features.json').read_text())
+          sp=importlib.util.spec_from_file_location('nbt',root/'scripts/hash-never-nether-chunks.py'); nbt=importlib.util.module_from_spec(sp);sp.loader.exec_module(nbt)
+          world_root=root/'.work/desert-monument-natural/world'
+          region=world_root/'dimensions/minecraft/overworld/region'
+          if not region.is_dir():
+            raise SystemExit(f'NeverOverworld block-region directory missing: {region}')
+          MASK=(1<<64)-1
+          SEED=-2996952393010080672
+          OASIS_DENOMINATOR=96
+          CELL_SALT=0x4E4F574F41534953
+          def s64(v):
+            v &= MASK
+            return v-(1<<64) if v&(1<<63) else v
+          def urshift(v,n): return (v&MASK)>>n
+          def mul64(a,b): return s64((a&MASK)*(b&MASK))
+          def mix(v):
+            v=s64(v ^ urshift(v,30)); v=mul64(v,0xBF58476D1CE4E5B9)
+            v=s64(v ^ urshift(v,27)); v=mul64(v,0x94D049BB133111EB)
+            return s64(v ^ urshift(v,31))
+          def chunk_key(cx,cz):
+            return mix(s64(SEED ^ CELL_SALT ^ mul64(cx,0x9E3779B97F4A7C15) ^ mul64(cz,0xC2B2AE3D27D4EB4F)))
+          def selected(cx,cz):
+            return chunk_key(cx,cz)%OASIS_DENOMINATOR == 0
+          def oasis_center(cx,cz):
+            key=chunk_key(cx,cz)
+            lx=6 + mix(s64(key ^ 0x632BE59BD9B4E019))%4
+            lz=6 + mix(s64(key ^ 0x94D049BB133111EB))%4
+            return lx,lz
+          def palette_names(rootnbt):
+            names=set()
+            for s in nbt.section_list(rootnbt):
+              bs=s.get('block_states',s.get('BlockStates'))
+              if not isinstance(bs,dict):continue
+              pal=bs.get('palette')
+              if not isinstance(pal,list):continue
+              names.update(nbt.palette_name(p) for p in pal)
+            return names
+          PALM_OFFSETS=((4,1),(-4,-1),(1,4),(-1,-4),(3,3),(-3,-3),(3,-3),(-3,3))
+          def palm_signature(rootnbt,cx,cz,localx,localz):
+            wx=cx*16+localx; wz=cz*16+localz
+            runs=[]; current=[]
+            for y in range(96,512):
+              if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:jungle_log':
+                if current and y!=current[-1]+1:
+                  runs.append(current); current=[]
+                current.append(y)
+              elif current:
+                runs.append(current); current=[]
+            if current:runs.append(current)
+            for run in runs:
+              if len(run)<5 or len(run)>7:continue
+              top=run[-1]; leaves=0
+              for yy in range(top-1,top+2):
+                for dz in range(-2,3):
+                  for dx in range(-2,3):
+                    if nbt.block_at(rootnbt,wx+dx,yy,wz+dz)=='minecraft:jungle_leaves':leaves+=1
+              if leaves>=5:
+                return {'local':[localx,localz],'world':[wx,wz],'trunk_y':[run[0],run[-1]],'trunk_height':len(run),'near_top_leaf_blocks':leaves}
+            return None
+          def oasis_water_count(rootnbt,cx,cz,centerx,centerz):
+            count=0
+            for dz in range(-3,4):
+              for dx in range(-3,4):
+                wx=cx*16+centerx+dx; wz=cz*16+centerz+dz
+                for y in range(120,512):
+                  if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water':
+                    count+=1; break
+            return count
+          def oasis_center_pool_y(rootnbt,cx,cz,centerx,centerz):
+            wx=cx*16+centerx; wz=cz*16+centerz
+            for y in range(120,512):
+              if nbt.block_at(rootnbt,wx,y,wz)=='minecraft:water' and nbt.block_at(rootnbt,wx,y-1,wz)=='minecraft:sand':
+                return y
+            return None
+          def nonempty_reference_ids(refs):
+            if not isinstance(refs,dict):return []
+            result=[]
+            for k,v in refs.items():
+              values=v.get('$long_array',[]) if isinstance(v,dict) else (v if isinstance(v,list) else [])
+              if values:result.append(str(k))
+            return sorted(result)
+          candidates=[]; candidate_palms=[]; candidate_diagnostics=[]; missing_candidates=[]
+          for raw in loc['oasis_candidate_chunks']:
+            cx,cz=int(raw[0]),int(raw[1])
+            if not selected(cx,cz):
+              raise SystemExit(f'workflow candidate is not DESERT-R1 selected: {cx},{cz}')
+            candidates.append([cx,cz])
+            try:
+              r=nbt.read_chunk_nbt(region,cx,cz)
+            except Exception as exc:
+              missing_candidates.append({'chunk':[cx,cz],'error':str(exc)})
+              continue
+            names=palette_names(r)
+            has_log='minecraft:jungle_log' in names
+            has_leaves='minecraft:jungle_leaves' in names
+            lx,lz=oasis_center(cx,cz)
+            wx=cx*16+lx; wz=cz*16+lz
+            detected_palms=[]; center_water_columns=0; center_pool_y=None
+            if has_log and has_leaves:
+              for ox,oz in PALM_OFFSETS:
+                sig=palm_signature(r,cx,cz,lx+ox,lz+oz)
+                if sig is not None:detected_palms.append(sig)
+              center_water_columns=oasis_water_count(r,cx,cz,lx,lz)
+              center_pool_y=oasis_center_pool_y(r,cx,cz,lx,lz)
+            oasis_signature=bool(detected_palms) and center_pool_y is not None
+            if oasis_signature:candidate_palms.append([cx,cz])
+            column=[]
+            for y in range(511,119,-1):
+              state=nbt.block_at(r,wx,y,wz)
+              if state!='minecraft:air':
+                column.append([y,state])
+                if len(column)>=12:break
+            markers=sorted(n for n in names if n in {
+              'minecraft:jungle_log','minecraft:jungle_leaves','minecraft:grass_block',
+              'minecraft:coarse_dirt','minecraft:sand','minecraft:sandstone','minecraft:water'
+            })
+            structures=r.get('structures',r.get('Structures',{}))
+            refs=structures.get('references',structures.get('References',{})) if isinstance(structures,dict) else {}
+            reference_ids=nonempty_reference_ids(refs)
+            candidate_diagnostics.append({
+              'chunk':[cx,cz],'status':r.get('Status',r.get('status')),
+              'center_local':[lx,lz],'center_world':[wx,wz],
+              'top_non_air_column':column,'markers':markers,
+              'structure_reference_ids':reference_ids,
+              'has_jungle_log':has_log,'has_jungle_leaves':has_leaves,
+              'detected_expected_palms':detected_palms,
+              'center_pool_y':center_pool_y,
+              'center_radius3_water_columns':center_water_columns,
+              'oasis_signature':oasis_signature
+            })
+          starts=[]; monument_diagnostics=[]
+          monument_cache={}
+          def monument_chunk(cx,cz):
+            key=(cx,cz)
+            if key not in monument_cache:
+              monument_cache[key]=nbt.read_chunk_nbt(region,cx,cz)
+            return monument_cache[key]
+          def block_world(x,y,z):
+            return nbt.block_at(monument_chunk(x//16,z//16),x,y,z)
+          a=loc['monument_chunk_area']
+          for cz in range(a[2],a[3]+1):
+            for cx in range(a[0],a[1]+1):
+              r=monument_chunk(cx,cz)
+              raw=r.get('structures',{}).get('starts',{}).get('minecraft:monument')
+              if isinstance(raw,dict) and raw.get('id')=='minecraft:monument':
+                children=raw.get('Children',[]);mins=[];maxs=[];boxes=[]
+                for ch in children:
+                  bb=ch.get('BB') if isinstance(ch,dict) else None
+                  if isinstance(bb,dict):bb=bb.get('$int_array')
+                  if isinstance(bb,list) and len(bb)==6:
+                    box=[int(v) for v in bb]
+                    boxes.append(box);mins.append(box[1]);maxs.append(box[4])
+                start_info={'chunk':[cx,cz],'piece_min_y':min(mins) if mins else None,'piece_max_y':max(maxs) if maxs else None,'pieces':len(children)}
+                starts.append(start_info)
+                if boxes:
+                  minx=min(v[0] for v in boxes); miny=min(v[1] for v in boxes); minz=min(v[2] for v in boxes)
+                  maxx=max(v[3] for v in boxes); maxy=max(v[4] for v in boxes); maxz=max(v[5] for v in boxes)
+                  centerx=(minx+maxx)//2; centerz=(minz+maxz)//2
+                  center_column=[[y,block_world(centerx,y,centerz)] for y in range(132,95,-1)]
+                  base_counts={}
+                  for dz in range(-2,3):
+                    for dx in range(-2,3):
+                      state=block_world(centerx+dx,104,centerz+dz)
+                      base_counts[state]=base_counts.get(state,0)+1
+                  located=loc.get('monument_position',[None,None,None])
+                  dx=None if located[0] is None else centerx-int(located[0])
+                  dz=None if located[2] is None else centerz-int(located[2])
+                  monument_diagnostics.append({
+                    'start_chunk':[cx,cz],
+                    'piece_boxes':boxes,
+                    'union_bbox':[minx,miny,minz,maxx,maxy,maxz],
+                    'center_world':[centerx,centerz],
+                    'center_chunk':[centerx//16,centerz//16],
+                    'located_position':located,
+                    'located_to_center_delta_xz':[dx,dz],
+                    'center_column_y132_to_96':center_column,
+                    'base_y104_5x5_block_counts':dict(sorted(base_counts.items()))
+                  })
+          gate_summary={
+            'desert_candidates_present':bool(candidates),
+            'candidate_chunks_saved':not missing_candidates,
+            'natural_palms_present':bool(candidate_palms),
+            'monument_saved':bool(starts),
+            'monument_base_y_104':any(v['piece_min_y']==104 for v in starts)
+          }
+          natural_audit_pass=all(gate_summary.values())
+          result={'schema':7,'seed':SEED,'located_desert_count':len(loc['desert_positions']),'selected_oasis_candidates':candidates,'selected_candidate_count':len(candidates),'missing_candidate_chunks':missing_candidates,'candidate_palm_chunks':candidate_palms,'candidate_palm_count':len(candidate_palms),'candidate_diagnostics':candidate_diagnostics,'monument_starts':starts,'monument_diagnostics':monument_diagnostics,'expected_monument_base_y':104,'gate_summary':gate_summary,'natural_audit_pass':natural_audit_pass,'release_ready':False}
+          (root/'artifacts/natural-feature-audit.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          if not candidates:raise SystemExit('DESERT-R1 audit generated no deterministic candidate chunks')
+          if missing_candidates:raise SystemExit(f'DESERT-R1 candidate chunks missing from saved world: {len(missing_candidates)}')
+          if not candidate_palms:raise SystemExit('no natural DESERT-R1 palm in deterministic candidate chunks')
+          if not starts:raise SystemExit('located monument start not saved')
+          if not any(v['piece_min_y']==104 for v in starts):raise SystemExit('monument base is not Y=104')
+          PY
+      - name: Publish natural audit summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p=Path('artifacts/natural-feature-audit.json')
+          print('## NeverOverworld DESERT-R1 + Monument natural audit')
+          if not p.is_file():
+            print()
+            print('Audit JSON was not produced.')
+            raise SystemExit(0)
+          d=json.loads(p.read_text())
+          gates=d.get('gate_summary',{})
+          print()
+          print(f"- Natural audit pass: **{d.get('natural_audit_pass', False)}**")
+          print(f"- Located deserts: **{d.get('located_desert_count', 0)}**")
+          print(f"- Deterministic oasis candidates: **{d.get('selected_candidate_count', 0)}**")
+          print(f"- Verified natural oasis/palm signatures: **{d.get('candidate_palm_count', 0)}**")
+          print(f"- Missing candidate chunks: **{len(d.get('missing_candidate_chunks', []))}**")
+          starts=d.get('monument_starts',[])
+          base=min((v.get('piece_min_y') for v in starts if v.get('piece_min_y') is not None),default=None)
+          print(f"- Monument starts: **{len(starts)}**")
+          print(f"- Monument minimum piece Y: **{base}** (expected 104)")
+          md=d.get('monument_diagnostics',[])
+          if md:
+            m=md[0]
+            print(f"- Monument center X/Z: **{m.get('center_world')}**")
+            print(f"- Monument union bbox: **{m.get('union_bbox')}**")
+            print(f"- Locate→center delta X/Z: **{m.get('located_to_center_delta_xz')}**")
+          print()
+          print('### Gates')
+          for name,value in gates.items():
+            icon='✅' if value else '❌'
+            print(f"- {icon} {name}")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-desert-monument-natural-${{ github.sha }}
+          path: |
+            artifacts/located-features.json
+            artifacts/generation-progress.json
+            artifacts/natural-feature-audit.json
+            artifacts/feature-natural.log
+            artifacts/production-chain.log
+            artifacts/build.log
+          retention-days: 14
+          if-no-files-found: warn
+
+# retrigger-natural-2026-09-18-flooded-oasis-sample

@@ -1,0 +1,198 @@
+{
+  "schema": 1,
+  "subject": "NeverOverworld FIELD-R11 + DESERT-R1 natural acceptance",
+  "seed": -2996952393010081000,
+  "production": {
+    "sha": "f673a3332f453b74e0786c71029ba0837a4fd478",
+    "build_run": 35383297820,
+    "natural_run": 35383297726
+  },
+  "field_r11": {
+    "acceptance_run": 35344437115,
+    "acceptance_sha": "b5114dcc62773cad67015783e2833925162cdb12",
+    "sampled_full_chunks": 225,
+    "baseline_field_r10_water_air_boundary_mismatches": 2555,
+    "field_r11_water_air_boundary_mismatches": 0,
+    "snow_remnants": 0
+  },
+  "desert_r1": {
+    "selection_denominator": 96,
+    "located_desert_regions": 17,
+    "sampled_candidates": 17,
+    "sampled_candidates_full": 17,
+    "verified_oasis_signatures": 3,
+    "oasis_chunks": [
+      {
+        "chunk": [
+          -615,
+          -617
+        ],
+        "center_world": [
+          -9832,
+          -9864
+        ],
+        "foundation_y": 128,
+        "center_sand_y": 129,
+        "center_pool_y": 130,
+        "palms": [
+          {
+            "world": [
+              -9828,
+              -9863
+            ],
+            "trunk_y": [
+              131,
+              136
+            ],
+            "trunk_height": 6,
+            "near_top_leaf_blocks": 17
+          },
+          {
+            "world": [
+              -9835,
+              -9861
+            ],
+            "trunk_y": [
+              131,
+              135
+            ],
+            "trunk_height": 5,
+            "near_top_leaf_blocks": 17
+          }
+        ]
+      },
+      {
+        "chunk": [
+          -3,
+          1880
+        ],
+        "center_world": [
+          -39,
+          30088
+        ],
+        "foundation_y": 128,
+        "center_sand_y": 129,
+        "center_pool_y": 130,
+        "palms": [
+          {
+            "world": [
+              -40,
+              30084
+            ],
+            "trunk_y": [
+              131,
+              136
+            ],
+            "trunk_height": 6,
+            "near_top_leaf_blocks": 17
+          },
+          {
+            "world": [
+              -36,
+              30091
+            ],
+            "trunk_y": [
+              131,
+              135
+            ],
+            "trunk_height": 5,
+            "near_top_leaf_blocks": 17
+          }
+        ]
+      },
+      {
+        "chunk": [
+          923,
+          775
+        ],
+        "center_world": [
+          14775,
+          12406
+        ],
+        "foundation_y": 128,
+        "center_sand_y": 129,
+        "center_pool_y": 130,
+        "palms": [
+          {
+            "world": [
+              14779,
+              12407
+            ],
+            "trunk_y": [
+              131,
+              137
+            ],
+            "trunk_height": 7,
+            "near_top_leaf_blocks": 17
+          },
+          {
+            "world": [
+              14771,
+              12405
+            ],
+            "trunk_y": [
+              131,
+              135
+            ],
+            "trunk_height": 5,
+            "near_top_leaf_blocks": 17
+          }
+        ]
+      }
+    ]
+  },
+  "monument": {
+    "start_chunk": [
+      44,
+      -22
+    ],
+    "piece_y": [
+      104,
+      126
+    ],
+    "union_bbox": [
+      675,
+      104,
+      -381,
+      732,
+      126,
+      -324
+    ],
+    "geometric_center_xz": [
+      703,
+      -353
+    ],
+    "locate_position": [
+      704,
+      "~",
+      -352
+    ],
+    "locate_to_center_delta_xz": [
+      -1,
+      -1
+    ],
+    "base_y_104_center_5x5": {
+      "block": "minecraft:prismarine",
+      "count": 25,
+      "sample_size": 25
+    }
+  },
+  "gates": {
+    "field_r11_seams_zero": true,
+    "field_r11_snow_zero": true,
+    "candidates_full": true,
+    "exact_persisted_oasis_signature_present": true,
+    "monument_saved": true,
+    "monument_base_y_104": true
+  },
+  "natural_acceptance_pass": true,
+  "release_ready": false,
+  "remaining_acceptance": [
+    "player-facing sandstorm visual acceptance",
+    "player-facing sandstorm movement feel acceptance"
+  ],
+  "evidence": {
+    "natural_artifact_id": 10563630922,
+    "natural_artifact_digest": "sha256:255ed1baf78265e33e5f9e7c14d17ce7708e0d350b130c22b9df8fdf145458a0"
+  }
+}

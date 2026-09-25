@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "minecraft": "26.2",
+  "worldgen_id": "NN-DEV-1",
+  "policy": "explicit_server_only_compatibility_no_asset_redistribution",
+  "optional_mod_pool_overrides": {
+    "structory_towers": {
+      "structory_towers:waystones/waystone": {
+        "reason": "optional Waystones mod content is not part of the native Folia server",
+        "replacement": "empty_pool"
+      },
+      "structory_towers:waystones/fwaystone": {
+        "reason": "optional Fabric Waystones mod content is not part of the native Folia server",
+        "replacement": "empty_pool"
+      }
+    }
+  },
+  "unknown_custom_codecs": "reject_without_conversion",
+  "missing_loot_tables": "reject_without_fallback",
+  "source_resource_aliases": {
+    "dungeons_and_taverns": {
+      "source_sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "aliases": [
+        {
+          "registry": "structure",
+          "missing": "nova_structures:nether_skeleton_tower/chest/pot_",
+          "existing": "nova_structures:nether_skeleton_tower/chest/pot",
+          "reason": "Remove dangling underscore; existing source pot template retained byte-for-byte.",
+          "target_sha256": "0ff03b66bbb4cf2b65022ddbd38c59b00dff2c4a473469d68ec1e0e4dc7157e6"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_fallback_bridge_left",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_fallback_left",
+          "reason": "Resolve stale bridge-side resource name to the existing same-role fallback template.",
+          "target_sha256": "372495c05e73ce338c9d63ff3a8d9f0753c99ab45d8c0757365f14369d856b89"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_fallback_bridge_right",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_fallback_right",
+          "reason": "Resolve stale bridge-side resource name to the existing same-role fallback template.",
+          "target_sha256": "4795ea97587c23b157758e391244f93aec47fbaff859c0cc90fd2eb94b3f73a7"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_intermission_fallback_bridge_left",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_intermission_fallback_left",
+          "reason": "Resolve stale bridge-side resource name to the existing same-role fallback template.",
+          "target_sha256": "77593ba40a02a2d68101c97fbd808469d9c05d3c5e173cd31a321adab86cb721"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_intermission_fallback_bridge_right",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_intermission_fallback_right",
+          "reason": "Resolve stale bridge-side resource name to the existing same-role fallback template.",
+          "target_sha256": "d1d93899f64a46af6ffe4884f24ba014d33f3264ebeb907dd2093da832b7f658"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_straight_t-cross",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_t-cross",
+          "reason": "Resolve duplicated straight/t-cross prefix to the existing T-junction variant.",
+          "target_sha256": "593c0ce2778080b1d74c1c21eba281511fe422569bcb998965737c2cd5471b12"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_straight_t-cross_spawner",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_t-cross_spawner",
+          "reason": "Resolve duplicated straight/t-cross prefix to the existing T-junction variant.",
+          "target_sha256": "2b0905670342346f27153a3e5b9f2e8e9af226bc2ee96af735444b577534a585"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:sealing_halls/bridge/sh_bridge_straight_t-cross_tower",
+          "existing": "nova_structures:sealing_halls/bridge/sh_bridge_t-cross_tower",
+          "reason": "Resolve duplicated straight/t-cross prefix to the existing T-junction variant.",
+          "target_sha256": "b4461f3b62ea0fd45f8f1c43a93a5bafd45a8169ef06b0fbc3959fc39d1a01d7"
+        },
+        {
+          "registry": "loot_table",
+          "missing": "nova_structures:pots/pot_piglins",
+          "existing": "nova_structures:pots/pot_piglin",
+          "reason": "Resolve pluralized pot loot reference to the existing piglin pot table; no replacement loot design.",
+          "target_sha256": "d4e256f35d2ba0c9d4c0c294b676081a577a08bac9571f0e549ffc21ada322db"
+        },
+        {
+          "registry": "structure",
+          "missing": "nova_structures:piglin_outstation/mobs/outstation_mob_piglin_sword",
+          "existing": "nova_structures:piglin_outstation/mobs/outstation_mob_piglin_swordw",
+          "reason": "Both swordw and swordwd source templates have identical SHA-256 and contain the same unarmoured piglin with golden sword.",
+          "target_sha256": "282ce58149be89490fdb8b6393d2e91a266df71e170fc030a54a22fee6229563"
+        },
+        {
+          "registry": "worldgen/template_pool",
+          "missing": "nova_structures:hamlet/jockey",
+          "existing": "nova_structures:piglin_camp/jockey",
+          "reason": "Piglin camp NBT retained the old hamlet/jockey name; use its existing hoglin-jockey pool, including the original fallback.",
+          "target_sha256": "f8889330373558823f9d125551b9ee8745ccb64f1de9a4bbf8b35b1a50aead87"
+        },
+        {
+          "registry": "loot_table",
+          "missing": "nova_structures:spawner_projectile/nether_keep/projectiles_nether_port",
+          "existing": "nova_structures:spawner_projectile/nether_port/projectiles_nether_port",
+          "reason": "Nether Port ominous spawner reference repaired to the existing Nether Port projectile table.",
+          "target_sha256": "29ef806316e5b9293c1c1e66611b96301bc4c80b1e01a289c9dea7629e260429"
+        },
+        {
+          "registry": "loot_table",
+          "missing": "nova_structures:spawner_projectile/nether_port/projectiles_port",
+          "existing": "nova_structures:spawner_projectile/nether_port/projectiles_nether_port",
+          "reason": "Nether Port ominous spawner reference repaired to the existing Nether Port projectile table.",
+          "target_sha256": "29ef806316e5b9293c1c1e66611b96301bc4c80b1e01a289c9dea7629e260429"
+        }
+      ]
+    }
+  },
+  "authored_reconstructions": {
+    "dungeons_and_taverns": {
+      "source_sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "contract_inputs": {
+        "data/nova_structures/structure/donjon/coloseum_part/deco_13.nbt": "0ddd869b52c346f707282fd6d9d6bb679468f8c8609ddba9110d96790f72fa5c",
+        "data/nova_structures/structure/donjon/room/donjon_room_3x3x2_1.nbt": "ead86f65fe71f9014824393576b019e5dd7e15a97864f4a1a460137a23ba9c1e",
+        "data/nova_structures/structure/piglin_outstation/main/piglin_outpost_outer_layer_vault_1.nbt": "a36895137e8c194a2830b384c90d4a9fe6c8cb03a4e9e1a297e1506ca556a385",
+        "data/nova_structures/worldgen/template_pool/donjon/donjon_coloseum.json": "5ed22b48f33ae4dc4c5d1edf755b9b2d020028101e4b3e46449a33177ef73d6e",
+        "data/nova_structures/worldgen/template_pool/donjon/donjon_room.json": "9b63a04ba2e42b087cc9516e7ef92d3aa80468c6815d98f042fb1e56fdfeea27",
+        "data/nova_structures/worldgen/template_pool/piglin_outstation/outer_layer.json": "68a7dbf3d8653a42eda61be0bc213a94259f063a309398620ba8803adf0e495e"
+      },
+      "policy": "new_designs_not_upstream_originals",
+      "runtime_validated": false
+    }
+  }
+}

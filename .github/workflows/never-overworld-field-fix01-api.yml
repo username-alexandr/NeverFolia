@@ -1,0 +1,54 @@
+name: NeverOverworld Field Fix01 API
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/never-overworld-field-fix01-api.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Export exact current sources after the inspected transformer chain
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production-chain.log 2>&1
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          root=Path('.work/Folia/folia-server/src/minecraft/java'); files=set(root.rglob('NeverOverworld*.java'))
+          for name in ['world/level/levelgen/feature/SnowAndFreezeFeature.java','world/level/chunk/status/ChunkStatusTasks.java','world/level/chunk/ChunkAccess.java','world/level/chunk/ProtoChunk.java','world/level/chunk/storage/SerializableChunkData.java','world/level/levelgen/structure/StructureStart.java','world/level/chunk/ChunkGenerator.java','server/level/WorldGenRegion.java']:
+              p=root/'net/minecraft'/name
+              if p.is_file(): files.add(p)
+          manifest={}
+          with zipfile.ZipFile('artifacts/field-api.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(files):
+                  raw=p.read_bytes();name=p.relative_to(root).as_posix();z.writestr(name,raw);manifest[name]=hashlib.sha256(raw).hexdigest()
+          Path('artifacts/API-SHA256.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          printf '%s\n' 'Source inspection only. No field fix or world acceptance.' > artifacts/SCOPE.txt
+          (cd artifacts && sha256sum *.zip *.json *.txt *.log > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-field-fix01-api-${{ github.sha }}
+          path: artifacts/*
+          retention-days: 7
+          if-no-files-found: error

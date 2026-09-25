@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "after": "exact R13",
+  "profile": "NN-R14-SUBSTRATE-1-ROOF512",
+  "files": {
+    "net/minecraft/world/level/levelgen/placement/NeverNetherDecorationR8.java": {
+      "sha256": "5c2d218c6b46e6e513d0c550931af75b00890be20ea99e0c9ed11c5c4cd234ad",
+      "replacements": [{"old":"current.getHeight() == 1024","new":"current.getHeight() == NeverNetherHeightR14.HEIGHT","count":1}]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherSubstrateR10.java": {
+      "sha256": "27540a2b71156a2bc249a81eb91da4f31dc043d8cf372e6213fc895646210c64",
+      "replacements": [
+        {"old":"level.getHeight() == 1024","new":"level.getHeight() == NeverNetherHeightR14.HEIGHT","count":1},
+        {"old":"p.getY() > 895","new":"p.getY() > NeverNetherHeightR14.MAX_Y","count":1},
+        {"old":"new SectionData[64]","new":"new SectionData[NeverNetherHeightR14.SECTIONS]","count":1},
+        {"old":"slices[63]","new":"slices[slices.length-1]","count":1},
+        {"old":"int y = 894","new":"int y = NeverNetherHeightR14.MAX_Y-1","count":1}
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherStorageR11.java": {
+      "sha256": "56cfc4556ff30edb716357639b3f01823e32e97bf3614b862699f745671cd27b",
+      "replacements": [
+        {"old":"NN-R13-SUBSTRATE-1-RECONCILED-NATURAL","new":"NN-R14-SUBSTRATE-1-ROOF512","count":1},
+        {"old":"sy>55","new":"sy>32","count":2},
+        {"old":"y > 55","new":"y > 32","count":1},
+        {"old":"seen.cardinality()!=64","new":"seen.cardinality()!=NeverNetherHeightR14.SECTIONS","count":1}
+      ]
+    },
+    "net/minecraft/world/level/levelgen/feature/BasaltColumnsFeature.java": {
+      "sha256": "fdc83beeadc07e1bfde8be8b5036b40c1d52205c52d9e38b581437314958f04b",
+      "replacements": [{"old":"level.getMinY() == -128 && level.getHeight() == 1024","new":"net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.active(level.getLevel())","count":1}]
+    },
+    "net/minecraft/world/level/levelgen/feature/ReplaceBlobsFeature.java": {
+      "sha256": "99aace0ea80f72c43e8a7c8b2eea68c55f4b4fc45b4c4a7cb17aa3a3bdfdba7c",
+      "replacements": [{"old":"level.getMinY() == -128 && level.getHeight() == 1024","new":"net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.active(level.getLevel())","count":1}]
+    },
+    "net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement.java": {
+      "sha256": "b1fa369f168c26a36a6256e55f04bb785ce75cedaa8c4727362313edd719cbae",
+      "replacements": [{"old":"MAX_SAFE_Y = 378","new":"MAX_SAFE_Y = 507","count":1}]
+    },
+    "net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherNativeProcessors.java": {
+      "sha256": "385118a92e639bc63887a8bfeaaa0274c2223eb168649dc1ed675f68fc3a63a5",
+      "replacements": [
+        {"old":"pos.getY() > 378","new":"pos.getY() > 507","count":1},
+        {"old":"direction.getStepY(), -123, 378, length","new":"direction.getStepY(), -123, 507, length","count":1},
+        {"old":"    public static void register(Registry<MapCodec<? extends StructureProcessor>> registry) {","new":"    public static void register(Registry<MapCodec<? extends StructureProcessor>> registry) {\n        Registry.register(registry, Identifier.fromNamespaceAndPath(\"neverfolia\", \"height_r14_required\"), net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.RequiredProcessor.CODEC);","count":1}
+      ]
+    },
+    "net/minecraft/server/NeverNetherFingerprintGuard.java": {
+      "sha256": "d8053bbfdee96fcbc7b0822788d2f096da99552da83368be1eb6bf961a341f27",
+      "replacements": [{"old":"    static void verify(Path worldRoot, Path datapackDir) {","new":"    static void verify(Path worldRoot, Path datapackDir) {\n        net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.verifyDatapacks(worldRoot,datapackDir);","count":1}]
+    },
+    "net/minecraft/world/level/Level.java": {
+      "sha256": "5c8c2dfd2a7c67eb4f7f089ef0126c2ababbb5299868671c4bf0ff2e865c4210",
+      "replacements": [
+        {"old":"return blockY >= this.minY && blockY <= this.maxY;","new":"return !this.isOutsideBuildHeight(blockY);","count":1},
+        {"old":"return blockY < this.minY || blockY > this.maxY;","new":"return blockY < this.minY || blockY > this.maxY || (net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.active(this) && blockY > net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.ROOF_Y);","count":1},
+        {"old":"        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, \"Updating block asynchronously\"); // Folia - region threading","new":"        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, \"Updating block asynchronously\"); // Folia - region threading\n        if (!net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.canSet(this,pos,blockState)) return false;","count":1}
+      ]
+    },
+    "net/minecraft/world/level/chunk/LevelChunk.java": {
+      "sha256": "ccc6ed112dc003e237808129390b1332bca536df74fdb39cbb917a652291a0c6",
+      "replacements": [{"old":"        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, pos, \"Updating block asynchronously\"); // Folia - region threading","new":"        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, pos, \"Updating block asynchronously\"); // Folia - region threading\n        if (!net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.canSet(this.level,pos,state)) return null;","count":1}]
+    },
+    "net/minecraft/world/level/chunk/ProtoChunk.java": {
+      "sha256": "d0e754b378675603bfc14fff47304ac69f15f5ca01627ccbd28dbb0221ea0b17",
+      "replacements": [{"old":"    public @Nullable BlockState setBlockState(final BlockPos pos, final BlockState state, final @Block.UpdateFlags int flags) {","new":"    public @Nullable BlockState setBlockState(final BlockPos pos, final BlockState state, final @Block.UpdateFlags int flags) {\n        if (!net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.canSet(this.levelHeightAccessor,pos,state)) return null;","count":1}]
+    },
+    "net/minecraft/server/level/WorldGenRegion.java": {
+      "sha256": "69483463204d0549d0125d77447d4f3ae627806594e8653cc4870d1e11f8e6a2",
+      "replacements": [{"old":"    public boolean setBlock(final BlockPos pos, final BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit) {","new":"    public boolean setBlock(final BlockPos pos, final BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit) {\n        if (!net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.canSet(this.level,pos,blockState)) return false;","count":1}]
+    },
+    "net/minecraft/world/level/chunk/LevelChunkSection.java": {
+      "sha256": "96cc4b9ca75486ef7cc5d978b6f1fb76e0eb86801a1c297f04d4f47fcbd360f8",
+      "replacements": [{"old":"        var data = this.neverNetherR10Data;\n        if (data == null) return this.neverNetherR11Set","new":"        var data = this.neverNetherR10Data;\n        if (!net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.canSetSection(data,sectionY,state)) return this.getBlockState(sectionX,sectionY,sectionZ);\n        if (data == null) return this.neverNetherR11Set","count":1}]
+    },
+    "net/minecraft/server/network/ServerGamePacketListenerImpl.java": {
+      "sha256": "926656a049929eb56e773c48e0ef6453b4f6149870f5c531382e841c0c480a9f",
+      "replacements": [
+        {"old":"int maxY = level.getMaxY();","new":"int maxY = net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.buildMaxY(level);","count":1},
+        {"old":"this.player.level().getMaxY(), packet.getSequence()","new":"net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.buildMaxY(this.player.level()), packet.getSequence()","count":1}
+      ]
+    },
+    "net/minecraft/world/entity/item/FallingBlockEntity.java": {
+      "sha256": "d6c299c615259d174cf799b35bf3803f356c17d6dae0b129a9be393f248428dc",
+      "replacements": [{"old":"                                    this.spawnAtLocation(serverLevel, block);\n                                }\n                            } else {","new":"                                    this.spawnAtLocation(serverLevel, block);\n                                } else if (net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.active(serverLevel)\n                                    && pos.getY() > net.minecraft.world.level.levelgen.placement.NeverNetherHeightR14.ROOF_Y) {\n                                    // A denied roof placement must retire even with item drops disabled.\n                                    // Keep the original drop-enabled path and every other dimension unchanged.\n                                    this.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.OUT_OF_WORLD);\n                                }\n                            } else {","count":1}]
+    }
+  }
+}

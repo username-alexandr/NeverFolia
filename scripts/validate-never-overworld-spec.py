@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"[NeverFolia][NeverOverworld spec] {message}")
+
+
+def text(rel: str) -> str:
+    path = ROOT / rel
+    if not path.is_file():
+        fail(f"missing required file: {rel}")
+    return path.read_text(encoding="utf-8")
+
+
+def require(source: str, needle: str, where: str) -> None:
+    if needle not in source:
+        fail(f"{where} missing required contract marker: {needle!r}")
+
+
+def forbid(source: str, needle: str, where: str) -> None:
+    if needle in source:
+        fail(f"{where} contains obsolete/forbidden contract marker: {needle!r}")
+
+
+def main() -> None:
+    env = text("build.env")
+    builder = text("scripts/build-never-overworld-core-pack-legacy.py")
+    native_wrapper = text("scripts/build-never-overworld-core-pack.py")
+    flood = text("scripts/apply-never-overworld-flood-hook.py")
+    flood_r8 = text("scripts/harden-never-overworld-flood-connectivity-r8.py")
+    frozen_r8c = text("scripts/harden-never-overworld-frozen-surface-r8c.py")
+    rock_mass_r8 = text("scripts/harden-never-overworld-rock-mass-structures-r8.py")
+    structure_normalizer = text("scripts/normalize-never-overworld-structure-type.py")
+    native_fluid = text("scripts/apply-never-overworld-fluid-picker.py")
+    geology = text("scripts/apply-never-overworld-ore-geology.py")
+    geology_extension = text("scripts/extend-never-overworld-ore-geology.py")
+    geology_balance = text("scripts/tune-never-overworld-ore-balance.py")
+    geology_audit = text("scripts/audit-never-overworld-native-geology.py")
+    post_patches = text("scripts/apply-neverfolia-post-patches.sh")
+    fingerprint = text("scripts/fingerprint-never-overworld-pack.py")
+    guard = text("scripts/apply-never-overworld-fingerprint-guard.py")
+    hasher = text("scripts/hash-never-overworld-generation-chunks.py")
+    doc = text("docs/worldgen/never-overworld.md")
+
+    require(env, "WORLDGEN_OVERWORLD=NR-DEV-1", "build.env")
+
+    for marker in (
+        'WORLDGEN_ID = "NR-DEV-1"',
+        "DIM_MIN_Y = -512",
+        "DIM_HEIGHT = 1024",
+        "VANILLA_MIN_Y = -64",
+        "DEEP_BLEND_START_Y = -96",
+        "FLOOD_LEVEL = 128",
+        '"terrain_mode": "VANILLA_FLOODED"',
+        '"flood_phase": "neverfolia-light-barrier-surface-connected-chunk-owned-v3"',
+        '"sealed_cavity_policy": "remain-dry-without-surface-connected-air-path"',
+        "minecraft:lake_lava_underground",
+        "minecraft:spring_water",
+        "minecraft:spring_lava",
+    ):
+        require(builder, marker, "NeverOverworld immutable Core builder")
+    forbid(builder, "FULL_FLOOD_MIN_Y", "NeverOverworld immutable Core builder")
+    forbid(builder, '"full_flood_min_y"', "NeverOverworld immutable Core builder")
+
+    for marker in (
+        'LEGACY = ROOT / "build-never-overworld-core-pack-legacy.py"',
+        'PROMOTER = ROOT / "promote-never-overworld-native-geology-pack.py"',
+        'run(str(PROMOTER), "--input", str(output))',
+        "NATIVE-ONLY CORE READY",
+        "coal, iron, copper, gold, redstone, lapis, diamond, emerald",
+    ):
+        require(native_wrapper, marker, "NeverOverworld native Core wrapper")
+
+    for marker in (
+        'TASKS_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java")',
+        "NeverOverworldFlood.apply(",
+        "WorldGenContext",
+        "ChunkAccess",
+        "matching_delimiter",
+        "beginning of the LIGHT chunk status",
+        "public final class NeverOverworldFlood",
+        "public static void apply",
+        "EXPECTED_MIN_Y = -512",
+        "EXPECTED_HEIGHT = 1024",
+        "FLOOD_LEVEL = 128",
+        "Level.OVERWORLD",
+        "Heightmap.Types.OCEAN_FLOOR_WG",
+        "section.hasFluid()",
+        "floodSurfaceConnectedAir",
+        "chunk.setBlockState",
+    ):
+        require(flood, marker, "NeverOverworld flood hook")
+    forbid(
+        flood,
+        'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")',
+        "NeverOverworld flood hook",
+    )
+    forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
+
+    for marker in (
+        "floodLargeBoundaryConnectedCaverns",
+        "scanMinY = Math.max(minY, -384)",
+        "scanMaxY = Math.min(maxY, 96)",
+        "tail < 768",
+        "boundaryCells < 48",
+        "verticalSpan < 24",
+        "chunk.getAllStarts().values()",
+        "box.minX() - 2",
+        "localX < 0 || localX > 15",
+        "neighbour chunk reads/writes: none",
+    ):
+        require(flood_r8, marker, "NeverOverworld R8 large-cavern connectivity")
+    forbid(flood_r8, "level.getChunk(", "NeverOverworld R8 large-cavern connectivity")
+    forbid(flood_r8, "chunk.getLevel()", "NeverOverworld R8 large-cavern connectivity")
+
+    for marker in (
+        "isDrownedFrozenOverlay",
+        "Blocks.SNOW",
+        "Blocks.SNOW_BLOCK",
+        "Blocks.POWDER_SNOW",
+        "Blocks.ICE",
+        "Blocks.PACKED_ICE",
+        "Blocks.BLUE_ICE",
+        "chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0)",
+        "transformer is not idempotent",
+    ):
+        require(frozen_r8c, marker, "NeverOverworld R8-C frozen-surface cleanup")
+
+    for marker in (
+        "buried_sanctum",
+        "sealed_cache",
+        "[NeverFolia][NeverOverworld rock-mass R8] SELF-TEST OK",
+    ):
+        require(rock_mass_r8, marker, "NeverOverworld R8 rock-mass hardening")
+
+    for marker in (
+        'R8_HARDENER = ROOT / "harden-never-overworld-rock-mass-structures-r8.py"',
+        "apply_r8_hardening(args.input.resolve())",
+        "R8 rock-mass hardening applied before normalization",
+    ):
+        require(structure_normalizer, marker, "NeverOverworld production structure pack chain")
+
+    for marker in (
+        'GENERATOR_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java")',
+        "NeverOverworldFluidPicker.matches(settings)",
+        "NeverOverworldFluidPicker.create(settings)",
+        "EXPECTED_MIN_Y = -512",
+        "EXPECTED_HEIGHT = 1024",
+        "settings.defaultFluid().is(Blocks.WATER)",
+        "Math.min(-54, seaLevel)",
+        "return y < deepCutoff ? emptyStatus : seaStatus",
+        "Native fluid picker active: lava aquifer disabled",
+        'if "Blocks.LAVA" in helper:',
+        "native NR fluid helper must not construct lava",
+    ):
+        require(native_fluid, marker, "NeverOverworld native fluid picker")
+
+    for marker in (
+        "public final class NeverOverworldOreGeology",
+        "EXPECTED_MIN_Y = -512",
+        "EXPECTED_HEIGHT = 1024",
+        "provinceStrength",
+        "hashCell",
+        "hashBlock",
+        "Math.floorDiv",
+        "chunk.getPos()",
+        "chunk.setBlockState",
+        "current.is(Blocks.DEEPSLATE) || current.is(Blocks.TUFF)",
+        "current.is(Blocks.STONE)",
+        "Blocks.DIAMOND_ORE",
+        "Blocks.DEEPSLATE_DIAMOND_ORE",
+        'for forbidden in ("new Random(", "RandomSource", "level.getChunk("):',
+        "order-dependent/random neighbor dependency present",
+    ):
+        require(geology, marker, "NeverOverworld native ore geology")
+
+    for marker in (
+        "COAL(0x07A8B9C0D1E2F314L",
+        "EMERALD(0x77A8122334455667L",
+        "Blocks.COAL_ORE",
+        "Blocks.DEEPSLATE_COAL_ORE",
+        "Blocks.EMERALD_ORE",
+        "Blocks.DEEPSLATE_EMERALD_ORE",
+    ):
+        require(geology_extension, marker, "NeverOverworld coal/emerald geology extension")
+
+    for marker in (
+        "DIAMOND(0x66F7011223344556L, 112, 0.20D, 0.50D, -496, -160",
+        "EMERALD(0x77A8122334455667L, 144, 0.12D, 0.62D, -384, -96",
+        "Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE",
+        "Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE",
+        "deep diamond + emerald balance applied",
+    ):
+        require(geology_balance, marker, "NeverOverworld diamond/emerald balance v2")
+
+    for marker in (
+        '"minecraft:deepslate_diamond_ore": "diamond"',
+        '"minecraft:deepslate_emerald_ore": "emerald"',
+        'parser.add_argument("--require"',
+        'parser.add_argument("--require-block"',
+        '"requirements_satisfied"',
+        '"ore_block_variants"',
+        '"chunks_with_diamond"',
+        '"chunks_with_emerald"',
+    ):
+        require(geology_audit, marker, "NeverOverworld persisted geology audit")
+
+    for marker in (
+        'apply-never-overworld-ore-geology.py" "${FOLIA_DIR}"',
+        'extend-never-overworld-ore-geology.py" "${FOLIA_DIR}"',
+        'tune-never-overworld-ore-balance.py" "${FOLIA_DIR}"',
+        'relocate-never-overworld-ore-geology-surface.py" "${FOLIA_DIR}"',
+        'harden-never-overworld-flood-connectivity-r8.py" "${FOLIA_DIR}"',
+        'harden-never-overworld-frozen-surface-r8c.py" "${FOLIA_DIR}"',
+    ):
+        require(post_patches, marker, "NeverFolia post-patch pipeline")
+
+    for marker in (
+        'WORLDGEN_ID = "NR-DEV-1"',
+        'ROOT_FINGERPRINT_ENTRY = "neveroverworld-worldgen-fingerprint.json"',
+        'RESOURCE_FINGERPRINT_ENTRY = "data/neverfolia/neveroverworld/worldgen_fingerprint.json"',
+        'ALGORITHM = "sha256-path-and-content-v1"',
+    ):
+        require(fingerprint, marker, "NeverOverworld fingerprint tool")
+
+    for marker in (
+        "NeverOverworldFingerprintGuard",
+        "NR-DEV-1",
+        "neveroverworld-worldgen-fingerprint.json",
+        ".neverfolia-neveroverworld-worldgen.lock",
+    ):
+        require(guard, marker, "NeverOverworld fingerprint guard")
+
+    for marker in (
+        "BODY_SECTION_MIN = -32",
+        "BODY_SECTION_MAX = 31",
+        'ALGORITHM = "neveroverworld-generation-semantic-v1"',
+        '"minecraft:water[level>0]": "minecraft:air"',
+        '"minecraft:lava[level>0]": "minecraft:air"',
+    ):
+        require(hasher, marker, "NeverOverworld semantic hasher")
+
+    for marker in (
+        "# NeverOverworld — NR-DEV-1",
+        "Minimum build/generation Y: `-512`",
+        "Maximum build/generation Y: `511`",
+        "Flood plane: `Y=128`",
+        "large boundary-connected cavern fallback",
+        "`>=768` floodable",
+        "`>=48` horizontal chunk-boundary cells",
+        "`>=24` blocks of vertical",
+        "Valid generated structure starts are",
+        "SNOW_BLOCK",
+        "PACKED_ICE",
+        "BLUE_ICE",
+        "Diamond | `-496..-160`",
+        "Emerald | `-384..-96`",
+        "minecraft:deepslate_diamond_ore",
+        "minecraft:deepslate_emerald_ore",
+        "Predictive fast locate",
+        "strict chunk-order",
+        ".neverfolia-neveroverworld-worldgen.lock",
+    ):
+        require(doc, marker, "NeverOverworld specification")
+
+    dimension_height = re.search(r"^DIM_HEIGHT\s*=\s*(-?\d+)\s*$", builder, re.MULTILINE)
+    dimension_min = re.search(r"^DIM_MIN_Y\s*=\s*(-?\d+)\s*$", builder, re.MULTILINE)
+    if dimension_height is None or dimension_min is None:
+        fail("cannot parse immutable builder dimension constants")
+    min_y = int(dimension_min.group(1))
+    height = int(dimension_height.group(1))
+    if min_y + height - 1 != 511:
+        fail(f"builder dimension range drifted: min_y={min_y}, height={height}")
+
+    print("[NeverFolia][NeverOverworld spec] NR-DEV-1 CONTRACT OK")
+    print("  dimension: Y=-512..511 (1024)")
+    print("  upper: vanilla 26.2 from Y>=-64")
+    print("  aquifer: native lava branch disabled")
+    print("  ores: native chunk-owned geology + diamond/emerald balance v2 + persisted NBT gate")
+    print("  flood: primary surface-connected Y=128 + R8 giant boundary-cavern fallback")
+    print("  frozen surface: R8-C snow/ice remnants melt during drowned-column weathering")
+    print("  structures: native structures-v1 + R8 rock-mass hardening + predictive no-generation locate")
+    print("  fingerprint: independent NR-DEV-1 lock")
+
+
+if __name__ == "__main__":
+    main()

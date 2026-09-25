@@ -1,0 +1,43 @@
+name: NeverNether R14 Roof Observation Contracts
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths:
+      - 'qa/nevernether-r14/*.py'
+      - 'qa/nevernether-r14/NeverNetherRoofProbeR14.java'
+      - 'scripts/test-never-nether*roof*r14.py'
+      - '.github/workflows/never-nether-r14-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exact bounds, saved provenance and restart contracts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git archive --format=zip HEAD -o artifacts/source.zip
+          python3 -m pip install numpy==2.3.5
+          python3 scripts/test-never-nether-roof-probe-r14.py 2>&1 | tee artifacts/roof-probe-tests.log
+          python3 scripts/test-never-nether-saved-roof-r14.py 2>&1 | tee artifacts/saved-roof-tests.log
+          python3 scripts/test-never-nether-roof-restart-r14.py 2>&1 | tee artifacts/roof-restart-tests.log
+          python3 scripts/test-never-nether-height-pack-r14.py 2>&1 | tee artifacts/height-pack-tests.log
+          python3 scripts/test-never-nether-height-hooks-r14.py 2>&1 | tee artifacts/height-hooks-tests.log
+      - name: Scope and hashes
+        if: always()
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' 'Synthetic R14 observation/metadata/restart contracts and real Core builder resources. This job does not generate Minecraft worlds, test gameplay, or assert full generator readiness.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-r14-observation-contracts-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,203 @@
+name: NeverOverworld FIELD-R12 paired natural
+on:
+  push:
+    branches: [wip/neveroverworld-field-r12]
+    paths:
+      - 'native/neveroverworld/**'
+      - 'qa/neveroverworld-*/**'
+      - 'scripts/*never-overworld*.py'
+      - 'scripts/apply-neverfolia-post-patches*.sh'
+      - '!native/neveroverworld/field-r13/**'
+      - '!native/neveroverworld/field-r14/**'
+      - '!native/neveroverworld/field-r15/**'
+      - '!native/neveroverworld/field-r16/**'
+      - '!qa/field-r13-r16/**'
+      - '!qa/field-r14-r16/**'
+      - '!qa/field-r15-r16/**'
+      - '!qa/field-r16-r16/**'
+      - '!scripts/apply-never-overworld-field-r1[3-9].py'
+      - '!scripts/apply-never-overworld-field-r2*.py'
+      - '!scripts/apply-never-overworld-fixpack-r1[7-9].py'
+      - '!scripts/apply-never-overworld-fixpack-r2*.py'
+      - '!scripts/apply-never-overworld-external-*.py'
+      - '!scripts/build-never-overworld-external-structures-r19.py'
+      # This is a legacy R12 comparison gate. Modern R13-R22/R19 work is
+      # covered by never-worldgen-field-r13-r16.yml and the dedicated
+      # external-dungeon runtime QA, so do not launch another 20+ minute
+      # full-world comparison for those changes.
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  natural:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Validate observers and both production overrides
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/test-never-overworld-paired-r12.py 2>&1 | tee artifacts/paired-observer-tests.log
+          python3 scripts/apply-never-overworld-field-r12.py --self-test
+          python3 scripts/test-never-overworld-trees-villages-r1.py 2>&1 | tee artifacts/observer-tests.log
+          python3 scripts/test-never-overworld-final-villages-r1.py 2>&1 | tee artifacts/final-geometry-tests.log
+          python3 scripts/test-never-overworld-tree-village-bundle-r1.py 2>&1 | tee artifacts/bundle-tests.log
+          python3 scripts/preserve-never-overworld-trees-r1.py --self-test
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py --self-test
+          python3 scripts/test-never-overworld-field-r11.py
+      - name: Materialize exact candidate
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          python3 scripts/preserve-never-overworld-trees-r1.py .work/Folia --check-only
+          python3 scripts/remove-never-overworld-village-reclamation-r1.py .work/Folia --check-only
+      - name: Compile, smoke-test and build exact Paperclip
+        run: |
+          set -euo pipefail
+          cat > .work/tree-natural.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'tree-natural-qa')
+              def cp = server.sourceSets.main.runtimeClasspath
+              def compileQa = server.tasks.register('treeNaturalQaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source gradle.rootProject.files(
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r12/FieldPolicyR12Test.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r12/FieldR12Smoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-trees-r1/TreePreservationSmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r10/VillageFoundationSmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r11/FloodBoundarySmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/DesertR1Smoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/SandstormR1Smoke.java'))
+                  destinationDirectory = qaDir
+                  classpath = cp
+                  options.release = 25
+              }
+              [r12Policy:'net.minecraft.world.level.chunk.FieldPolicyR12Test',
+               r12Native:'net.minecraft.world.level.chunk.FieldR12Smoke',
+               r15Native:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke',
+               treeNativeSmoke:'net.minecraft.world.level.chunk.TreePreservationSmoke',
+               villageHelperSmoke:'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke',
+               boundaryNativeSmoke:'net.minecraft.world.level.chunk.FloodBoundarySmoke',
+               desertNativeSmoke:'net.minecraft.world.level.chunk.DesertR1Smoke',
+               sandstormNativeSmoke:'net.minecraft.server.level.SandstormR1Smoke'].each { taskName, className ->
+                  server.tasks.register(taskName, JavaExec) {
+                      dependsOn compileQa
+                      classpath = cp + server.files(qaDir)
+                      mainClass = className
+                      jvmArgs '-ea'
+                  }
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:r12Policy :folia-server:r12Native :folia-server:r15Native :folia-server:treeNativeSmoke :folia-server:villageHelperSmoke :folia-server:boundaryNativeSmoke :folia-server:desertNativeSmoke :folia-server:sandstormNativeSmoke :folia-server:createPaperclipJar -I ../tree-natural.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          libs=Path('.work/Folia/folia-server/build/libs')
+          jars=list(libs.glob('folia-paperclip-*.jar'))
+          if len(jars)!=1: raise ValueError(f'Expected exactly one Paperclip: {jars}')
+          shutil.copyfile(jars[0],'artifacts/server.jar')
+          bundles=[]
+          for jar in libs.glob('*.jar'):
+              with zipfile.ZipFile(jar) as z:
+                  if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                      bundles.append(jar)
+          if len(bundles)!=1: raise ValueError(f'Expected exactly one pack-input bundler: {bundles}')
+          shutil.copyfile(bundles[0],'artifacts/pack-input-bundler.jar')
+          PY
+      - name: Build and fingerprint matching Overworld pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+      - name: Build and verify matching R15 Nether pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-nether-core-test1-pack.py --output .work/NeverNether-R13.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R13.zip --inject
+          python3 scripts/build-never-nether-height-r14.py --input .work/NeverNether-R13.zip --output .work/NeverNether-R14.zip
+          python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output artifacts/NeverNether.zip
+          python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
+      - name: Obtain exact delivered 32c6df3 baseline without changing it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,io,os,urllib.request,urllib.error,urllib.parse,zipfile
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          request=urllib.request.Request('https://api.github.com/repos/username-alexandr/NeverFolia/actions/artifacts/10611756410/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          try:
+              with urllib.request.build_opener(NoRedirect).open(request,timeout=60) as response:
+                  raw=response.read(80000001)
+          except urllib.error.HTTPError as error:
+              if error.code!=302: raise
+              location=error.headers['Location']
+              if urllib.parse.urlsplit(location).scheme!='https': raise ValueError('insecure artifact redirect')
+              # Never forward the GitHub token to the signed blob URL.
+              with urllib.request.urlopen(location,timeout=60) as response: raw=response.read(80000001)
+          if hashlib.sha256(raw).hexdigest()!='38f6b569afca06dccfae42d1dd8b733397e08a942e8c54301addd652ee9302a5': raise ValueError('baseline artifact digest mismatch')
+          with zipfile.ZipFile(io.BytesIO(raw)) as outer:
+              names=outer.namelist()
+              if len(names)!=1 or not names[0].endswith('.zip'): raise ValueError('unexpected baseline artifact layout')
+              bundle=outer.read(names[0])
+          if hashlib.sha256(bundle).hexdigest()!='783f87732256f24f0b90c66d97aff04c78f4439dcb73524a211014eabfaf3f4a': raise ValueError('baseline bundle digest mismatch')
+          with zipfile.ZipFile(io.BytesIO(bundle)) as archive: jar=archive.read('server.jar')
+          if hashlib.sha256(jar).hexdigest()!='dfdbcffce9d4404bbb610828eb804db622ab410f94b37344293ce94d2349ce11': raise ValueError('baseline JAR digest mismatch')
+          Path('.work/baseline-32c6df3.jar').write_bytes(jar)
+          print('Pinned baseline verified; no fallback to a different revision')
+          PY
+      - name: Compare new worlds and verify dry mines after restart
+        run: |
+          set -euo pipefail
+          python3 scripts/probe-never-overworld-paired-r12.py --jar artifacts/server.jar --baseline-jar .work/baseline-32c6df3.jar --overworld artifacts/NeverOverworld.zip --nether artifacts/NeverNether.zip --output artifacts --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" 2>&1 | tee artifacts/paired-observer.log
+      - name: Publish manual FIELD-R12 test bundle including both packs
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-FIELD-R12-TEST-${{ github.sha }}
+          path: artifacts/NeverFolia-FIELD-R12-TEST-*.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record limited scope
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          printf '%s\n' 'FIELD-R12 paired natural sample. Only a completed report can permit a NEW-world manual bundle. One seed, two mine variants, native tree policy plus persisted census; no production/visual acceptance or existing-world repair.' > artifacts/SCOPE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-field-r12-paired-${{ github.sha }}
+          path: |
+            artifacts/*.json
+            artifacts/*.log
+            artifacts/*.txt
+          if-no-files-found: error
+          retention-days: 14

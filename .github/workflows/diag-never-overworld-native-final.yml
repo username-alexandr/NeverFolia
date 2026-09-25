@@ -1,0 +1,190 @@
+name: Gate NeverOverworld native final candidate
+
+on:
+  push:
+    branches:
+      - wip/never-overworld-native-final
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Native final contract validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+
+      - name: Validate NeverNether contract
+        run: python3 ./scripts/validate-never-nether-spec.py
+
+      - name: Validate NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Validate NeverOverworld structures contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
+      - name: Validate reserved NeverEnd contract
+        run: python3 ./scripts/validate-never-end-spec.py
+
+      - name: Self-test native geology
+        run: |
+          python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+          python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+          python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
+          python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
+          python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+      - name: Self-test native structure placement
+        run: |
+          python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+          python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+
+  runtime:
+    name: Native final Paperclip / smoke / determinism
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "NeverFolia CI"
+
+      - name: Prepare Folia 26.2.x upstream
+        run: |
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
+
+      - name: Apply Folia patches
+        run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply complete NeverFolia native post-patch chain
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect candidate JAR
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          test -n "${JAR}"
+          cp "${JAR}" artifacts/NeverFolia-native-final.jar
+
+      - name: Build and fingerprint NeverNether Core
+        run: |
+          python3 ./scripts/build-never-nether-core-test1-pack.py --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
+
+      - name: Build native-only NeverOverworld Core
+        run: |
+          set -euo pipefail
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar artifacts/NeverFolia-native-final.jar \
+            --output artifacts/NeverOverworld-Core-NR-DEV-1-native.zip
+          python3 ./scripts/promote-never-overworld-native-geology-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-native.zip
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-native.zip --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py \
+            --input artifacts/NeverOverworld-Core-NR-DEV-1-native.zip --verify
+
+      - name: Smoke test native-only NeverOverworld runtime
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh \
+            artifacts/NeverFolia-native-final.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native.zip
+
+      - name: Audit generated native ore geology
+        run: |
+          python3 ./scripts/audit-never-overworld-native-geology.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 256 \
+            --output artifacts/native-geology-audit.json
+
+      - name: Smoke test NeverOverworld fingerprint guard
+        run: |
+          chmod +x ./scripts/smoke-test-never-overworld-fingerprint.sh
+          ./scripts/smoke-test-never-overworld-fingerprint.sh \
+            artifacts/NeverFolia-native-final.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native.zip
+
+      - name: Smoke test combined NeverOverworld and NeverNether runtime
+        run: |
+          chmod +x ./scripts/smoke-test-neverfolia-test1-integration.sh
+          ./scripts/smoke-test-neverfolia-test1-integration.sh \
+            artifacts/NeverFolia-native-final.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native.zip \
+            artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+
+      - name: Verify NeverNether strict chunk-order determinism
+        run: |
+          chmod +x ./scripts/test-never-nether-generation-determinism.sh
+          ./scripts/test-never-nether-generation-determinism.sh \
+            artifacts/NeverFolia-native-final.jar \
+            artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+
+      - name: Verify NeverOverworld strict chunk-order determinism
+        run: |
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh \
+            artifacts/NeverFolia-native-final.jar \
+            artifacts/NeverOverworld-Core-NR-DEV-1-native.zip
+
+      - name: Generate checksums
+        if: success()
+        run: |
+          cd artifacts
+          sha256sum *.jar *.zip > SHA256SUMS.txt
+
+      - name: Upload native final candidate diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-native-final-${{ github.sha }}
+          path: |
+            artifacts/*.jar
+            artifacts/*.zip
+            artifacts/*.json
+            artifacts/SHA256SUMS.txt
+            overworld-smoke-test/server.log
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+            determinism-test/world-a-hash.json
+            determinism-test/world-b-hash.json
+            determinism-test/component-diff.json
+            determinism-test/world-a/server.log
+            determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14

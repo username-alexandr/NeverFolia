@@ -1,0 +1,64 @@
+name: NeverNether FIELD-R1 Regression
+
+on:
+  push:
+    branches: ['wip/nevernether-field-r1']
+    paths:
+      - 'scripts/**'
+      - 'native/nevernether/**'
+      - 'worldgen-spec/**'
+      - 'worldgen-sources/never-nether/manifest.json'
+      - 'docs/worldgen/never-nether-field-integrity-r1.md'
+      - '.github/workflows/never-nether-field-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Regression tests and existing source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          python3 -m py_compile scripts/audit-never-nether-field-integrity.py scripts/test-never-nether-field-integrity.py scripts/build-never-nether-core-test1-pack.py
+          python3 scripts/test-never-nether-field-integrity.py 2>&1 | tee artifacts/field-integrity-tests.log
+          python3 scripts/test-never-nether-source-inputs.py 2>&1 | tee artifacts/source-inputs-tests.log
+          python3 scripts/test-never-nether-source-r3.py 2>&1 | tee artifacts/source-r3-tests.log
+          python3 scripts/test-never-nether-recovery-r4.py 2>&1 | tee artifacts/recovery-r4-tests.log
+          python3 scripts/test-never-nether-monument-r5.py 2>&1 | tee artifacts/monument-r5-tests.log
+          python3 scripts/test-never-nether-startup-r5.py 2>&1 | tee artifacts/startup-r5-tests.log
+          python3 scripts/test-never-nether-dnt-r6.py 2>&1 | tee artifacts/dnt-r6-tests.log
+          python3 scripts/test-never-nether-worldgen-r7.py 2>&1 | tee artifacts/worldgen-r7-tests.log
+          python3 scripts/apply-never-nether-native-adapters-r4.py --self-test
+          {
+            python3 scripts/validate-never-nether-spec.py
+            python3 scripts/hash-never-nether-chunks.py --self-test
+            python3 scripts/diff-never-nether-chunks.py --self-test
+            python3 scripts/hash-never-nether-generation-chunks.py --self-test
+            python3 scripts/build-never-nether-test1-pack.py --self-test
+          } 2>&1 | tee artifacts/contracts-selftest.log
+      - name: Build candidate core only and verify fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK=artifacts/NeverNether-Core-NN-FIELD-R1-candidate.zip
+          python3 scripts/build-never-nether-core-test1-pack.py --output "$PACK"
+          python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --inject
+          python3 scripts/fingerprint-never-nether-pack.py --input "$PACK" --verify | tee artifacts/fingerprint-verification.log
+          cp docs/worldgen/never-nether-field-integrity-r1.md artifacts/CANDIDATE-NOTES.md
+          cp docs/worldgen/never-nether-source-intake-r6.md artifacts/SOURCE-INTAKE-NOTES.md
+          printf '%s\n' 'CANDIDATE ONLY: CI contains synthetic tests and Core, not the real third-party structure pack or full-world acceptance.' > artifacts/STATUS.txt
+          (cd artifacts && sha256sum *.zip *.txt *.md *.log > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverNether-field-integrity-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

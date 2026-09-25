@@ -1,0 +1,192 @@
+{
+  "schema": 1,
+  "audit": "nevernether-source-preflight-r2",
+  "status": "blocked",
+  "target_data_pack_format": [
+    107,
+    1
+  ],
+  "approved_custom_structure_count": 20,
+  "supplied_structure_definition_count": 8,
+  "structures_passing_source_dependency_preflight": 7,
+  "missing_sources": [
+    {
+      "key": "dungeons_and_taverns",
+      "filename": "Dungeons and Taverns v5.3.2.zip",
+      "structure_count": 12
+    }
+  ],
+  "excluded_inputs": [
+    {
+      "filename": "Amplified_Nether_v1.2.15.zip",
+      "sha256": "b7013fdf880afe85fb63e06d3edb47795272701463bd850a4500ac02d0b453aa",
+      "size_bytes": 105555,
+      "reason": "excluded_separate_terrain_generator"
+    },
+    {
+      "filename": "Repurposed_Structures-Better_Witch_Huts_v5.zip",
+      "sha256": "ca4ae83e5a777392d50154f4ef57d8cbd7a12cc190ed69fd2dd2a51437fd64ef",
+      "size_bytes": 64092,
+      "reason": "excluded_overworld_content"
+    },
+    {
+      "filename": "Repurposed_Structures-Better_Witch_Huts_v5 (1).zip",
+      "sha256": "ca4ae83e5a777392d50154f4ef57d8cbd7a12cc190ed69fd2dd2a51437fd64ef",
+      "size_bytes": 64092,
+      "reason": "excluded_overworld_content"
+    }
+  ],
+  "identical_duplicate_inputs": [
+    [
+      "Repurposed_Structures-Better_Witch_Huts_v5.zip",
+      "Repurposed_Structures-Better_Witch_Huts_v5 (1).zip"
+    ]
+  ],
+  "release_ready": false,
+  "runtime_validated": false,
+  "baseline_commit": "857f793f1752f78ac96e0f3b2d04f7526ab5daca",
+  "verification_scope": "Local real uploaded archives, not CI runtime tests. Only metadata is stored here.",
+  "sources": [
+    {
+      "key": "hearths",
+      "filename": "Hearths v1.0.5.dp.zip",
+      "sha256": "cf6877c2ffbdfba29d49452a90fdf6ab06b7e7e564b808abd2361976cddd6420",
+      "size_bytes": 152688,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "active_overlays": [
+        "f41",
+        "f61"
+      ],
+      "selected_counts": {
+        "structure": 12,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 8
+      },
+      "compatibility_changes": [],
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "source_dependency_preflight_passed": true
+    },
+    {
+      "key": "explorify",
+      "filename": "Explorify v1.6.5.dp.zip",
+      "sha256": "09dea87923b8dc021a6694f7c6487725b1a666e255e122bce55fdd2dc3377d4f",
+      "size_bytes": 766527,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "active_overlays": [
+        "f15",
+        "f41"
+      ],
+      "selected_counts": {
+        "structure": 15,
+        "tags/worldgen/biome": 1,
+        "worldgen/processor_list": 2,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 4
+      },
+      "compatibility_changes": [],
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "source_dependency_preflight_passed": true
+    },
+    {
+      "key": "structory_towers",
+      "filename": "Structory_Towers_v1.0.17.zip",
+      "sha256": "90af7fddea07973fef035b0c99213cc6b4c2baafeeb9c7f8a230b6e256687aa0",
+      "size_bytes": 488685,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "active_overlays": [
+        "1-21-5-overlay",
+        "1-21-11-overlay"
+      ],
+      "selected_counts": {
+        "loot_table": 11,
+        "structure": 4,
+        "tags/worldgen/biome": 2,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 6
+      },
+      "compatibility_changes": [
+        {
+          "resource": "data/structory_towers/worldgen/template_pool/waystones/waystone.json",
+          "policy": "empty_optional_mod_pool",
+          "reason": "optional Waystones mod content is not part of the native Folia server"
+        },
+        {
+          "resource": "data/structory_towers/worldgen/template_pool/waystones/fwaystone.json",
+          "policy": "empty_optional_mod_pool",
+          "reason": "optional Fabric Waystones mod content is not part of the native Folia server"
+        }
+      ],
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "source_dependency_preflight_passed": true
+    },
+    {
+      "key": "better_monuments",
+      "filename": "Repurposed_Structures-Better_Monuments_v7.zip",
+      "sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+      "size_bytes": 3008089,
+      "hash_status": "pinned_verified",
+      "archive_crc_verified": true,
+      "active_overlays": [],
+      "selected_counts": {
+        "structure": 45,
+        "worldgen/configured_feature": 2,
+        "worldgen/placed_feature": 2,
+        "worldgen/processor_list": 1,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 10
+      },
+      "compatibility_changes": [],
+      "missing_required_references": [
+        [
+          "loot_table",
+          "repurposed_structures:chests/monuments/nether",
+          "data/betteroceanmonuments/structure/nether/start.nbt"
+        ]
+      ],
+      "unsupported_or_review_required": [
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/maze_chamber_battle_rooms.json"
+        ],
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/parthenons.json"
+        ],
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/side_lower_chambers.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:noise_replace_with_properties_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:pillar_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:random_replace_with_properties_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:structure_void_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ]
+      ],
+      "source_dependency_preflight_passed": false
+    }
+  ]
+}

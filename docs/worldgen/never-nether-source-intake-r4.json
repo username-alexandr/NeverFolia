@@ -1,0 +1,201 @@
+{
+  "schema": 1,
+  "worldgen_id": "NN-DEV-1",
+  "status": "blocked",
+  "approved_custom_structure_count": 20,
+  "supplied_structure_definition_count": 20,
+  "structures_passing_source_dependency_preflight": 19,
+  "release_ready": false,
+  "runtime_validated": false,
+  "audit": "nevernether-source-preflight-r4",
+  "baseline_commit": "ea5e4656620a9c9db72c8f515ab1ef65c076840e",
+  "verification_scope": "Local supplied source ZIPs; not server worldgen; authored missing-template designs, not recovered upstream originals.",
+  "sources": [
+    {
+      "key": "hearths",
+      "sha256": "cf6877c2ffbdfba29d49452a90fdf6ab06b7e7e564b808abd2361976cddd6420",
+      "selected_counts": {
+        "structure": 12,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 8
+      },
+      "structures_passing_source_preflight": 3,
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "reconstructions": []
+    },
+    {
+      "key": "dungeons_and_taverns",
+      "sha256": "4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9",
+      "selected_counts": {
+        "enchantment": 22,
+        "function": 30,
+        "item_modifier": 1,
+        "loot_table": 151,
+        "predicate": 7,
+        "structure": 953,
+        "tags/block": 2,
+        "tags/damage_type": 2,
+        "tags/enchantment": 19,
+        "tags/entity_type": 1,
+        "tags/item": 2,
+        "tags/worldgen/biome": 3,
+        "trial_spawner": 46,
+        "worldgen/configured_feature": 12,
+        "worldgen/placed_feature": 12,
+        "worldgen/processor_list": 10,
+        "worldgen/structure": 12,
+        "worldgen/template_pool": 135
+      },
+      "structures_passing_source_preflight": 12,
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "reconstructions": [
+        {
+          "resource": "data/nova_structures/structure/donjon/coloseum_part/deco_14.nbt",
+          "policy": "authored_reconstruction_r4",
+          "sha256": "bce56ccf86863d2e3695b2552e33f1640dc9a4df55915eaa39bd49bf4fed5c22",
+          "size": [
+            4,
+            4,
+            4
+          ],
+          "blocks": 64,
+          "upstream_original": false,
+          "runtime_validated": false,
+          "natural_consumer": "source_attachment_contract"
+        },
+        {
+          "resource": "data/nova_structures/structure/donjon/coloseum_part/deco_15.nbt",
+          "policy": "authored_reconstruction_r4",
+          "sha256": "bb648b298e66c7f29e238290182623814ccabd4110d78f5eecd1ee84b92ce789",
+          "size": [
+            4,
+            4,
+            4
+          ],
+          "blocks": 64,
+          "upstream_original": false,
+          "runtime_validated": false,
+          "natural_consumer": "source_attachment_contract"
+        },
+        {
+          "resource": "data/nova_structures/structure/donjon/room/donjon_room_3x3x3_1.nbt",
+          "policy": "authored_reconstruction_r4",
+          "sha256": "4e07263eef8b04e1541a70b4eb7e5fb12d066b358ec3ab11471cac41202816a6",
+          "size": [
+            46,
+            21,
+            46
+          ],
+          "blocks": 44436,
+          "upstream_original": false,
+          "runtime_validated": false,
+          "natural_consumer": "not_present_in_supplied_frames"
+        },
+        {
+          "resource": "data/nova_structures/structure/piglin_outstation/main/piglin_outpost_outer_layer_foundation_1.nbt",
+          "policy": "authored_reconstruction_r4",
+          "sha256": "96e19b40da081f6f5258083b3e0f009294bb7421037a0f6926b3daa966500603",
+          "size": [
+            22,
+            42,
+            48
+          ],
+          "blocks": 44352,
+          "upstream_original": false,
+          "runtime_validated": false,
+          "natural_consumer": "source_attachment_contract"
+        }
+      ]
+    },
+    {
+      "key": "explorify",
+      "sha256": "09dea87923b8dc021a6694f7c6487725b1a666e255e122bce55fdd2dc3377d4f",
+      "selected_counts": {
+        "structure": 15,
+        "tags/worldgen/biome": 1,
+        "worldgen/processor_list": 2,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 4
+      },
+      "structures_passing_source_preflight": 1,
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "reconstructions": []
+    },
+    {
+      "key": "structory_towers",
+      "sha256": "90af7fddea07973fef035b0c99213cc6b4c2baafeeb9c7f8a230b6e256687aa0",
+      "selected_counts": {
+        "loot_table": 11,
+        "structure": 4,
+        "tags/worldgen/biome": 2,
+        "worldgen/structure": 3,
+        "worldgen/template_pool": 6
+      },
+      "structures_passing_source_preflight": 3,
+      "missing_required_references": [],
+      "unsupported_or_review_required": [],
+      "reconstructions": []
+    },
+    {
+      "key": "better_monuments",
+      "sha256": "c76cd5ab549974b051a352a633abd2f78a916acc40392bc53ba0581c3116a8c9",
+      "selected_counts": {
+        "structure": 45,
+        "worldgen/configured_feature": 2,
+        "worldgen/placed_feature": 2,
+        "worldgen/processor_list": 1,
+        "worldgen/structure": 1,
+        "worldgen/template_pool": 10
+      },
+      "structures_passing_source_preflight": 0,
+      "missing_required_references": [
+        [
+          "loot_table",
+          "repurposed_structures:chests/monuments/nether",
+          "data/betteroceanmonuments/structure/nether/start.nbt"
+        ]
+      ],
+      "unsupported_or_review_required": [
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/maze_chamber_battle_rooms.json"
+        ],
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/parthenons.json"
+        ],
+        [
+          "element_type",
+          "yungsapi:max_count_single_element",
+          "data/betteroceanmonuments/worldgen/template_pool/nether/side_lower_chambers.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:noise_replace_with_properties_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:pillar_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:random_replace_with_properties_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ],
+        [
+          "processor_type",
+          "repurposed_structures:structure_void_processor",
+          "data/betteroceanmonuments/worldgen/processor_list/nether/main.json"
+        ]
+      ],
+      "reconstructions": []
+    }
+  ]
+}

@@ -1,0 +1,202 @@
+# NeverNether terrain profile
+
+Branch: `feature/never-nether-worldgen`
+Status: approved openness + mega-cavern + secondary-cave + vertical-chasm + hanging-mass baseline; deep magma chambers pending
+Worldgen version: `NN-DEV-1`
+
+## Approved overall openness
+
+Profile: **BALANCED**, with the **Lower / Lava band intentionally more open** than the rest of the Nether.
+
+Generated Nether body: `Y=-128..383`.
+
+Approved overlapping vertical bands:
+- Deep Nether: `Y=-120..-32`
+- Lower / Lava: `Y=-32..96`
+- Main Nether: `Y=64..260`
+- Upper Nether: `Y=220..376`
+
+These are probabilistic terrain tendencies, not hard horizontal floors. Caverns, pillars, bridges and terrain masses may cross band boundaries.
+
+## Band character
+
+### Deep Nether — `Y=-120..-32`
+
+- Denser rock than the rest of the dimension.
+- Long tunnels and medium caverns are common enough for traversal.
+- Very large caverns exist but are comparatively rare.
+- Large enclosed magma chambers/deep lava basins may occur.
+- Basalt/blackstone-heavy geological character is preferred for later material tuning.
+- Terrain should never become an almost-solid unplayable slab; navigable connectivity remains required.
+
+### Lower / Lava — `Y=-32..96`
+
+- **Most open vertical band in NeverNether.**
+- Primary lava sea reference level remains `Y=32`.
+- Large open lava basins, cliffs, shelves, bridges, pillars and island-like masses are common.
+- Long sight lines and large cavern volumes are intentionally more frequent here.
+- The band is the main host for lava-sea landmarks such as the Nether Monument.
+- Open space must still be interrupted by substantial terrain masses so the dimension does not collapse into one continuous empty lava ocean.
+
+### Main Nether — `Y=64..260`
+
+- Balanced mixture of solid terrain and open caverns.
+- Main gameplay layer for forests, Nether Wastes, Soul Sand Valley and Basalt Deltas.
+- Supports tunnels, medium/large caverns, vertical shafts, bridges and terrain shelves.
+- Should preserve the recognizable spatial language of Amplified Nether while scaling it for the 512-block generated body.
+
+### Upper Nether — `Y=220..376`
+
+- Balanced-open character, but not as open as Lower/Lava.
+- More large ceiling caverns, hanging terrain masses, suspended shelves and natural bridges.
+- Vertical voids may connect downward into Main Nether.
+- Terrain density increases toward the upper bedrock roof so caves/features do not leak into the roof construction zone.
+
+## Mega-cavern profile — approved
+
+Mega-caverns are rare regional terrain volumes, not ordinary per-chunk caves.
+
+Target geometric range:
+- width: approximately **180–450 blocks**;
+- vertical height: approximately **90–220 blocks**;
+- longitudinal extent: approximately **300–900+ blocks**;
+- regional occurrence target: approximately **one major mega-cavern region per 900–1500 blocks**, before terrain-field rejection/merging.
+
+Placement character by vertical band:
+- **Lower / Lava:** highest mega-cavern probability; many successful regions may host major lava seas, large islands, cliffs and long sight lines.
+- **Main Nether:** moderate probability; large caverns should connect biome regions without making the entire band hollow.
+- **Upper Nether:** moderate-low probability; favor tall ceiling chambers, hanging masses and vertical connections.
+- **Deep Nether:** lowest probability; when present, caverns should feel exceptional and may contain magma chambers or deep lava basins.
+
+Mega-cavern generation rules:
+- Caverns are driven by low-frequency deterministic regional fields, never by shared mutable RNG.
+- A cavern may cross multiple vertical bands when its regional field supports it.
+- Adjacent mega-cavern candidates may blend into one coherent larger system, but must not create near-global continuous voids.
+- Cavern edges should transition through shelves, ridges, pillars and secondary chambers instead of abrupt spherical cutouts.
+- Bedrock protection gradients take priority near both lower and upper boundaries.
+- Mega-cavern classification must be sampleable mathematically for diagnostics and coarse structure validation without loading/generating neighboring chunks.
+
+## Secondary cave and tunnel profile — approved initial baseline
+
+These cave families connect dense terrain, ordinary biome spaces and mega-cavern regions. Values are initial gameplay/worldgen targets and may be tuned after DEV seed inspection without changing the overall design identity.
+
+### Small tunnels
+
+- typical width: **4–12 blocks**;
+- typical vertical height: **4–10 blocks**;
+- relatively common compared with larger cave families;
+- may branch and reconnect, but should avoid excessive spaghetti density;
+- most useful in Deep/Main terrain to preserve navigability through denser rock.
+
+### Medium caves
+
+- typical width: **15–45 blocks**;
+- typical vertical height: **10–30 blocks**;
+- typical longitudinal extent: **50–180 blocks**;
+- moderate frequency;
+- serve as transition chambers between tunnels and large cavern systems.
+
+### Large ordinary caverns
+
+- typical width: **45–120 blocks**;
+- typical vertical height: **25–70 blocks**;
+- typical longitudinal extent: **100–350 blocks**;
+- comparatively uncommon, clearly below mega-cavern frequency/scale;
+- may merge into regional mega-cavern edges but remain independently recognizable terrain features.
+
+### Band weighting
+
+- **Deep Nether:** higher tunnel density, moderate medium-cave density, low large-cavern density.
+- **Lower / Lava:** reduced tunnel emphasis; more of the available void budget goes to open basins, large ordinary caverns and mega-caverns.
+- **Main Nether:** balanced mix of all three secondary cave families.
+- **Upper Nether:** medium/large chambers preferred over dense tunnel networks, supporting hanging terrain and tall voids.
+
+### Connectivity and quality rules
+
+- Secondary caves should create usable traversal routes between major open spaces without guaranteeing universal connectivity.
+- Cave-carving fields must be deterministic and order-independent under Folia region execution.
+- Cave generation must not use neighbor chunk generation or post-hoc synchronous search to connect systems.
+- Near lower/upper bedrock boundaries, protection gradients override cave carving.
+- Secondary cave density is part of the terrain field, not a collection of independently random per-chunk spheres.
+
+## Vertical chasm profile — approved
+
+Vertical chasms are moderately rare landmark-scale voids that connect otherwise separated vertical play spaces. They must feel dramatic without appearing every few chunks.
+
+### Ordinary vertical chasm
+
+- typical width: **20–60 blocks**;
+- typical vertical extent: **80–220 blocks**;
+- may connect Upper to Main or Main to Lower/Lava;
+- may open into existing medium/large caverns instead of remaining a clean isolated shaft.
+
+### Large vertical chasm
+
+- typical width: **60–140 blocks**;
+- typical vertical extent: **180–400 blocks**;
+- distinctly rarer than ordinary chasms;
+- may connect Upper through Main into Lower/Lava;
+- exceptionally, a coherent chasm may extend toward Deep Nether if bedrock protection and regional density fields allow it.
+
+### Frequency and shape rules
+
+- Overall chasm frequency: **moderately rare**; they are navigation landmarks, not common chunk-scale carvers.
+- Main/Upper transitions are the primary host for ordinary chasms.
+- Main/Lower transitions are also common enough to expose lava seas and create dramatic drops.
+- Full-height or near-full-height chasms are exceptional events rather than normal generation.
+- Chasms should use irregular walls, ledges, natural bridges, side chambers and partial closures instead of smooth vertical cylinders.
+- Some chasms may terminate in lava basins, magma chambers or mega-caverns.
+- Natural bridge/ridge fields may cross chasms and provide occasional traversal opportunities.
+- Chasm carving is deterministic from regional low-frequency fields and must not require neighboring chunks to be generated first.
+- Bedrock protection gradients always override chasm carving near `Y=-128` and the upper roof boundary.
+
+## Hanging terrain masses and islands — approved
+
+Hanging masses are coherent suspended terrain bodies, shelves and island-like formations used primarily to give Main/Upper Nether strong vertical depth. They are terrain-field products, not isolated decorative structures.
+
+### Size classes
+
+- **Small hanging masses:** approximately **30–80 blocks** across.
+- **Medium hanging masses:** approximately **80–180 blocks** across.
+- **Large hanging islands:** approximately **180–350 blocks** across.
+- **Very large hanging islands:** up to approximately **500 blocks** across, intentionally rare landmark formations.
+
+### Band weighting
+
+- **Upper Nether:** highest frequency. Hanging shelves, inverted ridges, ceiling-attached masses and truly suspended islands are a defining terrain motif.
+- **Main Nether:** moderate frequency. Hanging masses should complement forests, cavern walls, bridges and vertical shafts without dominating normal traversal.
+- **Lower / Lava:** low frequency, mainly isolated islands and shelves over large lava basins/seas. These may serve as natural destinations or structure-supporting terrain when validation permits.
+- **Deep Nether:** almost absent. Any occurrence should be exceptional and tied to unusually large enclosed caverns rather than routine generation.
+
+### Shape and connectivity rules
+
+- Hanging terrain must not look like repeated spheres or copied floating-island templates.
+- Shapes should include asymmetric overhangs, tapered undersides, fractured shelves, attached arches, ridges and occasional thin natural bridges.
+- A mass may be fully suspended or partially attached to a wall/ceiling; both forms are valid.
+- Large and very large masses should commonly contain internal caves, ledges or traversable shelves rather than being solid featureless blobs.
+- Some Lower/Lava islands may rise from lava while visually reading as detached masses; strict geometric suspension is not required there.
+- Hanging-mass fields may interact with mega-caverns and chasms, but collision with bedrock protection zones and roof construction space is forbidden.
+- Structure placement may use a hanging mass only after terrain-volume and bounding-box validation; structures must not force-create an island synchronously.
+- Generation is deterministic from low-frequency terrain fields and remains independent of chunk generation order.
+
+## Global terrain rules
+
+- NeverNether must not be generated as four literal stacked terrain layers.
+- Large terrain features may span multiple vertical bands.
+- No global/shared mutable RNG is allowed; terrain sampling must be deterministic from seed, stable salts and coordinates.
+- Amplified Nether density/noise is the primary terrain reference, but its original 256-block vertical assumptions must be adapted rather than simply stretched by a factor of two.
+- The resulting terrain should preserve large-scale visual coherence: connected ridges, caverns, cliffs and terrain masses rather than independent noisy chunk-scale blobs.
+- Terrain generation must remain order-independent across Folia region/thread execution.
+- Upper terrain density and bedrock termination must prevent natural blocks/features from entering `Y=384..895`.
+
+## Performance requirements
+
+- Large-cavern, chasm and hanging-mass decisions must be obtainable from deterministic low-frequency fields and not require neighbor chunk generation.
+- Terrain candidate evaluation must avoid synchronous chunk generation.
+- Worldgen Inspector should eventually expose local openness/density classification, active terrain band, mega-cavern region id/classification, secondary cave family weighting, vertical-chasm classification and hanging-mass classification.
+- Generation behavior must degrade gracefully with 20–30 concurrent exploring/chunk-generating players.
+
+## Still pending
+
+- Deep magma chamber dimensions/frequency.
+- Exact density-function adaptation from Amplified Nether 256-block source to NeverNether 512-block generated body.

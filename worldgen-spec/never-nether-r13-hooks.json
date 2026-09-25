@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "base_commit": "6b1dbd4fb3b5e3a9e5c22e2f6a7ad9d1aef93af6",
+  "after": "exact remote R12, after R8/R9/remote R10/R11",
+  "generator_profile": "NN-R13-SUBSTRATE-1-RECONCILED-NATURAL",
+  "files": {
+    "net/minecraft/world/level/levelgen/placement/NeverNetherProposalR12.java": {
+      "sha256": "cac63fef74842a30a10a9d523183c6789df389b0a353fe41d65cd20b7259994a",
+      "replacements": [
+        {
+          "old": "return !(level instanceof Plan) && NeverNetherDecorationR8.inWorld(level);",
+          "new": "return NeverNetherNaturalPolicyR13.handles(level);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherFloraCandidateR8.java": {
+      "sha256": "606079f7c4b50cb513bc50928467751a01ec9a5c399176674f1ed92c972f405d",
+      "replacements": [
+        {
+          "old": "!NeverNetherDecorationR8.inWorld(context.getLevel())",
+          "new": "!NeverNetherNaturalPolicyR13.handles(context.getLevel())",
+          "count": 1
+        },
+        {
+          "old": "NeverNetherSubstrateR10.proposeBlock(actual,entry.getKey(),write.state(),write.flags(),write.limit());",
+          "new": "NeverNetherNaturalPolicyR13.proposeFlora(actual,entry.getKey(),write.state(),write.flags(),write.limit());",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherStorageR11.java": {
+      "sha256": "ad183efe1953ec05c8d749aa051c5132a171d6403da1143c8f22600a2d399ba6",
+      "replacements": [
+        {
+          "old": "NN-R12-SUBSTRATE-1-DECORATION-PROPOSALS",
+          "new": "NN-R13-SUBSTRATE-1-RECONCILED-NATURAL",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

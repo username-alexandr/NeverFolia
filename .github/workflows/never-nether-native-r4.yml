@@ -1,0 +1,114 @@
+name: NeverNether R6 Native Compile and Offline Runtime
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths:
+      - 'native/nevernether/**'
+      - 'scripts/apply-never-nether-native-adapters-r4.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/prepare-never-nether-noise-r5.py'
+      - '.github/workflows/never-nether-native-r4.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Pure quota regressions
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts .work/quota-tests
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          javac -d .work/quota-tests native/nevernether/java/net/minecraft/world/level/levelgen/structure/pools/NeverNetherPieceBudget.java native/nevernether/test/NeverNetherPieceBudgetTest.java
+          java -cp .work/quota-tests NeverNetherPieceBudgetTest | tee artifacts/budget-tests.log
+          javac -d .work/quota-tests native/nevernether/java/net/minecraft/world/level/levelgen/structure/templatesystem/NeverNetherPillarPlan.java native/nevernether/test/NeverNetherPillarPlanTest.java
+          java -cp .work/quota-tests NeverNetherPillarPlanTest | tee artifacts/pillar-plan-tests.log
+          python3 scripts/apply-never-nether-native-adapters-r4.py --self-test
+      - name: Compile on the inspected Folia 26.2 API and exercise codecs
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          bash scripts/prepare-upstream.sh
+          git -C .work/Folia rev-parse HEAD > artifacts/FOLIA-SHA.txt
+          test "$(cat artifacts/FOLIA-SHA.txt)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-transformers.log
+          python3 scripts/apply-never-nether-native-adapters-r4.py .work/Folia --include-smoke-test
+          cat > .work/native-smoke.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              server.tasks.register('neverNetherNativeSmoke', JavaExec) {
+                  dependsOn server.tasks.named('classes')
+                  classpath = server.sourceSets.main.runtimeClasspath
+                  mainClass = 'net.minecraft.world.level.levelgen.structure.pools.NeverNetherNativeSmoke'
+                  jvmArgs '-ea'
+              }
+          }
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              server.tasks.register('neverNetherDntSmoke', JavaExec) {
+                  dependsOn server.tasks.named('classes')
+                  classpath = server.sourceSets.main.runtimeClasspath
+                  mainClass = 'NeverNetherDntSmoke'
+                  jvmArgs '-ea'
+              }
+          }
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def runtimeClasspath = server.sourceSets.main.runtimeClasspath
+              def artifactDir = new File(gradle.rootProject.projectDir, '../../artifacts')
+              server.tasks.register('neverNetherOfflineRuntime') {
+                  dependsOn server.tasks.named('classes')
+                  inputs.files(runtimeClasspath)
+                  outputs.file(new File(artifactDir, 'NeverNether-R6-offline-runtime.zip'))
+                  doLast {
+                      def runtime = runtimeClasspath.files.findAll { it.exists() }.toList()
+                      artifactDir.mkdirs()
+                      def manifest = []
+                      new java.util.zip.ZipOutputStream(new FileOutputStream(new File(artifactDir, 'NeverNether-R6-offline-runtime.zip'))).withCloseable { zip ->
+                          runtime.eachWithIndex { f, i ->
+                              manifest.add("cp/${i}" + (f.isFile() ? "/${f.name}" : ''))
+                              def files = f.isFile() ? [f] : fileTree(f).files.sort { it.path }
+                              files.each { entry ->
+                                  def path = "cp/${i}/" + (f.isFile() ? f.name : f.toPath().relativize(entry.toPath()).toString())
+                                  zip.putNextEntry(new java.util.zip.ZipEntry(path))
+                                  entry.withInputStream { input -> input.transferTo(zip) }
+                                  zip.closeEntry()
+                              }
+                          }
+                          zip.putNextEntry(new java.util.zip.ZipEntry('classpath.txt'))
+                          zip.write((manifest.join('\n') + '\n').getBytes('UTF-8'))
+                          zip.closeEntry()
+                      }
+                  }
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverNetherOfflineRuntime -I ../native-smoke.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/native-compile.log
+          cp .work/nevernether-noise-r5/* artifacts/
+          tar --exclude='./jmods' --exclude='./include' --exclude='./lib/src.zip' -czf artifacts/Java25-offline-runtime.tar.gz -C "$JAVA_HOME" .
+          (cd .work/Folia && ./gradlew :folia-server:neverNetherNativeSmoke :folia-server:neverNetherDntSmoke -I ../native-smoke.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/native-compile-codec.log
+          printf '%s\n' 'PASS: native adapters compile and bootstrap/codec smoke passes on inspected Folia 26.2. Full NeverFolia production transformer chain included. No world generated by CI. Offline runtime exported for local real-source QA, not a release.' > artifacts/STATUS.txt
+      - name: Capture verification scope and checksums
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git ls-files native/nevernether | xargs sha256sum > artifacts/NATIVE-SOURCE-SHA256.txt
+          printf '%s\n' 'This job compiles full-chain R5 processors and R6 entity bridge, exercises codecs and pure planners, and exports a runtime. Source assets are not included; no world is generated by this job.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverNether-native-r6-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

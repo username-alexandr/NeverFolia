@@ -1,0 +1,77 @@
+name: NeverOverworld FIELD-R11 + DESERT-R1 API
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths: [.github/workflows/never-overworld-field-r11-desert-api.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Materialize exact current NeverFolia sources
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh > artifacts/production-chain.log 2>&1
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          root=Path('.work/Folia/folia-server/src/minecraft/java')
+          names=[
+            'net/minecraft/server/level/ServerPlayer.java',
+            'net/minecraft/server/level/ServerLevel.java',
+            'net/minecraft/world/entity/Entity.java',
+            'net/minecraft/world/entity/LivingEntity.java',
+            'net/minecraft/world/entity/player/Player.java',
+            'net/minecraft/world/level/biome/Biome.java',
+            'net/minecraft/tags/BiomeTags.java',
+            'net/minecraft/core/particles/ParticleTypes.java',
+            'net/minecraft/network/protocol/game/ClientboundLevelParticlesPacket.java',
+            'net/minecraft/world/phys/Vec3.java',
+            'net/minecraft/world/level/chunk/ChunkAccess.java',
+            'net/minecraft/world/level/chunk/ProtoChunk.java',
+            'net/minecraft/world/level/chunk/LevelChunk.java',
+            'net/minecraft/world/level/chunk/status/ChunkStatusTasks.java',
+            'net/minecraft/world/level/levelgen/Heightmap.java',
+            'net/minecraft/world/level/levelgen/structure/structures/OceanMonumentStructure.java',
+            'net/minecraft/world/level/levelgen/structure/structures/OceanMonumentPieces.java',
+            'net/minecraft/world/level/levelgen/structure/StructureStart.java',
+            'net/minecraft/world/level/chunk/NeverOverworldFlood.java'
+          ]
+          files=[]
+          for n in names:
+            p=root/n
+            if p.is_file(): files.append(p)
+          manifest={}
+          with zipfile.ZipFile('artifacts/api.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in files:
+              raw=p.read_bytes(); rel=p.relative_to(root).as_posix()
+              z.writestr(rel,raw); manifest[rel]=hashlib.sha256(raw).hexdigest()
+          Path('artifacts/API-SHA256.json').write_text(json.dumps(manifest,indent=2)+'\\n')
+          PY
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          printf '%s\\n' 'Inspection only; no behavior change or acceptance.' > artifacts/SCOPE.txt
+          (cd artifacts && sha256sum *.zip *.json *.txt *.log > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-field-r11-desert-api-${{ github.sha }}
+          path: artifacts/*
+          retention-days: 7
+          if-no-files-found: error

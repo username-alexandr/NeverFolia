@@ -1,0 +1,5 @@
+name: NN-DNT-R6-QA
+version: 0.1.0
+main: NeverNetherDntQaPlugin
+api-version: '26.2'
+folia-supported: true

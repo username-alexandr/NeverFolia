@@ -1,0 +1,138 @@
+name: NeverOverworld FIELD-R11 + DESERT-R1 Build
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'native/neveroverworld/field-r11/**'
+      - 'native/neveroverworld/desert-r1/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'qa/neveroverworld-field-r11/**'
+      - 'qa/neveroverworld-desert-r1/**'
+      - 'scripts/apply-never-overworld-field-r10.py'
+      - 'scripts/fix-never-overworld-field-r10-flora-neighborhood.py'
+      - 'scripts/apply-never-overworld-field-r11.py'
+      - 'scripts/apply-never-overworld-monument-r11.py'
+      - 'scripts/apply-never-overworld-desert-r1.py'
+      - 'scripts/never-overworld-sandstorm-window.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - '.github/workflows/never-overworld-field-r11-desert-r1.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Materialize and compile full candidate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/test-never-overworld-field-r11.py 2>&1 | tee artifacts/field-r11-python-tests.log
+          python3 scripts/never-overworld-sandstorm-window.py --self-test 2>&1 | tee artifacts/sandstorm-window-selftest.log
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          cat > .work/field-r11-desert.init.gradle <<'GROOVY'
+          gradle.projectsEvaluated {
+              def server = gradle.rootProject.project(':folia-server')
+              def qaDir = new File(gradle.rootProject.buildDir, 'field-r11-desert-qa')
+              def cp = server.sourceSets.main.runtimeClasspath
+              def compileQa = server.tasks.register('neverOverworldFieldR11DesertQaCompile', JavaCompile) {
+                  dependsOn server.tasks.named('classes')
+                  source gradle.rootProject.files(
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r10/VillageFoundationSmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-field-r11/FloodBoundarySmoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/DesertR1Smoke.java'),
+                      new File(gradle.rootProject.projectDir, '../../qa/neveroverworld-desert-r1/SandstormR1Smoke.java'))
+                  destinationDirectory = qaDir
+                  classpath = cp
+                  options.release = 25
+              }
+              server.tasks.register('neverOverworldVillageFoundationSmoke', JavaExec) {
+                  dependsOn compileQa; classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.levelgen.structure.VillageFoundationSmoke'; jvmArgs '-ea'
+              }
+              server.tasks.register('neverOverworldFieldR11Smoke', JavaExec) {
+                  dependsOn compileQa; classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.chunk.FloodBoundarySmoke'; jvmArgs '-ea'
+              }
+              server.tasks.register('neverOverworldDesertSmoke', JavaExec) {
+                  dependsOn compileQa; classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.world.level.chunk.DesertR1Smoke'; jvmArgs '-ea'
+              }
+              server.tasks.register('neverOverworldSandstormSmoke', JavaExec) {
+                  dependsOn compileQa; classpath = cp + server.files(qaDir)
+                  mainClass = 'net.minecraft.server.level.SandstormR1Smoke'; jvmArgs '-ea'
+              }
+          }
+          GROOVY
+          (cd .work/Folia && ./gradlew :folia-server:compileJava :folia-server:neverOverworldVillageFoundationSmoke :folia-server:neverOverworldFieldR11Smoke :folia-server:neverOverworldDesertSmoke :folia-server:neverOverworldSandstormSmoke :folia-server:createPaperclipJar -I ../field-r11-desert.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          python3 - <<'PY'
+          import hashlib,json,os,shutil,zipfile
+          from pathlib import Path
+          jars=list(Path('.work/Folia/folia-server/build/libs').glob('folia-paperclip-*.jar'))
+          if len(jars)!=1: raise ValueError(jars)
+          src=jars[0]
+          with zipfile.ZipFile(src) as z:
+            if z.testzip() is not None: raise ValueError('corrupt paperclip')
+          dst=Path('artifacts')/f"NeverFolia-NN-FIELD-R11-DESERT-R1-TEST-{os.environ['GITHUB_SHA'][:7]}.jar"
+          shutil.copyfile(src,dst)
+          Path('artifacts/BUILD-INFO.json').write_text(json.dumps({
+            'schema':1,'source_sha':os.environ['GITHUB_SHA'],'jar':dst.name,
+            'jar_sha256':hashlib.sha256(dst.read_bytes()).hexdigest(),
+            'seed':-2996952393010080672,
+            'field_r11':'shallow boundary flood continuity Y=-64..127',
+            'monument_base':'seaLevel-24 (NeverOverworld 128 -> 104)',
+            'desert_r1':'rare dry-terrain oases + flooded sandbar oases + jungle-log/leaves palms + deterministic wind sandstorms',
+            'natural_acceptance':{
+              'seed':-2996952393010080672,
+              'workflow_run':35383297726,
+              'production_sha':'f673a3332f453b74e0786c71029ba0837a4fd478',
+              'sampled_candidates_full':'17/17',
+              'verified_oasis_signatures':3,
+              'monument_piece_y':'104..126'
+            },
+            'overheating':False,
+            'sandstorm_movement_smoke':{
+              'against_wind_impulse':0.0060,
+              'cross_wind_impulse':0.0044,
+              'with_wind_impulse':0.0032,
+              'expected_order':'against > cross > with'
+            },
+            'release_ready':False,
+            'remaining_acceptance':'player-facing sandstorm visual particle-density acceptance'},indent=2)+'\n')
+          PY
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+      - name: Scope and checksums
+        if: always()
+        run: |
+          printf '%s\n' 'TEST CANDIDATE. Compile/smoke plus recorded natural acceptance: FIELD-R11 seam, DESERT-R1 persisted oasis signatures and raised monument are green on seed -2996952393010080672. Sandstorm movement response is covered by native smoke; only player-facing particle-density/visual acceptance remains separate.' > artifacts/SCOPE.txt
+          (cd artifacts && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-field-r11-desert-r1-${{ github.sha }}
+          path: artifacts/*
+          retention-days: 14
+          if-no-files-found: error

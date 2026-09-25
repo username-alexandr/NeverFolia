@@ -1,0 +1,252 @@
+name: NeverOverworld Village Natural Audit
+
+on:
+  push:
+    branches: [staging/neveroverworld-field-r11]
+    paths:
+      - 'native/neveroverworld/field-r10/**'
+      - 'qa/neveroverworld-field-r10/**'
+      - 'scripts/*village*.py'
+      - 'scripts/*village*.sh'
+      - 'scripts/apply-never-overworld-field-r10.py'
+      - 'qa/nevernether-r15/**'
+      - 'scripts/apply-never-nether-experiment-r15.py'
+      - 'scripts/apply-neverfolia-post-patches.sh'
+      - 'scripts/apply-neverfolia-post-patches-core.sh'
+      - '.github/workflows/never-overworld-village-natural.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  village-natural:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      JAVA_TOOL_OPTIONS: -Dneverfolia.debugVillageReclamation=true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Validate village QA harness
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/finalize-never-overworld-village-v17.py --self-test
+          python3 scripts/audit-never-overworld-village-persisted-bbox.py --self-test
+          bash -n scripts/probe-never-overworld-village-locate-r9-v2.sh
+          bash -n scripts/qa-never-overworld-village-v4-bbox.sh
+
+      - name: Build exact current candidate
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          test "$(git -C .work/Folia rev-parse HEAD)" = 14b7fee5c866fca9a40ede4a58998fb928140f65
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh 2>&1 | tee artifacts/production-chain.log
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "scripts/apply-never-nether-experiment-r${stage}.py" .work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
+          python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
+          (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace) > artifacts/build.log 2>&1
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          libs=Path('.work/Folia/folia-server/build/libs')
+          paperclips=list(libs.glob('folia-paperclip-*.jar'))
+          if len(paperclips)!=1:
+              raise ValueError(f'Expected one Paperclip, got {paperclips}')
+          shutil.copyfile(paperclips[0],'artifacts/server.jar')
+          bundlers=[]
+          for p in libs.glob('*.jar'):
+              try:
+                  with zipfile.ZipFile(p) as z:
+                      if any(n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar') for n in z.namelist()):
+                          bundlers.append(p)
+              except zipfile.BadZipFile:
+                  pass
+          if len(bundlers)!=1:
+              raise ValueError(f'Expected one Folia bundler pack input, got {bundlers}')
+          shutil.copyfile(bundlers[0],'artifacts/pack-input-bundler.jar')
+          PY
+
+      - name: Build matching NeverOverworld pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
+          python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
+          python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
+
+      - name: Locate and persist all five village variants
+        run: |
+          set -euo pipefail
+          chmod +x scripts/probe-never-overworld-village-locate-r9-v2.sh
+          ./scripts/probe-never-overworld-village-locate-r9-v2.sh artifacts/server.jar artifacts/NeverOverworld.zip
+
+      - name: Require reclamation activity
+        run: |
+          set -euo pipefail
+          grep -F '[NeverFolia][FIELD_VILLAGE_FOUNDATION]' overworld-village-locate-r9-v2-test/server.log
+          ! grep -Eqi 'FoliaWatchdogThread|has not responded in [0-9]' overworld-village-locate-r9-v2-test/server.log
+
+      - name: Audit legacy union bboxes for diagnostics
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/village
+          chmod +x scripts/qa-never-overworld-village-v4-bbox.sh
+          ./scripts/qa-never-overworld-village-v4-bbox.sh \
+            artifacts/server.jar \
+            artifacts/NeverOverworld.zip \
+            artifacts/village \
+            "${GITHUB_SHA}"
+
+      - name: Verify FIELD-R10 natural contract
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,re
+          from pathlib import Path
+
+          proof_path=Path('artifacts/village-locate-r9-v2-proof.json')
+          if not proof_path.is_file():
+              raise SystemExit('village locate/persisted-start proof missing')
+          proof=json.loads(proof_path.read_text())
+          direct=proof.get('direct_prediction_proofs',[])
+          if proof.get('status')!='ok' or len(direct)!=5:
+              raise SystemExit(f'locate/persisted-start proof invalid: {proof}')
+          if any(not row.get('persisted_start') for row in direct):
+              raise SystemExit(f'one or more direct village starts did not persist: {direct}')
+
+          log_path=Path('overworld-village-locate-r9-v2-test/server.log')
+          if not log_path.is_file():
+              raise SystemExit('village runtime log missing')
+          log=log_path.read_text(errors='replace')
+          if re.search(r'FoliaWatchdogThread|has not responded in [0-9]',log,re.I):
+              raise SystemExit('watchdog signature in village runtime log')
+
+          rows=[]
+          rx=re.compile(
+              r'structure=(\S+) chunk=(-?\d+),(-?\d+) '
+              r'eligible=(\d+) supported=(\d+) blocks=(\d+)'
+          )
+          for line in log.splitlines():
+              if '[NeverFolia][FIELD_VILLAGE_FOUNDATION]' not in line:
+                  continue
+              m=rx.search(line)
+              if m:
+                  rows.append({
+                      'structure':m.group(1),
+                      'chunk':[int(m.group(2)),int(m.group(3))],
+                      'eligible':int(m.group(4)),
+                      'supported':int(m.group(5)),
+                      'blocks':int(m.group(6)),
+                  })
+          if not rows:
+              raise SystemExit('no FIELD_VILLAGE_FOUNDATION diagnostics recorded')
+          supported=sum(row['supported'] for row in rows)
+          changed=sum(row['blocks'] for row in rows)
+          if supported<=0 or changed<=0:
+              raise SystemExit(
+                  f'no natural FIELD-R10 foundation writes: supported={supported} blocks={changed}'
+              )
+
+          legacy=[]
+          for p in sorted(Path('artifacts/village').glob('*-persisted-bbox.json')):
+              d=json.loads(p.read_text())
+              legacy.append({
+                  'variant':p.name.removesuffix('-persisted-bbox.json'),
+                  'bbox':d.get('bbox'),
+                  'samples':d.get('samples'),
+                  'missing':d.get('missing'),
+                  'water_samples':d.get('water_samples'),
+                  'water_fraction':(
+                      d.get('water_samples',0)/d.get('samples',1)
+                      if d.get('samples') else None
+                  ),
+              })
+
+          out={
+              'schema':2,
+              'source_sha':os.environ['GITHUB_SHA'],
+              'seed':'NeverOverworld-R9-Village-Locate-CI-1',
+              'locate_targets_checked':proof.get('targets_checked'),
+              'direct_village_starts_persisted':len(direct),
+              'missing_persisted_starts':proof.get('missing_persisted_starts',[]),
+              'foundation_debug_rows':len(rows),
+              'foundation_supported_columns':supported,
+              'foundation_changed_blocks':changed,
+              'legacy_union_bbox_reports':legacy,
+              'legacy_union_bbox_water_zero':bool(legacy) and all(
+                  item.get('water_samples')==0 and item.get('missing')==0 for item in legacy
+              ),
+              'legacy_union_bbox_water_is_diagnostic':True,
+              'field_r10_contract':'piece-occupied columns only; inter-piece union-bbox water is allowed',
+              'village_natural_diagnostic_pass':True,
+          }
+          Path('artifacts/village-natural-summary.json').write_text(
+              json.dumps(out,indent=2)+'\n'
+          )
+          print(json.dumps(out,indent=2))
+          PY
+
+      - name: Publish village summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          print('## NeverOverworld FIELD-R10 village natural diagnostic')
+          p=Path('artifacts/village-natural-summary.json')
+          if not p.is_file():
+              print()
+              print('Village summary was not produced.')
+              raise SystemExit(0)
+          d=json.loads(p.read_text())
+          print()
+          print(f"- Source SHA: **{d.get('source_sha')}**")
+          print(f"- Direct village starts persisted: **{d.get('direct_village_starts_persisted')}/5**")
+          print(f"- Foundation supported columns: **{d.get('foundation_supported_columns')}**")
+          print(f"- Foundation changed blocks: **{d.get('foundation_changed_blocks')}**")
+          print(f"- FIELD-R10 diagnostic pass: **{d.get('village_natural_diagnostic_pass')}**")
+          print(f"- Legacy union-bbox water=0: **{d.get('legacy_union_bbox_water_zero')}** (diagnostic only)")
+          for v in d.get('legacy_union_bbox_reports',[]):
+              print(
+                  f"- legacy {v['variant']}: bbox={v['bbox']}, "
+                  f"water={v['water_samples']}/{v['samples']}"
+              )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverOverworld-village-natural-${{ github.sha }}
+          path: |
+            artifacts/village/**/*
+            artifacts/village-natural-summary.json
+            artifacts/village-locate-r9-v2-proof.json
+            overworld-village-locate-r9-v2-test/*.log
+            village-v4-bbox-test/*.tsv
+            village-v4-bbox-test/server.log
+            artifacts/production-chain.log
+            artifacts/build.log
+          if-no-files-found: warn
+          retention-days: 14

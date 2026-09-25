@@ -8,6 +8,8 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'release/**'
+      - 'wip/neverfolia-test1-integration'
+      - 'wip/**-candidate'
   pull_request:
     branches:
       - main
@@ -17,17 +19,117 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-latest
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Java 25 / Gradle build
+    name: Java 25 / NeverFolia build
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150
 
     steps:
-      - name: Checkout repository
+      - name: Checkout NeverFolia repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Validate NeverNether worldgen specification
+        run: python3 ./scripts/validate-never-nether-spec.py
+
+      - name: Validate NeverOverworld worldgen specification
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Validate NeverOverworld native structures contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
+      - name: Validate reserved NeverEnd worldgen specification
+        run: python3 ./scripts/validate-never-end-spec.py
+
+      - name: Self-test NeverNether structure importer
+        run: python3 ./scripts/build-never-nether-structure-pack.py --self-test
+
+      - name: Self-test NeverNether chunk component diff
+        run: python3 ./scripts/diff-never-nether-chunks.py --self-test
+
+      - name: Self-test NeverNether Basalt Columns ownership transformer
+        run: python3 ./scripts/apply-never-nether-basalt-columns-ownership.py --self-test
+
+      - name: Self-test NeverNether NetherrackReplaceBlobs ownership transformer
+        run: python3 ./scripts/apply-never-nether-netherrack-blobs-ownership.py --self-test
+
+      - name: Self-test finalized NeverNether Core TEST1 pack
+        run: python3 ./scripts/build-never-nether-core-test1-pack.py --self-test
+
+      - name: Self-test semantic NeverNether generation hasher
+        run: python3 ./scripts/hash-never-nether-generation-chunks.py --self-test
+
+      - name: Self-test NeverOverworld Core builder
+        run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
+
+      - name: Self-test NeverOverworld native structure pack builder
+        run: python3 ./scripts/build-never-overworld-native-structures.py --self-test
+
+      - name: Self-test NeverOverworld structure type normalization
+        run: python3 ./scripts/normalize-never-overworld-structure-type.py --self-test
+
+      - name: Self-test NeverOverworld native Jigsaw placement resolver
+        run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+
+      - name: Self-test NeverOverworld ChunkPos 26.2 normalization
+        run: python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+
+      - name: Self-test NeverOverworld predictive fast locate
+        run: python3 ./scripts/apply-never-overworld-fast-locate.py --self-test
+
+      - name: Self-test NeverOverworld sculk worldgen ownership
+        run: python3 ./scripts/apply-never-overworld-sculk-ownership.py --self-test
+
+      - name: Self-test NeverOverworld vanilla resource-ore anchor normalization
+        run: python3 ./scripts/normalize-never-overworld-vanilla-ore-anchors.py --self-test
+
+      - name: Self-test NeverOverworld vanilla resource-ore write bounds
+        run: python3 ./scripts/apply-never-overworld-vanilla-ore-write-bounds.py --self-test
+
+      - name: Self-test NeverOverworld native deterministic ore geology
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld coal and emerald geology extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld deep diamond and emerald balance v2
+        run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like all-ore balance v3
+        run: python3 ./scripts/tune-never-overworld-ore-balance-v3.py --self-test
+
+      - name: Self-test NeverOverworld native geology NBT audit
+        run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+      - name: Self-test NeverOverworld true-vanilla ore balance audit
+        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like ore density gate
+        run: python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
+
+      - name: Self-test NeverOverworld geology SURFACE stage relocation
+        run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
+
+      - name: Self-test semantic NeverOverworld generation hasher
+        run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
+
+      - name: Self-test NeverOverworld Moonrise LIGHT flood hook
+        run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
+
+      - name: Self-test NeverOverworld native fluid picker
+        run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint tool
+        run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint guard
+        run: python3 ./scripts/apply-never-overworld-fingerprint-guard.py --self-test
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -43,48 +145,292 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "NeverFolia CI"
 
-      - name: Verify Gradle wrapper
-        shell: bash
+      - name: Prepare Folia 26.2.x upstream
         run: |
-          if [ ! -f ./gradlew ]; then
-            echo "Gradle wrapper is not present yet. Add the Folia/NeverFolia source tree before CI can produce a server JAR."
-            exit 1
-          fi
-          chmod +x ./gradlew
+          chmod +x ./scripts/prepare-upstream.sh
+          ./scripts/prepare-upstream.sh
 
-      - name: Apply Folia/NeverFolia patches
-        shell: bash
-        run: ./gradlew applyAllPatches --stacktrace
-
-      - name: Build NeverFolia
-        shell: bash
-        run: ./gradlew build --stacktrace
-
-      - name: Collect JARs
-        if: success()
-        shell: bash
+      - name: Apply Folia patches
         run: |
+          chmod +x ./scripts/apply-folia-patches-ci.sh
+          ./scripts/apply-folia-patches-ci.sh ./.work/Folia
+
+      - name: Apply NeverFolia post patches
+        run: |
+          chmod +x ./scripts/apply-neverfolia-post-patches.sh
+          ./scripts/apply-neverfolia-post-patches.sh
+
+      - name: Defer upper ore pruning to LIGHT barrier
+        run: |
+          set -euo pipefail
+          python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia
+          python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia --check-only
+
+      - name: Apply integrated NeverOverworld R22 + R19 fixpack
+        run: |
+          set -euo pipefail
+          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia
+          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
+
+      - name: Build runnable Paperclip JAR
+        working-directory: .work/Folia
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
+        run: ./gradlew :folia-server:createPaperclipJar --stacktrace
+
+      - name: Collect NeverFolia JAR
+        run: |
+          set -euo pipefail
+          source ./build.env
           mkdir -p artifacts
-          find . -type f -path '*/build/libs/*.jar' \
-            ! -name '*sources.jar' \
-            ! -name '*javadoc.jar' \
-            -exec cp {} artifacts/ \;
-
-          if ! find artifacts -maxdepth 1 -type f -name '*.jar' | grep -q .; then
-            echo "Build completed, but no runnable JAR was found in */build/libs."
+          JAR="$(find .work/Folia/folia-server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | head -n 1)"
+          if [ -z "${JAR}" ]; then
+            echo 'Runnable server JAR not found.'
             exit 1
           fi
+          OUT="artifacts/NeverFolia-${NEVERFOLIA_VERSION}-${GITHUB_SHA::7}.jar"
+          cp "${JAR}" "${OUT}"
+          {
+            echo "NeverFolia version: ${NEVERFOLIA_VERSION}"
+            echo "Git commit: ${GITHUB_SHA}"
+            echo "Folia ref: ${FOLIA_REF}"
+            echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
+            echo "Overworld core: NR-DEV-1 native-final + structures-v1 + external-structures-r19"
+            echo "Overworld mode: VANILLA_FLOODED"
+            echo "Overworld flood level: Y=128"
+            echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
+            echo "Overworld aquifer: native lava branch disabled"
+            echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; vanilla-like all-ore balance v3"
+            echo "Overworld vanilla resource ores: original 26.2 vertical anchors + original write bounds Y=-64..319"
+            echo "Overworld ore density validation: candidate-only true-vanilla 26.2 benchmark gate, 0.65..1.35x target, min 128 FULL chunks"
+            echo "Overworld structures: 8 native NeverFolia structures + R19 imported Overworld structures / dry-island surface admission"
+            echo "Overworld locate: predictive no-generation fast locate v1"
+            echo "Overworld sculk: chunk-owned worldgen spread"
+            echo "Nether worldgen: ${WORLDGEN_NETHER}"
+            echo "Nether test core: NN-DEV-1-core-test1"
+            echo "End worldgen: ${WORLDGEN_END}"
+            echo "End mode: NeverEnd reserved / vanilla-compatible fallback"
+          } > artifacts/BUILD-INFO.txt
 
+      - name: Upload compiled NeverFolia JAR early
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-compiled-${{ github.sha }}
+          path: |
+            artifacts/*.jar
+            artifacts/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build and fingerprint NeverNether core test datapack
+        run: |
+          python3 ./scripts/build-never-nether-core-test1-pack.py --output artifacts/NeverNether-Core-NN-DEV-1-test1.zip
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --inject
+          python3 ./scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether-Core-NN-DEV-1-test1.zip --verify
+
+      - name: Build and fingerprint NeverOverworld native core with structures
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1.zip"
+          python3 ./scripts/build-never-overworld-core-pack.py \
+            --server-jar "${JAR}" \
+            --output "${PACK}"
+          python3 ./scripts/build-never-overworld-native-structures.py \
+            --input "${PACK}"
+          python3 ./scripts/normalize-never-overworld-structure-type.py \
+            --input "${PACK}"
+          R19_PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1-r19.zip"
+          python3 ./scripts/build-never-overworld-external-structures-r19.py \
+            --input "${PACK}" \
+            --output "${R19_PACK}"
+          mv "${R19_PACK}" "${PACK}"
+          python3 ./qa/field-r19/validate-external-structures-pack.py \
+            --pack "${PACK}" \
+            --spec worldgen-spec/never-overworld-external-structures-r19.json \
+            --output artifacts/NeverOverworld-external-structures-r19-qa.json
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
+          python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
+
+      - name: Smoke test NeverNether runtime and fingerprint guard
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-nether-runtime.sh
+          ./scripts/smoke-test-never-nether-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Smoke test NeverOverworld flooded runtime
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-runtime.sh
+          ./scripts/smoke-test-never-overworld-runtime.sh "${JAR}" "${PACK}"
+
+      - name: Audit NeverOverworld persisted deep diamond and emerald geology
+        run: |
+          set -euo pipefail
+          python3 ./scripts/audit-never-overworld-native-geology.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --require diamond \
+            --require emerald \
+            --require-block minecraft:deepslate_diamond_ore \
+            --require-block minecraft:deepslate_emerald_ore \
+            --output artifacts/NeverOverworld-geology-audit.json
+
+      - name: Upload NeverOverworld geology diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-geology-${{ github.sha }}
+          path: artifacts/NeverOverworld-geology-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Force-decode and place all NeverOverworld structure templates
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-native-structures.sh
+          ./scripts/smoke-test-never-overworld-native-structures.sh "${JAR}" "${PACK}"
+
+      - name: Verify natural NeverOverworld structure_set placement writes real starts
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-natural-structures.sh
+          ./scripts/probe-never-overworld-natural-structures.sh "${JAR}" "${PACK}"
+
+      - name: Verify NeverOverworld fast locate creates zero chunks and predicts real start
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/probe-never-overworld-fast-locate.sh
+          ./scripts/probe-never-overworld-fast-locate.sh "${JAR}" "${PACK}"
+
+      - name: Smoke test NeverOverworld fingerprint guard
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-never-overworld-fingerprint.sh
+          ./scripts/smoke-test-never-overworld-fingerprint.sh "${JAR}" "${PACK}"
+
+      - name: Smoke test combined NeverOverworld + NeverNether TEST1 runtime
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          OVERWORLD_PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          NETHER_PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-neverfolia-test1-integration.sh
+          ./scripts/smoke-test-neverfolia-test1-integration.sh "${JAR}" "${OVERWORLD_PACK}" "${NETHER_PACK}"
+
+      - name: Verify NeverNether strict chunk-order generation determinism
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverNether-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/test-never-nether-generation-determinism.sh
+          ./scripts/test-never-nether-generation-determinism.sh "${JAR}" "${PACK}"
+
+      - name: Upload NeverNether determinism diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverNether-determinism-${{ github.sha }}
+          path: |
+            determinism-test/world-a-hash.json
+            determinism-test/world-b-hash.json
+            determinism-test/component-diff.json
+            determinism-test/world-a/server.log
+            determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Verify NeverOverworld strict chunk-order generation determinism
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          PACK="$(find artifacts -maxdepth 1 -type f -name 'NeverOverworld-Core-*.zip' | sort | head -n 1)"
+          chmod +x ./scripts/test-never-overworld-generation-determinism.sh
+          ./scripts/test-never-overworld-generation-determinism.sh "${JAR}" "${PACK}"
+
+      - name: Upload NeverOverworld determinism diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-determinism-${{ github.sha }}
+          path: |
+            overworld-determinism-test/world-a-hash.json
+            overworld-determinism-test/world-b-hash.json
+            overworld-determinism-test/component-diff.json
+            overworld-determinism-test/world-a/server.log
+            overworld-determinism-test/world-b/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Generate true vanilla 26.2 ore reference for candidate
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          JAR="$(find artifacts -maxdepth 1 -type f -name 'NeverFolia-*.jar' | sort | head -n 1)"
+          chmod +x ./scripts/smoke-test-vanilla-ore-reference.sh
+          ./scripts/smoke-test-vanilla-ore-reference.sh "${JAR}"
+
+      - name: Compare candidate deep density with true vanilla 26.2 FULL chunks
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          python3 ./scripts/audit-never-overworld-ore-balance.py \
+            --world overworld-smoke-test/world \
+            --vanilla-world vanilla-ore-reference-test/world \
+            --max-chunks 1024 \
+            --output artifacts/NeverOverworld-ore-balance-audit.json
+
+      - name: Enforce candidate vanilla-like deep ore density
+        if: ${{ endsWith(github.ref_name, '-candidate') }}
+        run: |
+          set -euo pipefail
+          python3 ./scripts/gate-never-overworld-vanilla-ore-density.py \
+            --world overworld-smoke-test/world \
+            --max-chunks 1024 \
+            --min-ratio 0.65 \
+            --max-ratio 1.35 \
+            --output artifacts/NeverOverworld-vanilla-like-ore-density.json
+
+      - name: Upload candidate ore density diagnostics
+        if: ${{ always() && endsWith(github.ref_name, '-candidate') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-ore-balance-${{ github.sha }}
+          path: |
+            artifacts/NeverOverworld-ore-balance-audit.json
+            artifacts/NeverOverworld-vanilla-like-ore-density.json
+            vanilla-ore-reference-test/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Generate artifact checksums
+        run: |
+          set -euo pipefail
           cd artifacts
-          sha256sum *.jar > SHA256SUMS.txt
+          sha256sum *.jar *.zip *.json > SHA256SUMS.txt
 
-      - name: Upload NeverFolia JAR artifact
-        if: success()
+      - name: Upload NeverFolia build artifact
         uses: actions/upload-artifact@v4
         with:
           name: NeverFolia-${{ github.sha }}
           path: |
             artifacts/*.jar
+            artifacts/*.zip
+            artifacts/*.json
             artifacts/SHA256SUMS.txt
+            artifacts/BUILD-INFO.txt
           if-no-files-found: error
           retention-days: 30

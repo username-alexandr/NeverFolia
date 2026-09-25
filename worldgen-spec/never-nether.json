@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "worldgen_version": "NN-DEV-1",
+  "dimension": {
+    "min_y": -128,
+    "height": 1024,
+    "generated_body": {
+      "min_y": -128,
+      "max_y": 383
+    },
+    "roof_construction_zone": {
+      "min_y": 384,
+      "max_y": 895
+    },
+    "primary_lava_level": 32,
+    "bedrock_profile": "vanilla_irregular"
+  },
+  "bands": {
+    "deep": {"min_y": -120, "max_y": -32, "openness": "dense"},
+    "lower_lava": {"min_y": -32, "max_y": 96, "openness": "most_open"},
+    "main": {"min_y": 64, "max_y": 260, "openness": "balanced"},
+    "upper": {"min_y": 220, "max_y": 376, "openness": "balanced_open"}
+  },
+  "mega_caverns": {
+    "width": [180, 450],
+    "height": [90, 220],
+    "length": [300, 900],
+    "length_can_exceed_max": true,
+    "regional_spacing": [900, 1500],
+    "band_weight": {
+      "deep": "lowest",
+      "lower_lava": "highest",
+      "main": "moderate",
+      "upper": "moderate_low"
+    }
+  },
+  "secondary_caves": {
+    "small_tunnel": {
+      "width": [4, 12],
+      "height": [4, 10]
+    },
+    "medium_cave": {
+      "width": [15, 45],
+      "height": [10, 30],
+      "length": [50, 180]
+    },
+    "large_cavern": {
+      "width": [45, 120],
+      "height": [25, 70],
+      "length": [100, 350]
+    }
+  },
+  "vertical_chasms": {
+    "ordinary": {
+      "width": [20, 60],
+      "height": [80, 220]
+    },
+    "large": {
+      "width": [60, 140],
+      "height": [180, 400]
+    },
+    "frequency": "moderately_rare"
+  },
+  "hanging_masses": {
+    "small": [30, 80],
+    "medium": [80, 180],
+    "large": [180, 350],
+    "very_large": [350, 500],
+    "very_large_frequency": "rare",
+    "band_weight": {
+      "deep": "almost_none",
+      "lower_lava": "low",
+      "main": "moderate",
+      "upper": "highest"
+    }
+  },
+  "magma_chambers": {
+    "ordinary": {
+      "width": [60, 140],
+      "height": [30, 80]
+    },
+    "large": {
+      "width": [140, 300],
+      "height": [60, 140]
+    },
+    "giant": {
+      "width": [300, 500],
+      "width_can_exceed_max": true,
+      "height": [100, 180],
+      "frequency": "rare"
+    },
+    "primary_band": "deep",
+    "secondary_band": "lower_lava"
+  },
+  "structure_density": {
+    "profile": "balanced",
+    "tier_a_distance": [1000, 1600],
+    "tier_b_distance": [500, 900],
+    "tier_c_distance": [250, 450],
+    "nether_monument_distance": [3000, 4000],
+    "nether_monument_requires_large_lava_body": true,
+    "small_structures_may_be_near_major": true,
+    "small_structures_may_overlap_major": false
+  },
+  "determinism": {
+    "shared_mutable_rng": false,
+    "neighbor_chunk_generation_for_decisions": false,
+    "order_independent": true
+  }
+}

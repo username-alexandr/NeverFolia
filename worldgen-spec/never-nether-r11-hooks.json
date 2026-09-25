@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "after": "exact remote R10 589efcd, after opt-in R8/R9",
+  "files": {
+    "net/minecraft/world/level/levelgen/placement/NeverNetherSubstrateR10.java": {
+      "sha256": "3a86194fc639d9a05914592dbd39309c9f059f012bf1429524d2a3a4611854e5",
+      "replacements": [
+        {
+          "old": "        private SectionData(LevelChunkSection source) { original = source.getStates().copy(); }",
+          "new": "        long r11Seed; int r11X,r11Y,r11Z; boolean r11Bound;\n        SectionData(PalettedContainer<BlockState> original) { this.original = original; }\n        private SectionData(LevelChunkSection source) { original = source.getStates().copy(); }",
+          "count": 1
+        },
+        {
+          "old": "            staged[i] = new SectionData(sections[i]);",
+          "new": "            staged[i] = new SectionData(sections[i]);\n            NeverNetherStorageR11.bind(staged[i],level.getSeed(),chunk.getPos().x(),chunk.getMinSectionY()+i,chunk.getPos().z());",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherFloraCandidateR8.java": {
+      "sha256": "ad4c63dae27b8f2c4677d934cf03662338e361b2ec2cab31402bea719981fc07",
+      "replacements": [
+        {
+          "old": "\"nether_sprouts\", \"twisting_vines\", \"weeping_vines\");",
+          "new": "\"nether_sprouts\", \"twisting_vines\", \"weeping_vines\", \"red_mushroom\", \"brown_mushroom\");",
+          "count": 1
+        },
+        {
+          "old": "        var configured=feature.feature().value();",
+          "new": "        if ((id.getPath().equals(\"red_mushroom\") || id.getPath().equals(\"brown_mushroom\")) && context.topFeature().isEmpty()) return false;\n        var configured=feature.feature().value();",
+          "count": 1
+        },
+        {
+          "old": "return configured.feature() instanceof net.minecraft.world.level.levelgen.feature.NetherForestVegetationFeature",
+          "new": "return configured.feature() instanceof net.minecraft.world.level.levelgen.feature.SimpleBlockFeature\n            || configured.feature() instanceof net.minecraft.world.level.levelgen.feature.NetherForestVegetationFeature",
+          "count": 1
+        },
+        {
+          "old": "WorldGenLevel actual=context.getLevel();",
+          "new": "WorldGenLevel actual=context.getLevel();\n        String configuredId=feature.feature().unwrapKey().orElseThrow().identifier().toString();\n        boolean naturalMushroom=context.topFeature().isPresent() && (configuredId.equals(\"minecraft:red_mushroom\") || configuredId.equals(\"minecraft:brown_mushroom\"));",
+          "count": 1
+        },
+        {
+          "old": "View sampling=new View(actual,random);",
+          "new": "View sampling=new View(actual,random,naturalMushroom);",
+          "count": 1
+        },
+        {
+          "old": "var planned=new View(actual,local);",
+          "new": "var planned=new View(actual,local,naturalMushroom);",
+          "count": 1
+        },
+        {
+          "old": "final RandomSource random;",
+          "new": "final RandomSource random;\n        final boolean snapshotReads;",
+          "count": 1
+        },
+        {
+          "old": "View(WorldGenLevel actual,RandomSource random) {",
+          "new": "View(WorldGenLevel actual,RandomSource random,boolean snapshotReads) {",
+          "count": 1
+        },
+        {
+          "old": "this.actual=actual;this.random=random;",
+          "new": "this.actual=actual;this.random=random;this.snapshotReads=snapshotReads;",
+          "count": 1
+        },
+        {
+          "old": "BlockState state=actual.getBlockState(p);",
+          "new": "BlockState state=snapshotReads?NeverNetherSubstrateR10.original(actual,p):actual.getBlockState(p);",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/levelgen/placement/NeverNetherDecorationR8.java": {
+      "sha256": "f2e25343b24ab9798ce4672c969c66503c265e507c182e1a134ea7ae203b3290",
+      "replacements": [
+        {
+          "old": "return state.is(Blocks.CRIMSON_STEM)",
+          "new": "return state.is(Blocks.RED_MUSHROOM) || state.is(Blocks.BROWN_MUSHROOM) || state.is(Blocks.CRIMSON_STEM)",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/chunk/LevelChunkSection.java": {
+      "sha256": "560a878cab1003c7c999899e6f5dfdc3e4f9e73edda399c3cf70ac4a932a1676",
+      "replacements": [
+        {
+          "old": "    public BlockState setBlockState(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {",
+          "new": "    public BlockState setBlockState(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {\n        var data = this.neverNetherR10Data;\n        if (data == null) return this.neverNetherR11Set(sectionX,sectionY,sectionZ,state,checkThreading);\n        synchronized (data) { return this.neverNetherR11Set(sectionX,sectionY,sectionZ,state,checkThreading); }\n    }\n\n    private BlockState neverNetherR11Set(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {",
+          "count": 1
+        },
+        {
+          "old": "    public LevelChunkSection copy() {\n        return new LevelChunkSection(this);\n    }",
+          "new": "    public LevelChunkSection copy() {\n        var data = this.neverNetherR10Data;\n        if (data == null) return new LevelChunkSection(this);\n        synchronized (data) {\n            var copied = new LevelChunkSection(this);\n            copied.neverNetherR10Data = net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.copy(data);\n            return copied;\n        }\n    }",
+          "count": 1
+        }
+      ]
+    },
+    "net/minecraft/world/level/chunk/storage/SerializableChunkData.java": {
+      "sha256": "eba8b917d83c7a891788a18ad633f36f7f96ceb96b414d6f6eef631ad351c8de",
+      "replacements": [
+        {
+          "old": "        ListTag sectionTags = chunkData.getListOrEmpty(\"sections\");",
+          "new": "        net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.validateSectionTags(serverLevel, chunkData, status);\n        ListTag sectionTags = chunkData.getListOrEmpty(\"sections\");",
+          "count": 1
+        },
+        {
+          "old": "                    section = new LevelChunkSection(blocks, biomes);",
+          "new": "                    section = new LevelChunkSection(blocks, biomes);\n                    net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.readSection(section,sectionTag,chunkPos,y);",
+          "count": 1
+        },
+        {
+          "old": "        ChunkType chunkType = this.chunkStatus.getChunkType();",
+          "new": "        net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.validateWorld(level,sections,this.chunkStatus,pos);\n        ChunkType chunkType = this.chunkStatus.getChunkType();",
+          "count": 1
+        },
+        {
+          "old": "        final LevelChunkSection[] chunkSections = chunk.getSections();",
+          "new": "        final LevelChunkSection[] chunkSections = chunk.getSections();\n        net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.validateWorld(level,chunkSections,chunk.getPersistedStatus(),chunk.getPos());",
+          "count": 1
+        },
+        {
+          "old": "                sectionTag.store(\"biomes\", biomeCodec, chunkSection.getBiomes());",
+          "new": "                sectionTag.store(\"biomes\", biomeCodec, chunkSection.getBiomes());\n                net.minecraft.world.level.levelgen.placement.NeverNetherStorageR11.writeSection(chunkSection,sectionTag,this.chunkPos,section.y);",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

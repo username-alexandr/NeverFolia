@@ -1,0 +1,35 @@
+name: NeverOverworld Field Toolchain
+on:
+  push:
+    branches: [wip/nevernether-field-r1]
+    paths: [.github/workflows/never-overworld-field-jdk.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Preserve exact development toolchain and source identity
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          java -version 2> artifacts/java-version.txt
+          javac -version > artifacts/javac-version.txt
+          git rev-parse HEAD > artifacts/SOURCE-SHA.txt
+          git archive --format=zip HEAD -o artifacts/source.zip
+          tar -C "$JAVA_HOME" -czf artifacts/java25-development.tar.gz .
+          printf '%s\n' 'Development toolchain only for isolated local QA. Not NeverFolia, not a gameplay test, and not included in a user server bundle. No generator behavior changed.' > artifacts/SCOPE.txt
+          (cd artifacts && sha256sum *.txt *.zip *.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverOverworld-field-toolchain-${{ github.sha }}
+          path: artifacts/*
+          retention-days: 1
+          if-no-files-found: error

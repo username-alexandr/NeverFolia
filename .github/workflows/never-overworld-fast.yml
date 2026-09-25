@@ -1,0 +1,192 @@
+name: Validate NeverOverworld
+
+on:
+  push:
+    branches:
+      - develop
+      - feature/never-overworld-worldgen
+      - 'wip/**'
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: NR-DEV-1 fast validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout NeverFolia repository
+        uses: actions/checkout@v6
+
+      - name: Validate NeverOverworld contract
+        run: python3 ./scripts/validate-never-overworld-spec.py
+
+      - name: Validate NeverOverworld native structures contract
+        run: python3 ./scripts/validate-never-overworld-structures-spec.py
+
+      - name: Validate reserved NeverEnd contract
+        run: python3 ./scripts/validate-never-end-spec.py
+
+      - name: Self-test NeverOverworld Core builder
+        run: python3 ./scripts/build-never-overworld-core-pack.py --self-test
+
+      - name: Self-test NeverOverworld field-r1 pack refinement
+        run: python3 ./scripts/refine-never-overworld-field-r1-pack.py --self-test
+
+      - name: Self-test NeverOverworld flooded surface structure policy
+        run: python3 ./scripts/apply-never-overworld-flooded-surface-structure-policy.py --self-test
+
+      - name: Self-test NeverOverworld flooded vanilla fast locate
+        run: python3 ./scripts/apply-never-overworld-vanilla-fast-locate.py --self-test
+
+      - name: Self-test NeverOverworld flooded vanilla fast-locate scope
+        run: python3 ./scripts/harden-never-overworld-vanilla-fast-locate-scope.py --self-test
+
+      - name: Self-test NeverOverworld flooded vanilla preliminary-surface locate
+        run: python3 ./scripts/optimize-never-overworld-vanilla-fast-locate.py --self-test
+
+      - name: Self-test NeverOverworld flooded vanilla surface-biome locate
+        run: python3 ./scripts/align-never-overworld-vanilla-fast-locate-biome-y.py --self-test
+
+      - name: Self-test NeverOverworld flooded vanilla structure availability
+        run: python3 ./scripts/tune-never-overworld-flooded-structure-availability.py --self-test
+
+      - name: Self-test NeverOverworld bounded flooded vanilla locate policy
+        run: python3 ./scripts/optimize-never-overworld-vanilla-fast-locate-policy.py --self-test
+
+      - name: Self-test NeverOverworld dense 5x5 village envelope
+        run: python3 ./scripts/apply-never-overworld-dense-village-dry-envelope.py --self-test
+
+      - name: Self-test NeverOverworld historical dense village radius32 candidate
+        run: python3 ./scripts/tune-never-overworld-dense-village-radius32.py --self-test
+
+      - name: Self-test NeverOverworld bbox-sized village reach96 safety
+        run: python3 ./scripts/tune-never-overworld-village-reach96.py --self-test
+
+      - name: Self-test NeverOverworld opt-in village locate diagnostics
+        run: python3 ./scripts/instrument-never-overworld-village-locate-debug.py --self-test
+
+      - name: Self-test NeverOverworld generated Jigsaw bbox village safety
+        run: python3 ./scripts/apply-never-overworld-village-layout-safety.py --self-test
+
+      - name: Self-test NeverOverworld mineshaft depth policy
+        run: python3 ./scripts/apply-never-overworld-mineshaft-depth-policy.py --self-test
+
+      - name: Self-test NeverOverworld swamp hut waterline policy
+        run: python3 ./scripts/apply-never-overworld-swamp-hut-waterline.py --self-test
+
+      - name: Self-test NeverFolia profiler XYZ compatibility
+        run: python3 ./scripts/apply-neverfolia-profiler-xyz.py --self-test
+
+      - name: Self-test NeverOverworld external dungeon pack QA
+        run: python3 ./qa/field-r19/validate-external-structures-pack.py --self-test
+
+      - name: Self-test NeverOverworld Witch ZIP/NBT audit
+        run: python3 ./qa/field-r19/audit-witch-source-nbt.py --self-test
+
+      - name: Self-test NeverOverworld external dungeon runtime QA
+        run: python3 ./qa/field-r19/probe-external-structures-runtime.py --self-test
+
+      - name: Self-test NeverOverworld R19 external fast locate
+        run: python3 ./scripts/apply-never-overworld-external-fast-locate-r19.py --self-test
+
+      - name: Self-test NeverOverworld external structure policy R19
+        run: |
+          python3 -m py_compile ./scripts/apply-never-overworld-external-structure-policy-r19.py
+          python3 ./scripts/apply-never-overworld-external-structure-policy-r19.py --self-test
+
+      - name: Self-test NeverOverworld FIELD-R22 seam reconciliation
+        run: python3 ./scripts/apply-never-overworld-field-r22.py --self-test
+
+      - name: Self-test NeverOverworld semantic hasher
+        run: python3 ./scripts/hash-never-overworld-generation-chunks.py --self-test
+
+      - name: Self-test NeverOverworld semantic component diff
+        run: python3 ./scripts/diff-never-overworld-chunks.py --self-test
+
+      - name: Self-test NeverOverworld cave topology diagnostics
+        run: python3 ./scripts/audit-never-overworld-cave-topology.py --self-test
+
+      - name: Self-test NeverOverworld Moonrise LIGHT flood hook
+        run: python3 ./scripts/apply-never-overworld-moonrise-light-flood-hook.py --self-test
+
+      - name: Self-test NeverOverworld deterministic floodable-volume semantics
+        run: python3 ./scripts/apply-never-overworld-floodable-volume.py --self-test
+
+      - name: Self-test NeverOverworld flooded ecology cleanup
+        run: python3 ./scripts/harden-never-overworld-flood-ecology.py --self-test
+
+      - name: Self-test NeverOverworld drowned surface NBT audit
+        run: python3 ./scripts/audit-never-overworld-drowned-surface.py --self-test
+
+      - name: Self-test NeverOverworld shoreline flora relocation
+        run: python3 ./scripts/adapt-never-overworld-flood-shoreline-flora.py --self-test
+
+      - name: Self-test NeverOverworld shoreline sugar-cane substrate support
+        run: python3 ./scripts/fix-never-overworld-shoreline-sugar-cane.py --self-test
+
+      - name: Self-test NeverOverworld sparse raised shoreline cane bank
+        run: python3 ./scripts/ensure-never-overworld-shoreline-cane-bank.py --self-test
+
+      - name: Self-test NeverOverworld LIGHT flood activation instrumentation
+        run: python3 ./scripts/instrument-never-overworld-flood-debug.py --self-test
+
+      - name: Self-test NeverOverworld native fluid picker
+        run: python3 ./scripts/apply-never-overworld-fluid-picker.py --self-test
+
+      - name: Self-test NeverOverworld native generated-fluid feature filter
+        run: python3 ./scripts/apply-never-overworld-fluid-feature-filter.py --self-test
+
+      - name: Self-test NeverOverworld SeagrassFeature chunk ownership
+        run: python3 ./scripts/apply-never-overworld-seagrass-ownership.py --self-test
+
+      - name: Self-test NeverOverworld vanilla resource-ore anchor normalization
+        run: python3 ./scripts/normalize-never-overworld-vanilla-ore-anchors.py --self-test
+
+      - name: Self-test NeverOverworld vanilla resource-ore write bounds
+        run: python3 ./scripts/apply-never-overworld-vanilla-ore-write-bounds.py --self-test
+
+      - name: Self-test NeverOverworld native deterministic ore geology
+        run: python3 ./scripts/apply-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld coal and emerald geology extension
+        run: python3 ./scripts/extend-never-overworld-ore-geology.py --self-test
+
+      - name: Self-test NeverOverworld deep diamond and emerald balance v2
+        run: python3 ./scripts/tune-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like all-ore balance v3
+        run: python3 ./scripts/tune-never-overworld-ore-balance-v3.py --self-test
+
+      - name: Self-test NeverOverworld geology SURFACE stage relocation
+        run: python3 ./scripts/relocate-never-overworld-ore-geology-surface.py --self-test
+
+      - name: Self-test NeverOverworld native-only Core pack promotion
+        run: python3 ./scripts/promote-never-overworld-native-geology-pack.py --self-test
+
+      - name: Self-test NeverOverworld native geology NBT audit
+        run: python3 ./scripts/audit-never-overworld-native-geology.py --self-test
+
+      - name: Self-test NeverOverworld true-vanilla ore balance audit
+        run: python3 ./scripts/audit-never-overworld-ore-balance.py --self-test
+
+      - name: Self-test NeverOverworld vanilla-like ore density gate
+        run: python3 ./scripts/gate-never-overworld-vanilla-ore-density.py --self-test
+
+      - name: Self-test NeverOverworld native Jigsaw placement resolver
+        run: python3 ./scripts/apply-never-overworld-placement-hook.py --self-test
+
+      - name: Self-test NeverOverworld ChunkPos 26.2 normalization
+        run: python3 ./scripts/normalize-never-overworld-placement-chunkpos-api.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint tool
+        run: python3 ./scripts/fingerprint-never-overworld-pack.py --self-test
+
+      - name: Self-test NeverOverworld fingerprint guard
+        run: python3 ./scripts/apply-never-overworld-fingerprint-guard.py --self-test
