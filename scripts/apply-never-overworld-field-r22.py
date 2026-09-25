@@ -395,6 +395,8 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
             chunk.getPos().getMinBlockZ() + localZ
         );
         if (!traversable(chunk, pos)) return false;
+        if (y <= DEEP_FLOW_MAX_Y
+            && !hydraulicOpenCache(chunks, regionX, y, regionZ, adjacent)) return false;
 
         // traversable() already checks lava inside one chunk. These four tests
         // close the missing cross-chunk part of the lava barrier.
@@ -403,6 +405,35 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
         if (localZ == 0 && lavaAtCache(chunks, regionX, y, regionZ - 1, adjacent)) return false;
         if (localZ == 15 && lavaAtCache(chunks, regionX, y, regionZ + 1, adjacent)) return false;
         return true;
+    }
+
+    private static boolean hydraulicOpenCache(
+        final ChunkAccess[] chunks,
+        final int regionX,
+        final int y,
+        final int regionZ,
+        final BlockPos.MutableBlockPos probe
+    ) {
+        if (y > DEEP_FLOW_MAX_Y) return true;
+        int open = 0;
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                final int x = regionX + dx;
+                final int z = regionZ + dz;
+                if (x < 0 || x >= CACHE_BLOCK_WIDTH || z < 0 || z >= CACHE_BLOCK_WIDTH) continue;
+                final int tileX = x >> 4;
+                final int tileZ = z >> 4;
+                final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+                if (chunk == null) continue;
+                probe.set(
+                    chunk.getPos().getMinBlockX() + (x & 15),
+                    y,
+                    chunk.getPos().getMinBlockZ() + (z & 15)
+                );
+                if (traversable(chunk, probe) && ++open >= MIN_DEEP_APERTURE) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean lavaAtCache(
@@ -540,6 +571,9 @@ def verify(folia: Path) -> None:
         "CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16",
         "enqueueCache",
         "traversableCache",
+        "hydraulicOpenCache",
+        "DEEP_FLOW_MAX_Y",
+        "MIN_DEEP_APERTURE",
         "lavaAtCache",
         "cacheExact=true",
     ):
@@ -625,6 +659,12 @@ class X {
         "SELF-TEST exact-cache helper body missing",
     )
     require(
+        "hydraulicOpenCache" in reconcile_out
+        and "MIN_DEEP_APERTURE" in reconcile_out
+        and "DEEP_FLOW_MAX_Y" in reconcile_out,
+        "SELF-TEST deep hydraulic cache gate missing",
+    )
+    require(
         "publishFeatureBoundarySeeds" in reconcile_out
         and "takeFeatureBoundarySeeds" in reconcile_out,
         "SELF-TEST feature-boundary handoff helper missing",
@@ -686,7 +726,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R23] installed: FEATURES border handoff + native LIGHT exact connectivity; proximity flood disabled")
+    print("[FIELD-R24] installed: FEATURES handoff + deep-aperture hydraulic gate; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
