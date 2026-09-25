@@ -61,9 +61,12 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
  * Watchdog-safe predictive locate for FIELD-R19 external island structures.
  *
  * <p>Natural generation has the authoritative actual-piece dry-island gate.
- * Locate intentionally uses a cheaper 3x3 preliminary-surface approximation so
- * the Folia global region never performs Structure#generate or synchronous
- * chunk loads. A strict global density-probe budget bounds worst-case latency.</p>
+ * Locate intentionally uses the dry centre plus four nearby cardinal probes.
+ * Using the full policy radius here caused false negatives for large structures
+ * such as Better Monuments: the radius is a policy envelope, not an exact piece
+ * footprint. The Folia global region therefore never performs Structure#generate
+ * or synchronous chunk loads, while natural generation remains the final
+ * terrain-safety authority.</p>
  */
 final class NeverOverworldExternalFastLocateR19 {
     private static final int EXPECTED_MIN_Y=-512;
@@ -71,7 +74,7 @@ final class NeverOverworldExternalFastLocateR19 {
     private static final int MIN_DRY_SURFACE_Y=129;
     private static final int MAX_CANDIDATE_RINGS=16;
     private static final int MAX_SURFACE_PROBES=512;
-    private static final int LOCATE_RADIUS_CAP=64;
+    private static final int LOCATE_PROBE_RADIUS=16;
 
     private NeverOverworldExternalFastLocateR19(){}
 
@@ -257,16 +260,21 @@ final class NeverOverworldExternalFastLocateR19 {
         }
         if(centerSurface<MIN_DRY_SURFACE_Y) return false;
 
-        // Exact generated-piece safety is authoritative. Locate only rejects
-        // obvious wet candidates with 8 extra probes, capped to 64 blocks.
-        final int probeRadius=Math.max(16,Math.min(radius,LOCATE_RADIUS_CAP));
-        final int[] offsets={-probeRadius,0,probeRadius};
-        for(final int dx:offsets){
-            for(final int dz:offsets){
-                if(dx==0&&dz==0) continue;
-                if(preliminarySurfaceY(state,centerX+dx,centerZ+dz,surfaceBudget)<MIN_DRY_SURFACE_Y){
-                    return false;
-                }
+        // Exact generated-piece safety is authoritative. Do not sample the
+        // full policy radius here: large irregular structures may never occupy
+        // those distant columns, so doing so makes /locate stricter than
+        // natural generation. Four 16-block cardinal probes only reject an
+        // obviously shoreline-centred candidate; the generated piece bbox is
+        // still checked column-by-column before StructureStart persistence.
+        final int probeRadius=Math.min(radius,LOCATE_PROBE_RADIUS);
+        final int[][] probes={
+            {-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}
+        };
+        for(final int[] probe:probes){
+            if(preliminarySurfaceY(
+                state,centerX+probe[0],centerZ+probe[1],surfaceBudget
+            )<MIN_DRY_SURFACE_Y){
+                return false;
             }
         }
         return true;
@@ -355,7 +363,9 @@ def verify(root:Path)->None:
         ".preliminarySurfaceLevel()",
         "MAX_CANDIDATE_RINGS=16",
         "MAX_SURFACE_PROBES=512",
-        "LOCATE_RADIUS_CAP=64",
+        "LOCATE_PROBE_RADIUS=16",
+        "final int[][] probes=",
+        "{-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}",
     ):
         if marker not in chunk+helper:
             fail("fast-locate marker missing: "+marker)
