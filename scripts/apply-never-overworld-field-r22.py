@@ -375,7 +375,7 @@ def patch(text: str) -> str:
     elif "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text and "reconcileSeams(" in text:
         require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
 
-    if "floodCacheConnectedOwner(" not in text and "reconcileSeams(" in text:
+    if "private static int floodCacheConnectedOwner(" not in text and "reconcileSeams(" in text:
         require(CACHE_METHODS_ANCHOR in text, "R23 cache helper insertion anchor missing")
         text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
 
@@ -479,6 +479,27 @@ class X {
     ):
         require(forbidden not in out, "SELF-TEST unsafe proximity flood installed: "+forbidden)
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
+
+    # Regression: replacing reconcileSeams adds the call first, but the helper
+    # declaration must still be materialized afterwards.
+    reconcile_fixture = fixture.rsplit("\n}", 1)[0] + "\n" + OLD_RECONCILE + CACHE_METHODS_ANCHOR + "        return 0;\n    }\n}\n"
+    reconcile_out = patch(reconcile_fixture)
+    require(
+        "private static int floodCacheConnectedOwner(" in reconcile_out,
+        "SELF-TEST exact-cache helper declaration was not materialized",
+    )
+    require(
+        "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16" in reconcile_out,
+        "SELF-TEST exact-cache helper body missing",
+    )
+    require(
+        "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in reconcile_out,
+        "SELF-TEST reconcileSeams did not switch to exact-cache flood",
+    )
+    require(
+        patch(reconcile_out) == reconcile_out,
+        "SELF-TEST exact-cache transformer is not idempotent",
+    )
 
     flood_fixture = """class NeverOverworldFlood {
     void apply() {
