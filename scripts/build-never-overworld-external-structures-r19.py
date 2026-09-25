@@ -319,53 +319,6 @@ def should_copy_dependency(path: str) -> bool:
     if "/tags/worldgen/structure/" in path: return False
     return True
 
-def dat_runtime_compat(path: str) -> bool:
-    """Copy D&T runtime dependencies required by retained data-driven effects.
-
-    We intentionally do not import load/tick function tags here; functions are
-    reachable only from retained D&T resources (for example enchantment
-    run_function effects). Predicates are copied because functions may use
-    execute if/unless predicate.
-    """
-    return any(path.startswith(prefix) for prefix in (
-        "data/nova_structures/function/",
-        "data/nova_structures/functions/",
-        "data/nova_structures/predicate/",
-        "data/nova_structures/predicates/",
-        "data/nova_structures/tags/function/",
-        "data/nova_structures/tags/functions/",
-    ))
-
-def run_function_refs(files: dict[str, bytes]) -> list[tuple[str, str]]:
-    refs: list[tuple[str, str]] = []
-    def walk(value, where: str) -> None:
-        if isinstance(value, dict):
-            if value.get("type") == "minecraft:run_function" and isinstance(value.get("function"), str):
-                refs.append((where, value["function"]))
-            for child in value.values():
-                walk(child, where)
-        elif isinstance(value, list):
-            for child in value:
-                walk(child, where)
-    for name, payload in files.items():
-        if not name.endswith(".json"):
-            continue
-        try:
-            value = json.loads(payload)
-        except Exception:
-            continue
-        walk(value, name)
-    return refs
-
-def function_resource_present(files: dict[str, bytes], resource: str) -> bool:
-    if ":" not in resource:
-        resource = "minecraft:" + resource
-    ns, path = resource.split(":", 1)
-    return (
-        f"data/{ns}/function/{path}.mcfunction" in files
-        or f"data/{ns}/functions/{path}.mcfunction" in files
-    )
-
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
     # namespace. They are not structure/structure_set/tag overrides and cannot
@@ -386,6 +339,168 @@ def dat_minecraft_compat(path: str) -> bool:
             return True
     return False
 
+
+
+FUNCTION_CALL_RE = re.compile(
+    r"(?:^|\\s)(?:function|schedule\\s+function)\\s+#?([a-z0-9_.-]+:[a-z0-9_./-]+)",
+    re.MULTILINE,
+)
+PREDICATE_CALL_RE = re.compile(
+    r"(?:^|\\s)(?:if|unless)\\s+predicate\\s+([a-z0-9_.-]+:[a-z0-9_./-]+)",
+    re.MULTILINE,
+)
+
+
+# D&T 5.3.2 contains a handful of run_function payloads written for command
+# grammar/features that are not accepted by the pinned Folia 26.2 parser.
+# Keep compatible structure-related functions verbatim (notably zautilus and
+# the ordinary jockey spawners), but neutralize only the known incompatible
+# effects instead of importing D&T's global tick/load/quest runtime.
+DAT_FUNCTION_OVERRIDES: dict[str, bytes] = {
+    "nova_structures:ghast_boss_fireball_possess":
+        b"# NeverFolia 26.2: disabled incompatible Nether-only @n selector effect\n",
+    "nova_structures:ghast_boss_summon_child":
+        b"# NeverFolia 26.2: disabled incompatible Nether boss summon effect\n",
+    "nova_structures:ghasted_fireball_1":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:ghasted_fireball_2":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:ghasted_fireball_3":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:jockey/make_drowned_into_jockey":
+        b"# NeverFolia 26.2: disabled incompatible @n/ride conversion; spawn_zautilus_jockey remains active\n",
+    "nova_structures:swift_soar_1":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:swift_soar_2":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:swift_soar_3":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:quest/saddle_trade_checker":
+        b"# NeverFolia: D&T quest/tick subsystem is intentionally not imported\n",
+    "nova_structures:hydro_veil_heal":
+        b"effect give @s minecraft:regeneration 1 6 true\n",
+}
+
+
+def run_function_refs(payload) -> set[str]:
+    refs=set()
+    def walk(value):
+        if isinstance(value,dict):
+            if value.get("type")=="minecraft:run_function" and isinstance(value.get("function"),str):
+                refs.add(value["function"])
+            for child in value.values():
+                walk(child)
+        elif isinstance(value,list):
+            for child in value:
+                walk(child)
+    walk(payload)
+    return refs
+
+
+def json_run_function_refs(files: dict[str, bytes]) -> set[str]:
+    refs=set()
+    for name,payload in files.items():
+        if not name.endswith(".json"):
+            continue
+        try:
+            data=json.loads(payload)
+        except Exception:
+            continue
+        refs.update(run_function_refs(data))
+    return refs
+
+
+def resource_candidates(rid: str, families: tuple[str,...], suffix: str) -> tuple[str,...]:
+    if ":" not in rid:
+        return ()
+    ns,name=rid.split(":",1)
+    return tuple(f"data/{ns}/{family}/{name}{suffix}" for family in families)
+
+
+def copy_dat_runtime_closure(source: dict[str, bytes], out: dict[str, bytes]) -> set[str]:
+    """Copy only runtime resources reachable from imported JSON.
+
+    D&T ships many global quest/load/tick functions that are unrelated to the
+    imported Overworld structures. Importing the complete function tree causes
+    those systems to load with intentionally omitted tags/advancements. Start
+    from actual minecraft:run_function effects that survived filtering and walk
+    only direct function/predicate dependencies.
+    """
+    pending=list(sorted(json_run_function_refs(out)))
+    copied=set()
+    predicate_pending=[]
+    while pending:
+        rid=pending.pop()
+        if rid in copied:
+            continue
+        candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+        src=next((name for name in candidates if name in source),None)
+        if src is None:
+            fail("run_function target missing in D&T source: "+rid)
+        payload=DAT_FUNCTION_OVERRIDES.get(rid,source[src])
+        out[src]=payload
+        copied.add(rid)
+        text=payload.decode("utf-8",errors="strict")
+        for nested in FUNCTION_CALL_RE.findall(text):
+            if nested not in copied:
+                pending.append(nested)
+        predicate_pending.extend(PREDICATE_CALL_RE.findall(text))
+
+    predicate_seen=set()
+    while predicate_pending:
+        rid=predicate_pending.pop()
+        if rid in predicate_seen:
+            continue
+        candidates=resource_candidates(rid,("predicate","predicates"),".json")
+        src=next((name for name in candidates if name in source),None)
+        if src is None:
+            fail("function predicate target missing in D&T source: "+rid)
+        out[src]=source[src]
+        predicate_seen.add(rid)
+        data=read_json(source[src],src)
+        # Predicate references can be nested as minecraft:reference/name.
+        stack=[data]
+        while stack:
+            value=stack.pop()
+            if isinstance(value,dict):
+                if value.get("condition")=="minecraft:reference" and isinstance(value.get("name"),str):
+                    predicate_pending.append(value["name"])
+                stack.extend(value.values())
+            elif isinstance(value,list):
+                stack.extend(value)
+    return copied
+
+
+def validate_run_function_closure(files: dict[str, bytes]) -> set[str]:
+    refs=json_run_function_refs(files)
+    missing=[]
+    for rid in sorted(refs):
+        candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+        if not any(candidate in files for candidate in candidates):
+            missing.append(rid)
+    nested_missing=[]
+    predicate_missing=[]
+    for name,payload in files.items():
+        if not name.endswith(".mcfunction"):
+            continue
+        text=payload.decode("utf-8",errors="strict")
+        for rid in FUNCTION_CALL_RE.findall(text):
+            candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+            if not any(candidate in files for candidate in candidates):
+                nested_missing.append(rid)
+        for rid in PREDICATE_CALL_RE.findall(text):
+            candidates=resource_candidates(rid,("predicate","predicates"),".json")
+            if not any(candidate in files for candidate in candidates):
+                predicate_missing.append(rid)
+    if missing or nested_missing or predicate_missing:
+        fail(
+            "runtime dependency closure incomplete: json="
+            +repr(sorted(set(missing))[:20])
+            +" nested="+repr(sorted(set(nested_missing))[:20])
+            +" predicates="+repr(sorted(set(predicate_missing))[:20])
+        )
+    return refs
+
 def filter_pack(key: str, files: dict[str, bytes]):
     files=dict(files)
     if key=="witch":
@@ -403,7 +518,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_compat(n)):
+        if key=="dat" and (
+            "/tags/function/" in n or "/tags/functions/" in n
+        ):
+            # Never import D&T global load/tick function tags into NeverOverworld.
+            continue
+        if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -455,6 +575,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         if any("/worldgen/configured_feature/" in n or "/worldgen/placed_feature/" in n for n in out if n.startswith("data/betteroceanmonuments/")):
             fail("legacy Better Monuments random_patch feature survived")
     if key=="dat":
+        copied_runtime_functions=copy_dat_runtime_closure(files,out)
         required=(
             "data/minecraft/worldgen/placed_feature/donjon_base.json",
             "data/minecraft/worldgen/processor_list/ruined_town_degradation.json",
@@ -468,16 +589,33 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
-        runtime_refs=run_function_refs(out)
-        missing_runtime=[
-            {"source":source,"function":function}
-            for source,function in runtime_refs
-            if function.startswith("nova_structures:") and not function_resource_present(out,function)
-        ]
-        if missing_runtime:
-            fail("Dungeons & Taverns run_function dependency missing: "+repr(missing_runtime[:20]))
-        if not function_resource_present(out,"nova_structures:jockey/spawn_zautilus_jockey"):
-            fail("Dungeons & Taverns zautilus jockey function missing after import")
+        required_runtime=(
+            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
+            "data/nova_structures/function/jockey/spawn_bogged_horseman.mcfunction",
+            "data/nova_structures/function/jockey/spawn_chicken_jockey.mcfunction",
+        )
+        for n in required_runtime:
+            if n not in out: fail("Dungeons & Taverns runtime function missing: "+n)
+        refs=validate_run_function_closure(out)
+        if refs != json_run_function_refs(out):
+            fail("Dungeons & Taverns runtime reference audit drifted")
+        if not refs.issubset(copied_runtime_functions):
+            fail("Dungeons & Taverns runtime function closure incomplete")
+        if "nova_structures:jockey/spawn_zautilus_jockey" not in refs:
+            fail("Dungeons & Taverns zautilus enchantment runtime reference disappeared")
+        zautilus_path="data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction"
+        if b"zombie_nautilus" not in out.get(zautilus_path,b""):
+            fail("Dungeons & Taverns zautilus jockey function was neutralized or corrupted")
+        for rid,payload in DAT_FUNCTION_OVERRIDES.items():
+            candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+            installed=next((out[name] for name in candidates if name in out),None)
+            if installed is None or installed != payload:
+                fail("Dungeons & Taverns compatibility override missing: "+rid)
+        if any(
+            "/tags/function/" in n or "/tags/functions/" in n
+            for n in out
+        ):
+            fail("Dungeons & Taverns global function tag survived filtering")
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
