@@ -32,6 +32,40 @@ SOURCES = {
 AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
 
+DAT_RUNTIME_KEEP = frozenset({
+    "nova_structures:phantom_boss_vanish",
+    "nova_structures:spawn_cave_spider_minion",
+    "nova_structures:spawn_guardian_minion",
+    "nova_structures:spawn_spider_minion",
+    "nova_structures:ghast_boss_defeat_chain",
+    "nova_structures:ghast_boss_fireball_damage",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghast_boss_summon_child",
+    "nova_structures:ghasted",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
+    "nova_structures:gravity_particles",
+    "nova_structures:hydro_veil_heal",
+    "nova_structures:jockey/spawn_bogged_horseman",
+    "nova_structures:jockey/spawn_camel_husk_jockey",
+    "nova_structures:jockey/spawn_chicken_jockey",
+    "nova_structures:jockey/spawn_hoglin_jockey",
+    "nova_structures:jockey/spawn_ravager_jockey",
+    "nova_structures:jockey/spawn_skeleton_horseman",
+    "nova_structures:jockey/spawn_stray_horseman",
+    "nova_structures:jockey/spawn_zautilus_jockey",
+    "nova_structures:jockey/spawn_zombie_horseman",
+})
+DAT_RUNTIME_DISABLED = frozenset({
+    "nova_structures:jockey/make_drowned_into_jockey",
+    "nova_structures:swift_soar_1",
+    "nova_structures:swift_soar_2",
+    "nova_structures:swift_soar_3",
+    "nova_structures:quest/saddle_trade_checker",
+})
+
+
 # R24: imported custom structures are intentionally more common in NeverOverworld.
 # Scaling spacing by 3/4 increases candidate density without collapsing the
 # source random-spread separation contract.
@@ -319,6 +353,27 @@ def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
         base["elements"].extend(d.get("elements",[]))
         files[dest]=(json.dumps(base,indent=2,ensure_ascii=False)+"\n").encode()
 
+def dat_function_resource_id(path: str) -> str | None:
+    m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction",path)
+    return f"{m.group(1)}:{m.group(2)}" if m else None
+
+def sanitize_dat_runtime_function(rid: str, payload: bytes) -> bytes:
+    text=payload.decode("utf-8",errors="strict")
+    if rid=="nova_structures:hydro_veil_heal":
+        return b"effect give @s minecraft:regeneration 1 6 true\\n"
+    if rid=="nova_structures:ghast_boss_fireball_possess":
+        return b"data remove entity @e[type=minecraft:fireball,distance=..45,sort=nearest,limit=1] Owner\\n"
+    if rid in {
+        "nova_structures:ghasted_fireball_1",
+        "nova_structures:ghasted_fireball_2",
+        "nova_structures:ghasted_fireball_3",
+    }:
+        text=text.replace(
+            "@n[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest]",
+            "@e[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest,limit=1]",
+        )
+    return text.encode("utf-8")
+
 def should_copy_dependency(path: str) -> bool:
     if not path.startswith("data/"): return False
     parts=path.split("/")
@@ -349,6 +404,9 @@ def strip_dat_run_function_effects(value):
     if not isinstance(value, dict):
         return value
     if value.get("type") in ("minecraft:run_function", "run_function"):
+        rid=value.get("function")
+        if isinstance(rid,str) and rid in DAT_RUNTIME_KEEP:
+            return copy.deepcopy(value)
         return None
 
     out={}
@@ -437,6 +495,11 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
+        if key=="dat":
+            function_rid=dat_function_resource_id(n)
+            if function_rid in DAT_RUNTIME_KEEP:
+                out[n]=sanitize_dat_runtime_function(function_rid,b)
+                continue
         if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
@@ -507,6 +570,17 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        imported_runtime={
+            dat_function_resource_id(n)
+            for n in out
+            if dat_function_resource_id(n) is not None
+        }
+        if imported_runtime != set(DAT_RUNTIME_KEEP):
+            fail(
+                "D&T selective runtime closure mismatch: missing="
+                +repr(sorted(set(DAT_RUNTIME_KEEP)-imported_runtime))
+                +" unexpected="+repr(sorted(imported_runtime-set(DAT_RUNTIME_KEEP)))
+            )
 
 
     if key=="witch":
@@ -600,6 +674,14 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
         "untouched_policy":"Overworld ocean/underground structures keep source placement; Nether/End structures are excluded.",
         "skipped_supplied_packs":["Amplified_Nether_v1.2.15 (no structures)","Hearths v1.0.5 (Nether-only structures)"],
         "minecraft_namespace_overrides_imported":False,
+        "dat_runtime_mode":"selective-enchantment-runtime-r24",
+        "dat_runtime_functions":sorted(DAT_RUNTIME_KEEP),
+        "dat_runtime_disabled":sorted(DAT_RUNTIME_DISABLED),
+        "placement_density_scale":{
+            "spacing_numerator":EXTERNAL_SPACING_NUM,
+            "spacing_denominator":EXTERNAL_SPACING_DEN,
+            "minimum_spacing":MIN_EXTERNAL_SPACING,
+        },
     }
     merged["neveroverworld-external-structures-r19.json"]=(json.dumps(manifest,indent=2,ensure_ascii=False)+"\n").encode()
     output.parent.mkdir(parents=True,exist_ok=True)
