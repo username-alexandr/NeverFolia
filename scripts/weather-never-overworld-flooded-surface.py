@@ -22,23 +22,6 @@ METHODS = r'''    // NEVERFOLIA: drowned surface weathering
     // describe the first actual substrate under the new Y=128 water column. Scan
     // the owning column itself so stepped slopes and former land are handled from
     // the exact post-flood block state that will be persisted to NBT.
-    /**
-     * R22 post-seam hook. Seam reconciliation can create source water after the
-     * owner flood's first weathering pass, so rerun the exact same final-column
-     * substrate policy before Starlight persists the chunk.
-     */
-    public static void reweatherSubmergedSurface(
-        final WorldGenLevel level,
-        final ChunkAccess chunk
-    ) {
-        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
-            || level.getMinY() != EXPECTED_MIN_Y
-            || level.getHeight() != EXPECTED_HEIGHT) {
-            return;
-        }
-        weatherSubmergedSurface(chunk, level.getMinY() + 1, FLOOD_LEVEL);
-    }
-
     private static void weatherSubmergedSurface(
         final ChunkAccess chunk,
         final int minY,
@@ -183,7 +166,6 @@ def patch_source(source: str) -> str:
     required = (
         MARKER,
         "weatherSubmergedSurface(chunk, minY, FLOOD_LEVEL)",
-        "public static void reweatherSubmergedSurface",
         "scanBottom = Math.max(minY, -96)",
         "isDrownedSurfaceOverlay",
         "Blocks.SEAGRASS",
@@ -228,8 +210,6 @@ def self_test() -> None:
     patched = patch_source(fixture)
     if patched.count(MARKER) != 1:
         fail("SELF-TEST: weathering marker count drifted")
-    if patched.count("public static void reweatherSubmergedSurface") != 1:
-        fail("SELF-TEST: R22 post-seam weathering entry point missing")
     if patched.index("weatherSubmergedSurface(chunk, minY, FLOOD_LEVEL)") < patched.index("floodSurfaceConnectedVolume"):
         fail("SELF-TEST: submerged surface weathering must run after flood")
     if "Heightmap.Types.OCEAN_FLOOR_WG" in patched:
