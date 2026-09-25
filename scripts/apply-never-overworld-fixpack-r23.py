@@ -27,13 +27,17 @@ def main()->None:
     a=p.parse_args()
     folia=a.folia.resolve()
     if a.check_only:
-        run("scripts/apply-never-overworld-fixpack-r22.py",folia,True)
+        # R23 intentionally retires part of the R22 proximity contract, so the
+        # final state must not be re-validated by R22's historical verifier.
+        # R21 remains the lower invariant layer; R23 verifies retained R22
+        # prospective-ocean behavior plus the new strict cave policy.
+        run("scripts/apply-never-overworld-fixpack-r21.py",folia,True)
         run("scripts/apply-never-overworld-field-r23.py",folia,True)
         print(f"[NeverOverworld R23] {PROFILE} final invariants OK")
         return
     run("scripts/apply-never-overworld-fixpack-r22.py",folia)
     run("scripts/apply-never-overworld-field-r23.py",folia)
-    run("scripts/apply-never-overworld-fixpack-r22.py",folia,True)
+    run("scripts/apply-never-overworld-fixpack-r21.py",folia,True)
     run("scripts/apply-never-overworld-field-r23.py",folia,True)
     print(f"[NeverOverworld R23] {PROFILE} installed")
 
