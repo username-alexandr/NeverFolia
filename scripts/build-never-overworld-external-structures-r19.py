@@ -319,6 +319,53 @@ def should_copy_dependency(path: str) -> bool:
     if "/tags/worldgen/structure/" in path: return False
     return True
 
+def dat_runtime_compat(path: str) -> bool:
+    """Copy D&T runtime dependencies required by retained data-driven effects.
+
+    We intentionally do not import load/tick function tags here; functions are
+    reachable only from retained D&T resources (for example enchantment
+    run_function effects). Predicates are copied because functions may use
+    execute if/unless predicate.
+    """
+    return any(path.startswith(prefix) for prefix in (
+        "data/nova_structures/function/",
+        "data/nova_structures/functions/",
+        "data/nova_structures/predicate/",
+        "data/nova_structures/predicates/",
+        "data/nova_structures/tags/function/",
+        "data/nova_structures/tags/functions/",
+    ))
+
+def run_function_refs(files: dict[str, bytes]) -> list[tuple[str, str]]:
+    refs: list[tuple[str, str]] = []
+    def walk(value, where: str) -> None:
+        if isinstance(value, dict):
+            if value.get("type") == "minecraft:run_function" and isinstance(value.get("function"), str):
+                refs.append((where, value["function"]))
+            for child in value.values():
+                walk(child, where)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, where)
+    for name, payload in files.items():
+        if not name.endswith(".json"):
+            continue
+        try:
+            value = json.loads(payload)
+        except Exception:
+            continue
+        walk(value, name)
+    return refs
+
+def function_resource_present(files: dict[str, bytes], resource: str) -> bool:
+    if ":" not in resource:
+        resource = "minecraft:" + resource
+    ns, path = resource.split(":", 1)
+    return (
+        f"data/{ns}/function/{path}.mcfunction" in files
+        or f"data/{ns}/functions/{path}.mcfunction" in files
+    )
+
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
     # namespace. They are not structure/structure_set/tag overrides and cannot
@@ -356,7 +403,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and dat_minecraft_compat(n):
+        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_compat(n)):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -421,6 +468,16 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        runtime_refs=run_function_refs(out)
+        missing_runtime=[
+            {"source":source,"function":function}
+            for source,function in runtime_refs
+            if function.startswith("nova_structures:") and not function_resource_present(out,function)
+        ]
+        if missing_runtime:
+            fail("Dungeons & Taverns run_function dependency missing: "+repr(missing_runtime[:20]))
+        if not function_resource_present(out,"nova_structures:jockey/spawn_zautilus_jockey"):
+            fail("Dungeons & Taverns zautilus jockey function missing after import")
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
