@@ -224,7 +224,10 @@ def main_run(args):
 
     report={"schema":1,"profile":"NeverOverworld-External-Structures-Runtime-QA1",
             "seed":SEED,"strict":args.strict,"targets":{},"pass":False}
-    server=Server(args.jar.resolve(),work,out/"external-structures-runtime-discovery.log")
+    server=Server(
+        args.jar.resolve(),work,out/"external-structures-runtime-discovery.log",
+        java_args=["-Dneverfolia.debugExternalR19=true"]
+    )
     normal=False
     try:
         server.wait(r"Done \(",timeout=300);server.disable_random_ticks()
@@ -308,7 +311,10 @@ def main_run(args):
 
     # Load actual surface piece coverage in one restart so Y128 audits use saved FULL chunks.
     if coverage_requests:
-        server=Server(args.jar.resolve(),work,out/"external-structures-runtime-coverage.log")
+        server=Server(
+            args.jar.resolve(),work,out/"external-structures-runtime-coverage.log",
+            java_args=["-Dneverfolia.debugExternalR19=true"]
+        )
         normal=False
         try:
             server.wait(r"Done \(",timeout=300);server.disable_random_ticks()

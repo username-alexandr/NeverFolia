@@ -60,8 +60,15 @@ final class NeverOverworldExternalStructurePolicyR19 {{
     static final int EXPECTED_HEIGHT = 1024;
     static final int MIN_DRY_SURFACE_Y = 129;
     static final int MAX_PIECE_SPAN = 256;
+    static final boolean DEBUG = Boolean.getBoolean("neverfolia.debugExternalR19");
 
     private NeverOverworldExternalStructurePolicyR19() {{}}
+
+    private static void debugReject(final String id, final String reason) {{
+        if (DEBUG) {{
+            System.out.println("[NeverFolia][R19Reject] id=" + id + " " + reason);
+        }}
+    }}
 
     static int radiusForId(final String id) {{
         return switch (id) {{
@@ -107,7 +114,12 @@ final class NeverOverworldExternalStructurePolicyR19 {{
             heightAccessor,
             randomState
         );
-        return base >= MIN_DRY_SURFACE_Y;
+        if (base < MIN_DRY_SURFACE_Y) {{
+            debugReject(structureId(structure), "reason=center base=" + base
+                + " chunk=" + chunkPos.x + "," + chunkPos.z);
+            return false;
+        }}
+        return true;
     }}
 
     static boolean allowsGenerated(
@@ -119,14 +131,21 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         final ResourceKey<Level> dimension
     ) {{
         if (!inScope(dimension, heightAccessor)) return true;
-        if (radiusForId(structureId(structure)) <= 0) return true;
-        if (start == null || !start.isValid()) return false;
+        final String id = structureId(structure);
+        if (radiusForId(id) <= 0) return true;
+        if (start == null || !start.isValid()) {{
+            debugReject(id, "reason=invalid_start");
+            return false;
+        }}
 
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
             final long width = (long)box.maxX() - box.minX() + 1L;
             final long depth = (long)box.maxZ() - box.minZ() + 1L;
             if (width <= 0L || depth <= 0L || width > MAX_PIECE_SPAN || depth > MAX_PIECE_SPAN) {{
+                debugReject(id, "reason=piece_span box=" + box.minX() + "," + box.minZ()
+                    + ":" + box.maxX() + "," + box.maxZ()
+                    + " size=" + width + "x" + depth);
                 return false;
             }}
             for (int z = box.minZ(); z <= box.maxZ(); ++z) {{
@@ -138,7 +157,13 @@ final class NeverOverworldExternalStructurePolicyR19 {{
                         heightAccessor,
                         randomState
                     );
-                    if (base < MIN_DRY_SURFACE_Y) return false;
+                    if (base < MIN_DRY_SURFACE_Y) {{
+                        debugReject(id, "reason=wet_piece x=" + x + " z=" + z
+                            + " base=" + base
+                            + " box=" + box.minX() + "," + box.minZ()
+                            + ":" + box.maxX() + "," + box.maxZ());
+                        return false;
+                    }}
                 }}
             }}
         }}
