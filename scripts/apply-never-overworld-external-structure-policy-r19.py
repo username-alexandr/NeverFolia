@@ -148,6 +148,13 @@ final class NeverOverworldExternalStructurePolicyR19 {{
                     + " size=" + width + "x" + depth);
                 return false;
             }}
+            int wetColumns = 0;
+            int totalColumns = 0;
+            int minBase = Integer.MAX_VALUE;
+            int maxBase = Integer.MIN_VALUE;
+            int firstWetX = Integer.MIN_VALUE;
+            int firstWetZ = Integer.MIN_VALUE;
+            int firstWetBase = Integer.MAX_VALUE;
             for (int z = box.minZ(); z <= box.maxZ(); ++z) {{
                 for (int x = box.minX(); x <= box.maxX(); ++x) {{
                     final int base = generator.getBaseHeight(
@@ -157,14 +164,30 @@ final class NeverOverworldExternalStructurePolicyR19 {{
                         heightAccessor,
                         randomState
                     );
+                    ++totalColumns;
+                    minBase = Math.min(minBase, base);
+                    maxBase = Math.max(maxBase, base);
                     if (base < MIN_DRY_SURFACE_Y) {{
-                        debugReject(id, "reason=wet_piece x=" + x + " z=" + z
-                            + " base=" + base
-                            + " box=" + box.minX() + "," + box.minZ()
-                            + ":" + box.maxX() + "," + box.maxZ());
-                        return false;
+                        if (!DEBUG) return false;
+                        ++wetColumns;
+                        if (firstWetX == Integer.MIN_VALUE) {{
+                            firstWetX = x;
+                            firstWetZ = z;
+                            firstWetBase = base;
+                        }}
                     }}
                 }}
+            }}
+            if (wetColumns > 0) {{
+                debugReject(id,
+                    "reason=wet_piece wet=" + wetColumns
+                    + " total=" + totalColumns
+                    + " minBase=" + minBase
+                    + " maxBase=" + maxBase
+                    + " first=" + firstWetX + "," + firstWetZ + "," + firstWetBase
+                    + " box=" + box.minX() + "," + box.minZ()
+                    + ":" + box.maxX() + "," + box.maxZ());
+                return false;
             }}
         }}
         return true;
