@@ -162,6 +162,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
         int head = 0;
         int tail = 0;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final BlockPos.MutableBlockPos adjacent = new BlockPos.MutableBlockPos();
 
         // Seed every real/prospective exterior-water column in the 3x3 cache.
         for (int tileZ = 0; tileZ < CACHE_CHUNK_WIDTH; ++tileZ) {
@@ -175,11 +176,12 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
                         final int surfaceY = chunk.getHeight(
                             Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ
                         );
-                        pos.set(chunkBaseX + localX, SCAN_MAX_Y, chunkBaseZ + localZ);
-                        final BlockState state = chunk.getBlockState(pos);
-                        if (!surfaceOceanSeed(surfaceY, state) || !traversable(chunk, pos)) continue;
                         final int regionX = tileX * 16 + localX;
                         final int regionZ = tileZ * 16 + localZ;
+                        pos.set(chunkBaseX + localX, SCAN_MAX_Y, chunkBaseZ + localZ);
+                        final BlockState state = chunk.getBlockState(pos);
+                        if (!surfaceOceanSeed(surfaceY, state)
+                            || !traversableCache(chunks, regionX, SCAN_MAX_Y, regionZ, pos, adjacent)) continue;
                         final int e = encodeCache(regionX, SCAN_MAX_Y, regionZ, minY);
                         if (!connected[e]) {
                             connected[e] = true;
@@ -198,12 +200,12 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
             final int regionX = plane - regionZ * CACHE_BLOCK_WIDTH;
             final int y = minY + layer;
 
-            tail = enqueueCache(chunks, connected, queue, tail, regionX - 1, y, regionZ, minY, maxY, pos);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX + 1, y, regionZ, minY, maxY, pos);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ - 1, minY, maxY, pos);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ + 1, minY, maxY, pos);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y - 1, regionZ, minY, maxY, pos);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y + 1, regionZ, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX - 1, y, regionZ, minY, maxY, pos, adjacent);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX + 1, y, regionZ, minY, maxY, pos, adjacent);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ - 1, minY, maxY, pos, adjacent);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ + 1, minY, maxY, pos, adjacent);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y - 1, regionZ, minY, maxY, pos, adjacent);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y + 1, regionZ, minY, maxY, pos, adjacent);
         }
 
         int changed = 0;
@@ -217,7 +219,8 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
                     if (!connected[e]) continue;
                     pos.set(ownerBaseX + localX, y, ownerBaseZ + localZ);
                     final BlockState state = owner.getBlockState(pos);
-                    if (!state.is(Blocks.WATER) && traversable(owner, pos)) {
+                    if (!state.is(Blocks.WATER)
+                        && traversableCache(chunks, localX + 16, y, localZ + 16, pos, adjacent)) {
                         owner.setBlockState(pos, water, 0);
                         ++changed;
                     }
@@ -237,7 +240,8 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
         final int regionZ,
         final int minY,
         final int maxY,
-        final BlockPos.MutableBlockPos pos
+        final BlockPos.MutableBlockPos pos,
+        final BlockPos.MutableBlockPos adjacent
     ) {
         if (regionX < 0 || regionX >= CACHE_BLOCK_WIDTH
             || regionZ < 0 || regionZ >= CACHE_BLOCK_WIDTH
@@ -253,16 +257,64 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
 
         final int localX = regionX & 15;
         final int localZ = regionZ & 15;
+        if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) return tailIn;
+
+        connected[e] = true;
+        queue[tailIn] = e;
+        return tailIn + 1;
+    }
+
+    private static boolean traversableCache(
+        final ChunkAccess[] chunks,
+        final int regionX,
+        final int y,
+        final int regionZ,
+        final BlockPos.MutableBlockPos pos,
+        final BlockPos.MutableBlockPos adjacent
+    ) {
+        if (regionX < 0 || regionX >= CACHE_BLOCK_WIDTH
+            || regionZ < 0 || regionZ >= CACHE_BLOCK_WIDTH) return false;
+        final int tileX = regionX >> 4;
+        final int tileZ = regionZ >> 4;
+        final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+        if (chunk == null) return false;
+        final int localX = regionX & 15;
+        final int localZ = regionZ & 15;
         pos.set(
             chunk.getPos().getMinBlockX() + localX,
             y,
             chunk.getPos().getMinBlockZ() + localZ
         );
-        if (!traversable(chunk, pos)) return tailIn;
+        if (!traversable(chunk, pos)) return false;
 
-        connected[e] = true;
-        queue[tailIn] = e;
-        return tailIn + 1;
+        // traversable() already checks lava inside one chunk. These four tests
+        // close the missing cross-chunk part of the lava barrier.
+        if (localX == 0 && lavaAtCache(chunks, regionX - 1, y, regionZ, adjacent)) return false;
+        if (localX == 15 && lavaAtCache(chunks, regionX + 1, y, regionZ, adjacent)) return false;
+        if (localZ == 0 && lavaAtCache(chunks, regionX, y, regionZ - 1, adjacent)) return false;
+        if (localZ == 15 && lavaAtCache(chunks, regionX, y, regionZ + 1, adjacent)) return false;
+        return true;
+    }
+
+    private static boolean lavaAtCache(
+        final ChunkAccess[] chunks,
+        final int regionX,
+        final int y,
+        final int regionZ,
+        final BlockPos.MutableBlockPos pos
+    ) {
+        if (regionX < 0 || regionX >= CACHE_BLOCK_WIDTH
+            || regionZ < 0 || regionZ >= CACHE_BLOCK_WIDTH) return false;
+        final int tileX = regionX >> 4;
+        final int tileZ = regionZ >> 4;
+        final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+        if (chunk == null || y < chunk.getMinY() || y >= chunk.getMaxY()) return false;
+        pos.set(
+            chunk.getPos().getMinBlockX() + (regionX & 15),
+            y,
+            chunk.getPos().getMinBlockZ() + (regionZ & 15)
+        );
+        return chunk.getBlockState(pos).is(Blocks.LAVA);
     }
 
     private static int encodeCache(
@@ -357,6 +409,8 @@ def verify(folia: Path) -> None:
         "floodCacheConnectedOwner",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
         "enqueueCache",
+        "traversableCache",
+        "lavaAtCache",
         "cacheExact=true",
     ):
         require(marker in text, "R22 marker missing: " + marker)
