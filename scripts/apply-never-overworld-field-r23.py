@@ -24,8 +24,7 @@ EXTERNAL_OLD=(
     "            }\n"
 )
 EXTERNAL_NEW=(
-    "            if(externalSeeds!=null&&externalSeeds[e]"
-    "&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+    "            if(externalSeeds!=null&&externalSeeds[e])hasOceanSeed=true;\n"
 )
 GUARD_OLD=(
     "        if(!hasOceanSeed){\n"
@@ -97,6 +96,7 @@ def verify(folia:Path)->None:
         GATE_NEW.strip(),
         STATE_NEW.strip(),
         EXTERNAL_NEW.strip(),
+        "if (!neighborOceanWater[ne]) continue;",
         "R23DrySeam",
     ):
         require(marker in text,"strict ocean-connectivity marker missing: "+marker)
