@@ -89,10 +89,14 @@ def verify(folia: Path) -> None:
     print(f"[NeverOverworld R21] {PROFILE} final invariants OK")
 
 def apply(folia: Path) -> None:
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts/apply-never-overworld-fixpack-r20.py"), str(folia)],
-        cwd=ROOT, check=True
-    )
+    # The production post-patch chain may already have materialized R20.
+    # Prefer verification over replaying the exact-SHA R13..R20 chain on top
+    # of a later R21/R22 state. If R20 is not present yet, install it normally.
+    r20 = [sys.executable, str(ROOT / "scripts/apply-never-overworld-fixpack-r20.py"), str(folia)]
+    checked = subprocess.run(r20 + ["--check-only"], cwd=ROOT, check=False)
+    if checked.returncode != 0:
+        subprocess.run(r20, cwd=ROOT, check=True)
+
     subprocess.run(
         [sys.executable, str(ROOT / "scripts/apply-never-overworld-field-r21.py"), str(folia)],
         cwd=ROOT, check=True
