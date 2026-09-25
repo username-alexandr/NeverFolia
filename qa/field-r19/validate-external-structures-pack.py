@@ -43,6 +43,25 @@ def resource_id(path:str,family:str)->str|None:
     m=re.fullmatch(r"data/([^/]+)/"+re.escape(family)+r"/(.+)\.json",path)
     return f"{m.group(1)}:{m.group(2)}" if m else None
 
+def run_function_refs(value, where:str, out:list[dict])->None:
+    if isinstance(value,dict):
+        if value.get("type")=="minecraft:run_function" and isinstance(value.get("function"),str):
+            out.append({"source":where,"function":value["function"]})
+        for child in value.values():
+            run_function_refs(child,where,out)
+    elif isinstance(value,list):
+        for child in value:
+            run_function_refs(child,where,out)
+
+def function_resource_present(names:set[str],resource:str)->bool:
+    if ":" not in resource:
+        resource="minecraft:"+resource
+    ns,path=resource.split(":",1)
+    return (
+        f"data/{ns}/function/{path}.mcfunction" in names
+        or f"data/{ns}/functions/{path}.mcfunction" in names
+    )
+
 def read_json(archive:zipfile.ZipFile,name:str)->dict:
     try:value=json.loads(archive.read(name).decode("utf-8"))
     except Exception as exc:fail(f"invalid JSON {name}: {exc}")
@@ -80,6 +99,25 @@ def audit(pack:Path,spec_path:Path)->dict:
         if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
+
+        runtime_refs=[]
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            try:
+                payload=json.loads(archive.read(name).decode("utf-8"))
+            except Exception:
+                continue
+            run_function_refs(payload,name,runtime_refs)
+        missing_runtime=[
+            row for row in runtime_refs
+            if row["function"].startswith("nova_structures:")
+            and not function_resource_present(names,row["function"])
+        ]
+        if missing_runtime:
+            fail("dangling external run_function references: "+repr(missing_runtime[:20]))
+        if not function_resource_present(names,"nova_structures:jockey/spawn_zautilus_jockey"):
+            fail("zautilus jockey runtime function missing")
 
         structures={}
         sets={}
@@ -164,6 +202,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "spawnable_external":len(external-expected),
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
+                "run_function_refs":len(runtime_refs),
             },
             "source_unused":sorted(expected),
             "representatives":reps,
