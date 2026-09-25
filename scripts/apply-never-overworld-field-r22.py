@@ -110,7 +110,7 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         }
         if (seeds.isEmpty()) return;
 
-        final long key = ChunkPos.asLong(targetChunkX, targetChunkZ);
+        final long key = chunkKey(targetChunkX, targetChunkZ);
         final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds =
             FEATURE_BOUNDARY_SEEDS.computeIfAbsent(level, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
         worldSeeds.compute(key, (ignored, existing) -> {
@@ -120,13 +120,18 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         });
     }
 
+    private static long chunkKey(final int chunkX, final int chunkZ) {
+        return ((long)chunkX & 0xffffffffL) | (((long)chunkZ & 0xffffffffL) << 32);
+    }
+
     private static BitSet takeFeatureBoundarySeeds(
         final net.minecraft.server.level.ServerLevel level,
         final ChunkAccess owner
     ) {
         final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds = FEATURE_BOUNDARY_SEEDS.get(level);
         if (worldSeeds == null) return null;
-        final BitSet ret = worldSeeds.remove(owner.getPos().toLong());
+        final ChunkPos ownerPos = owner.getPos();
+        final BitSet ret = worldSeeds.remove(chunkKey(ownerPos.x(), ownerPos.z()));
         if (worldSeeds.isEmpty()) FEATURE_BOUNDARY_SEEDS.remove(level, worldSeeds);
         return ret;
     }
@@ -526,6 +531,7 @@ def verify(folia: Path) -> None:
         "floodCacheConnectedOwner",
         "R23FeatureSeeds",
         "takeFeatureBoundarySeeds",
+        "chunkKey(final int chunkX, final int chunkZ)",
         "FEATURE_BOUNDARY_SEEDS",
         "publishFeatureBoundarySeeds",
         "new BitSet(capacity)",
@@ -558,6 +564,8 @@ def verify(folia: Path) -> None:
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
+    require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
+            "R23 handoff must not depend on removed ChunkPos long-key APIs")
     print("[FIELD-R23] exact cache-bounded ocean-connectivity seam invariants OK")
 
 def self_test() -> None:
@@ -620,6 +628,10 @@ class X {
         "publishFeatureBoundarySeeds" in reconcile_out
         and "takeFeatureBoundarySeeds" in reconcile_out,
         "SELF-TEST feature-boundary handoff helper missing",
+    )
+    require(
+        "private static long chunkKey(final int chunkX, final int chunkZ)" in reconcile_out,
+        "SELF-TEST stable chunk key helper missing",
     )
     require(
         "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in reconcile_out,
