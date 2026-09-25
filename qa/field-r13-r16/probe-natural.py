@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""FIELD-R22/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
+"""FIELD-R23/Nether-R16 natural acceptance for flooded Overworld and lava-ocean Nether.
 
 The historical binary is only a density/tree reference and uses its compatible
-R15 Nether pack. Two independent R22/Nether-R16 candidates must repeat exactly in the
+R15 Nether pack. Two independent R23/Nether-R16 candidates must repeat exactly in the
 deep ore band below Y=-64 and keep the schedule-sensitive upper vanilla FEATURES
 ore count profile within 0.5%, while passing dry-mine, ecology, fluid-contact
 and R16 lava-ocean cavity audits. The full coordinate delta remains diagnostic.
@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import zipfile
 
-PROFILE = 'FIELD-R22-NR16-NATURAL-1'
+PROFILE = 'FIELD-R23-NR16-NATURAL-1'
 R16_PROFILE = 'NN-R16-LAVA-OCEAN-CLEANUP-1'
 HEIGHT_PROFILE = 'NN-R14-SUBSTRATE-1-ROOF512'
 ROLES = ('historical', 'candidate-a', 'candidate-b')
@@ -530,7 +530,7 @@ def package(out, jar, packs, report, manifest, run_id):
             and report.get('production_ready') is False, 'candidate not eligible')
     require(all(v is True for v in report.get('checks', {}).values()), 'incomplete natural acceptance')
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == report['source_sha']
-            and manifest.get('r22_fixpack') is True and manifest.get('nether_r16_installed') is True,
+            and manifest.get('r22_fixpack') is True and manifest.get('r23_fixpack') is True and manifest.get('nether_r16_installed') is True,
             'build profile mismatch')
     require(type(run_id) is int and run_id > 0 and manifest.get('workflow_run') == run_id,
             'workflow run mismatch')
@@ -555,7 +555,7 @@ def package(out, jar, packs, report, manifest, run_id):
                 nether_profile=R16_PROFILE, natural_acceptance_profile=PROFILE)
     payload['BUILD-INFO.json'] = (json.dumps(info, indent=2)+'\n').encode()
     payload['README-RU.txt'] = (
-        'NeverFolia FIELD-R22/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
+        'NeverFolia FIELD-R23/Nether-R16 FIXPACK — тестовый кандидат для НОВОГО мира, Java 25.\n'
         'Оба датапака уже лежат в world/datapacks; старый мир/region/level.dat не переносить.\n'
         'R13: грибы, тыквы, бамбук и мох не генерируются ниже Y126; трава/цветы очищаются при контакте с водой до Y130.\n'
         'R14: generated underground water сбрасывается перед восстановлением surface-connected океана; generated lava сохраняется как барьер.\n'
@@ -564,15 +564,15 @@ def package(out, jar, packs, report, manifest, run_id):
         'R19: импортированы внешние Overworld-данжи; 134 наземные структуры допускается только на сухих островах Y>=129, океанские/подземные сохраняют исходное размещение; Nether/End не затрагиваются.\n'
         'R20: компоненты flood, уходящие через границу чанка ниже Y128, не превращаются целиком в source-water; village pieces с перепадом поверхности более 8 блоков отклоняются.\n'
         'R21: seam-reconciliation выполняется в реальном Moonrise LIGHT-пути и использует только уже присутствующий FEATURES-кэш соседей.\n'
-        'R22: FEATURES-сосед публикует будущую ocean-connected область по OCEAN_FLOOR_WG, поэтому шов WATER/AIR больше не зависит от порядка выполнения LIGHT.\n'
-        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; R18 flora/deep-lava + R19 external-structure pack + R20 village-slope + R21/R22 seam-flood policy, сухие шахты, village foundations, R16 lava-ocean audit и roof Y512 обязательны.\n'
+        'R22: FEATURES-сосед публикует будущую ocean-connected область по OCEAN_FLOOR_WG, поэтому шов WATER/AIR больше не зависит от порядка выполнения LIGHT.\n'\n        'R23: proximity больше не является правом на затопление; пещера заполняется водой только при доказанной связи с поверхностным океаном.\n'
+        'Natural gate: два независимых кандидата; ниже Y=-64 руда обязана совпасть по координатам, выше — профиль количества по каждому типу/всего с допуском <=0.5%; полный coordinate delta сохраняется; R18 flora/deep-lava + R19 external-structure pack + R20 village-slope + R21/R22/R23 seam-flood policy, сухие шахты, village foundations, R16 lava-ocean audit и roof Y512 обязательны.\n'
         'Запуск: java -Xms1G -Xmx4G -jar server.jar --nogui\n'
         'Production-ready=false: после CI всё равно нужен визуальный осмотр мира в игре.\n'
     ).encode('utf-8')
     payload['SHA256SUMS.txt'] = ''.join(
         hashlib.sha256(b).hexdigest()+'  '+n+'\n' for n,b in sorted(payload.items())
     ).encode()
-    name = 'NeverFolia-FIELD-R22-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
+    name = 'NeverFolia-FIELD-R23-NR16-FIXPACK-TEST-'+report['source_sha'][:7]+'.zip'
     dest = out/name
     with zipfile.ZipFile(dest, 'x', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for n,b in sorted(payload.items()):
@@ -603,7 +603,7 @@ def main():
     require(manifest.get('profile') == PROFILE and manifest.get('source_sha') == args.source_sha
             and manifest.get('jar_sha256') == sha(args.jar)
             and manifest.get('r22_fixpack') is True and manifest.get('nether_r16_installed') is True,
-            'missing exact R22/Nether-R16 build profile')
+            'missing exact R23/Nether-R16 build profile')
     external_manifest = external_structure_pack_audit(args.overworld.resolve())
     write_json(out/'external-structures-r19.json', external_manifest)
     current_packs = {'NeverOverworld.zip': args.overworld.resolve(), 'NeverNether.zip': args.nether.resolve()}
@@ -627,7 +627,7 @@ def main():
             write_json(out/(role+'-vs-historical-full-delta.json'),
                        paired.ore_delta(ores['historical'], ores[role]))
         write_json(target, report)
-        require(report['manual_test_eligible'], 'FIELD-R22/Nether-R16 natural acceptance rejected; see report')
+        require(report['manual_test_eligible'], 'FIELD-R23/Nether-R16 natural acceptance rejected; see report')
         bundle = package(out, args.jar.resolve(), current_packs, report, manifest, args.run_id)
         write_json(out/'field-r13-r16-natural-bundle.json', bundle)
         print(json.dumps(bundle, indent=2), flush=True)
