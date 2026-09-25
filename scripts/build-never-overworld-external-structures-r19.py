@@ -308,6 +308,15 @@ def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
         base["elements"].extend(d.get("elements",[]))
         files[dest]=(json.dumps(base,indent=2,ensure_ascii=False)+"\n").encode()
 
+def dat_function_compat(path: str) -> bool:
+    # Dungeons & Taverns enchantments use minecraft:run_function effects.
+    # Functions are inert unless explicitly invoked, so importing the source
+    # function namespace is safe and required for copied enchantments.
+    return (
+        path.startswith("data/nova_structures/function/")
+        or path.startswith("data/nova_structures/functions/")
+    )
+
 def should_copy_dependency(path: str) -> bool:
     if not path.startswith("data/"): return False
     parts=path.split("/")
@@ -357,6 +366,9 @@ def filter_pack(key: str, files: dict[str, bytes]):
     out={}
     for n,b in files.items():
         if key=="dat" and dat_minecraft_compat(n):
+            out[n]=b
+            continue
+        if key=="dat" and dat_function_compat(n):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -421,6 +433,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        jockey_function_candidates=(
+            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
+            "data/nova_structures/functions/jockey/spawn_zautilus_jockey.mcfunction",
+        )
+        if not any(n in out for n in jockey_function_candidates):
+            fail("Dungeons & Taverns jockey function dependency missing: nova_structures:jockey/spawn_zautilus_jockey")
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
