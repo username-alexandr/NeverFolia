@@ -60,6 +60,7 @@ final class NeverOverworldExternalStructurePolicyR19 {{
     static final int EXPECTED_HEIGHT = 1024;
     static final int MIN_DRY_SURFACE_Y = 129;
     static final int MAX_PIECE_SPAN = 256;
+    static final int BETTER_MONUMENT_TERRAIN_RADIUS = 29;
 
     private NeverOverworldExternalStructurePolicyR19() {{}}
 
@@ -72,6 +73,44 @@ final class NeverOverworldExternalStructurePolicyR19 {{
 
     static boolean isIslandSurfaceId(final String id) {{
         return radiusForId(id) > 0;
+    }}
+
+    static boolean isBetterMonumentId(final String id) {{
+        return id.equals("repurposed_structures:monument_desert")
+            || id.equals("repurposed_structures:monument_jungle")
+            || id.equals("repurposed_structures:monument_icy");
+    }}
+
+    private static boolean dryAt(
+        final ChunkGenerator generator,
+        final RandomState randomState,
+        final ChunkAccess heightAccessor,
+        final int x,
+        final int z
+    ) {{
+        return generator.getBaseHeight(
+            x,
+            z,
+            Heightmap.Types.WORLD_SURFACE_WG,
+            heightAccessor,
+            randomState
+        ) >= MIN_DRY_SURFACE_Y;
+    }}
+
+    private static boolean monumentTerrainAllowed(
+        final ChunkGenerator generator,
+        final RandomState randomState,
+        final ChunkAccess heightAccessor,
+        final ChunkPos chunkPos
+    ) {{
+        final int x = chunkPos.getMiddleBlockX();
+        final int z = chunkPos.getMiddleBlockZ();
+        final int r = BETTER_MONUMENT_TERRAIN_RADIUS;
+        return dryAt(generator, randomState, heightAccessor, x, z)
+            && dryAt(generator, randomState, heightAccessor, x - r, z - r)
+            && dryAt(generator, randomState, heightAccessor, x - r, z + r)
+            && dryAt(generator, randomState, heightAccessor, x + r, z - r)
+            && dryAt(generator, randomState, heightAccessor, x + r, z + r);
     }}
 
     private static boolean inScope(
@@ -100,14 +139,17 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         if (!inScope(dimension, heightAccessor)) return true;
         final int radius = radiusForId(structureId(structure));
         if (radius <= 0) return true;
-        final int base = generator.getBaseHeight(
-            chunkPos.getMiddleBlockX(),
-            chunkPos.getMiddleBlockZ(),
-            Heightmap.Types.WORLD_SURFACE_WG,
+        final String id = structureId(structure);
+        if (isBetterMonumentId(id)) {{
+            return monumentTerrainAllowed(generator, randomState, heightAccessor, chunkPos);
+        }}
+        return dryAt(
+            generator,
+            randomState,
             heightAccessor,
-            randomState
+            chunkPos.getMiddleBlockX(),
+            chunkPos.getMiddleBlockZ()
         );
-        return base >= MIN_DRY_SURFACE_Y;
     }}
 
     static boolean allowsGenerated(
@@ -115,12 +157,22 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         final Holder<Structure> structure,
         final RandomState randomState,
         final ChunkAccess heightAccessor,
+        final ChunkPos chunkPos,
         final StructureStart start,
         final ResourceKey<Level> dimension
     ) {{
         if (!inScope(dimension, heightAccessor)) return true;
-        if (radiusForId(structureId(structure)) <= 0) return true;
+        final String id = structureId(structure);
+        if (radiusForId(id) <= 0) return true;
         if (start == null || !start.isValid()) return false;
+
+        // Source Repurposed Structures monument placement uses centre + four
+        // +/-29 WORLD_SURFACE_WG terrain probes. Converted Jigsaw piece boxes
+        // include large empty envelopes, so an all-column bbox test wrongly
+        // rejects every valid Better Monument candidate.
+        if (isBetterMonumentId(id)) {{
+            return monumentTerrainAllowed(generator, randomState, heightAccessor, chunkPos);
+        }}
 
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
@@ -228,6 +280,7 @@ def patch_source(source: str) -> str:
             + indent + f"    {entry}.structure(),\n"
             + indent + f"    {random_state},\n"
             + indent + f"    {chunk},\n"
+            + indent + f"    {chunk_pos},\n"
             + indent + f"    {start_var},\n"
             + indent + f"    {dimension}\n"
             + indent + ")) {\n"
@@ -277,7 +330,14 @@ def verify(folia: Path) -> None:
             fail("untouched structure accidentally island-gated: " + untouched)
     if "WORLD_SURFACE_WG" not in helper or "MIN_DRY_SURFACE_Y = 129" not in helper:
         fail("R19 dry island height policy missing")
-    for marker in ("allowsGenerated(", "for (final StructurePiece piece : start.getPieces())", "MAX_PIECE_SPAN = 256"):
+    for marker in (
+        "allowsGenerated(",
+        "for (final StructurePiece piece : start.getPieces())",
+        "MAX_PIECE_SPAN = 256",
+        "BETTER_MONUMENT_TERRAIN_RADIUS = 29",
+        "monumentTerrainAllowed(",
+        "isBetterMonumentId(",
+    ):
         if marker not in helper:
             fail("R19 generated-piece safety marker missing: " + marker)
     if "getChunk(" in helper or "getBlockState(" in helper:

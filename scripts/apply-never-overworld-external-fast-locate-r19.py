@@ -75,6 +75,7 @@ final class NeverOverworldExternalFastLocateR19 {
     private static final int MAX_CANDIDATE_RINGS=16;
     private static final int MAX_SURFACE_PROBES=512;
     private static final int LOCATE_PROBE_RADIUS=16;
+    private static final int BETTER_MONUMENT_PROBE_RADIUS=29;
 
     private NeverOverworldExternalFastLocateR19(){}
 
@@ -266,10 +267,20 @@ final class NeverOverworldExternalFastLocateR19 {
         // natural generation. Four 16-block cardinal probes only reject an
         // obviously shoreline-centred candidate; the generated piece bbox is
         // still checked column-by-column before StructureStart persistence.
-        final int probeRadius=Math.min(radius,LOCATE_PROBE_RADIUS);
-        final int[][] probes={
-            {-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}
-        };
+        final boolean betterMonument=id.equals("repurposed_structures:monument_desert")
+            ||id.equals("repurposed_structures:monument_jungle")
+            ||id.equals("repurposed_structures:monument_icy");
+        final int probeRadius=betterMonument
+            ? BETTER_MONUMENT_PROBE_RADIUS
+            : Math.min(radius,LOCATE_PROBE_RADIUS);
+        final int[][] probes=betterMonument
+            ? new int[][]{
+                {-probeRadius,-probeRadius},{-probeRadius,probeRadius},
+                {probeRadius,-probeRadius},{probeRadius,probeRadius}
+              }
+            : new int[][]{
+                {-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}
+              };
         for(final int[] probe:probes){
             if(preliminarySurfaceY(
                 state,centerX+probe[0],centerZ+probe[1],surfaceBudget
@@ -364,7 +375,9 @@ def verify(root:Path)->None:
         "MAX_CANDIDATE_RINGS=16",
         "MAX_SURFACE_PROBES=512",
         "LOCATE_PROBE_RADIUS=16",
-        "final int[][] probes=",
+        "BETTER_MONUMENT_PROBE_RADIUS=29",
+        "final boolean betterMonument=",
+        "{-probeRadius,-probeRadius},{-probeRadius,probeRadius}",
         "{-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}",
     ):
         if marker not in chunk+helper:
