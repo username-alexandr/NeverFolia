@@ -42,6 +42,49 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
 
+      - name: Export original D&T scripted runtime audit
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 - <<'PY'
+          import hashlib, io, urllib.request, zipfile
+          from pathlib import Path
+          url='https://cdn.modrinth.com/data/tpehi7ww/versions/CS77UwHE/Dungeons%20and%20Taverns%20v5.3.2.zip'
+          expected='4096cd6372e0f244efa0e85c4d884bd85afe665a84a050280acd483b3222b4f9'
+          req=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-DNT-Audit/1'})
+          with urllib.request.urlopen(req,timeout=120) as response:
+              raw=response.read()
+          actual=hashlib.sha256(raw).hexdigest()
+          if actual!=expected:
+              raise SystemExit(f'D&T SHA mismatch: {actual}')
+          names=[]
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for n in z.namelist():
+                  if not n.endswith('.mcfunction'): continue
+                  if '/function/' not in n and '/functions/' not in n: continue
+                  low=n.lower()
+                  if any(k in low for k in (
+                      '/jockey/','ghast_boss','ghasted','swift_soar',
+                      'spawn_cave_spider_minion','spawn_guardian_minion',
+                      'spawn_spider_minion','hydro_veil','gravity_particles'
+                  )):
+                      names.append(n)
+              out=Path('artifacts/dnt-scripted-runtime-audit.txt')
+              with out.open('w',encoding='utf-8') as fh:
+                  for n in sorted(names):
+                      fh.write('===== '+n+' =====\n')
+                      fh.write(z.read(n).decode('utf-8','replace'))
+                      fh.write('\n\n')
+          print('exported',len(names),'D&T scripted runtime functions')
+          PY
+      - name: Upload D&T scripted runtime audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-DNT-SCRIPT-AUDIT-${{ github.sha }}
+          path: artifacts/dnt-scripted-runtime-audit.txt
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Materialize current NeverFolia candidate
         run: |
           set -euo pipefail
@@ -101,41 +144,6 @@ jobs:
           python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R15.zip --verify
           python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
-
-      - name: Export original D&T scripted runtime audit
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, zipfile
-          from pathlib import Path
-          src=Path('.work/external-structures-r19/dat.zip')
-          out=Path('artifacts/dnt-scripted-runtime-audit.txt')
-          names=[]
-          with zipfile.ZipFile(src) as z:
-              for n in z.namelist():
-                  if not n.endswith('.mcfunction'): continue
-                  if '/function/' not in n and '/functions/' not in n: continue
-                  low=n.lower()
-                  if any(k in low for k in (
-                      '/jockey/','ghast_boss','ghasted','swift_soar',
-                      'spawn_cave_spider_minion','spawn_guardian_minion',
-                      'spawn_spider_minion','hydro_veil','gravity_particles'
-                  )):
-                      names.append(n)
-              with out.open('w',encoding='utf-8') as fh:
-                  for n in sorted(names):
-                      fh.write('===== '+n+' =====\n')
-                      fh.write(z.read(n).decode('utf-8','replace'))
-                      fh.write('\n\n')
-          print('exported',len(names),'D&T scripted runtime functions')
-          PY
-      - name: Upload D&T scripted runtime audit
-        uses: actions/upload-artifact@v4
-        with:
-          name: NeverFolia-DNT-SCRIPT-AUDIT-${{ github.sha }}
-          path: artifacts/dnt-scripted-runtime-audit.txt
-          retention-days: 7
-          if-no-files-found: error
 
       - name: Upload exact server + datapacks bundle inputs
         uses: actions/upload-artifact@v4
