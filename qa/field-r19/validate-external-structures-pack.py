@@ -49,6 +49,30 @@ def read_json(archive:zipfile.ZipFile,name:str)->dict:
     if not isinstance(value,dict):fail("JSON root must be an object: "+name)
     return value
 
+def collect_run_function_refs(value)->set[str]:
+    refs=set()
+    def walk(node):
+        if isinstance(node,dict):
+            t=node.get("type")
+            fn=node.get("function")
+            if t in ("minecraft:run_function","run_function") and isinstance(fn,str):
+                refs.add(fn)
+            for child in node.values(): walk(child)
+        elif isinstance(node,list):
+            for child in node: walk(child)
+    walk(value)
+    return refs
+
+def function_path_candidates(resource_id:str)->tuple[str,str]:
+    if ":" in resource_id:
+        namespace,path=resource_id.split(":",1)
+    else:
+        namespace,path="minecraft",resource_id
+    return (
+        f"data/{namespace}/function/{path}.mcfunction",
+        f"data/{namespace}/functions/{path}.mcfunction",
+    )
+
 def expected_unused(spec_path:Path)->set[str]:
     data=json.loads(spec_path.read_text(encoding="utf-8"))
     raw=data.get("source_unused_structures",{})
@@ -80,6 +104,24 @@ def audit(pack:Path,spec_path:Path)->dict:
         if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
+
+        run_function_refs=set()
+        for name in names:
+            if not name.endswith(".json"): continue
+            try:
+                payload=read_json(archive,name)
+            except ValueError:
+                raise
+            run_function_refs |= collect_run_function_refs(payload)
+        unresolved_functions=[]
+        for rid in sorted(run_function_refs):
+            if rid.startswith("minecraft:"):
+                continue
+            candidates=function_path_candidates(rid)
+            if not any(candidate in names for candidate in candidates):
+                unresolved_functions.append(rid)
+        if unresolved_functions:
+            fail("run_function references missing imported functions: "+repr(unresolved_functions[:40]))
 
         structures={}
         sets={}
@@ -164,6 +206,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "spawnable_external":len(external-expected),
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
+                "run_function_refs":len(run_function_refs),
             },
             "source_unused":sorted(expected),
             "representatives":reps,
