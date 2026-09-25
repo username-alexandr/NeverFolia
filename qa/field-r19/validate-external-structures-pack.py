@@ -49,6 +49,20 @@ def read_json(archive:zipfile.ZipFile,name:str)->dict:
     if not isinstance(value,dict):fail("JSON root must be an object: "+name)
     return value
 
+def run_function_refs(payload)->set[str]:
+    refs=set()
+    def walk(value):
+        if isinstance(value,dict):
+            if value.get("type")=="minecraft:run_function" and isinstance(value.get("function"),str):
+                refs.add(value["function"])
+            for child in value.values():
+                walk(child)
+        elif isinstance(value,list):
+            for child in value:
+                walk(child)
+    walk(payload)
+    return refs
+
 def expected_unused(spec_path:Path)->set[str]:
     data=json.loads(spec_path.read_text(encoding="utf-8"))
     raw=data.get("source_unused_structures",{})
@@ -68,6 +82,33 @@ def audit(pack:Path,spec_path:Path)->dict:
         if bad is not None:fail("corrupt ZIP entry: "+bad)
         names=set(archive.namelist())
         if MANIFEST not in names:fail("R19 external structures manifest missing")
+
+        runtime_refs=set()
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            try:
+                payload=json.loads(archive.read(name).decode("utf-8"))
+            except Exception:
+                continue
+            runtime_refs.update(run_function_refs(payload))
+        missing_runtime=[]
+        for rid in sorted(runtime_refs):
+            if ":" not in rid:
+                continue
+            ns,fn=rid.split(":",1)
+            candidates=(
+                f"data/{ns}/function/{fn}.mcfunction",
+                f"data/{ns}/functions/{fn}.mcfunction",
+            )
+            if not any(candidate in names for candidate in candidates):
+                missing_runtime.append(rid)
+        if missing_runtime:
+            fail("run_function references missing function resources: "+repr(missing_runtime[:40]))
+        if "nova_structures:jockey/spawn_zautilus_jockey" in runtime_refs:
+            expected_fn="data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction"
+            if expected_fn not in names:
+                fail("zautilus jockey enchantment function missing")
         manifest=read_json(archive,MANIFEST)
         if manifest.get("profile")!=PROFILE:fail("wrong R19 manifest profile")
         if manifest.get("minecraft_namespace_overrides_imported") is not False:
@@ -164,6 +205,11 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "spawnable_external":len(external-expected),
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
+                "run_function_refs":len(runtime_refs),
+                "function_files":sum(
+                    1 for name in names
+                    if "/function/" in name and name.endswith(".mcfunction")
+                ),
             },
             "source_unused":sorted(expected),
             "representatives":reps,
