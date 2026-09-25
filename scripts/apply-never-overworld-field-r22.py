@@ -31,7 +31,7 @@ OLD_SEEDS = """        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
             pos.set(baseX + x, SCAN_MAX_Y, baseZ + z);
             if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;
             final int e = encode(x, SCAN_MAX_Y, z, minY);
-            connected.set(e);
+            connected[e] = true;
             queue[tail++] = e;
         }
 """
@@ -102,7 +102,7 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
         final int maxY = Math.min(SCAN_MAX_Y, owner.getMaxY() - 1);
         if (minY > maxY) return 0;
 
-        // R23: solve the hydraulic connectivity over the complete radius-1
+        // R23: solve the hydraulic connectivity over the complete scheduler cache
         // FEATURES cache in one deterministic pass. This is scheduling
         // independent and does not infer flooding from mere ocean proximity.
         final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);
@@ -125,7 +125,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 3;
     private static final int CACHE_BLOCK_AREA = CACHE_BLOCK_WIDTH * CACHE_BLOCK_WIDTH;
 
     /**
-     * Exact cache-bounded FEATURES flood solver. Prefer radius 2 when the
+     * Exact cache-bounded FEATURES flood solver. Prefer radius 3 when the
      * scheduler exposes it; missing outer holders remain null and are never
      * synchronously loaded.
      *
