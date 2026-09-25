@@ -51,6 +51,46 @@ def state_name(state):
     if state is None:return None
     return state.get("Name")
 
+def deep_water_wall_audit(volume,chunks):
+    """Reject large below-ocean WATER columns/planes not reaching Y128.
+
+    This targets the user's x-ray-visible vertical WATER walls. A column is
+    suspicious when it contains a long contiguous deep-water run but has no
+    WATER path in that same X/Z column to the ocean plane. The metric is local
+    and deliberately conservative: ordinary short cave drips do not fail it.
+    """
+    selected=set(chunks)
+    suspicious=[]
+    max_run=0
+    total_columns=0
+    for cx,cz in sorted(selected):
+        base_x=cx*16;base_z=cz*16
+        for x in range(base_x,base_x+16):
+            for z in range(base_z,base_z+16):
+                runs=[];start=None
+                for y in range(-64,OCEAN_Y):
+                    water=state_name(volume.at(x,y,z))=="minecraft:water"
+                    if water and start is None:start=y
+                    elif not water and start is not None:
+                        runs.append((start,y-1));start=None
+                if start is not None:runs.append((start,OCEAN_Y-1))
+                if not runs:continue
+                surface_connected=state_name(volume.at(x,OCEAN_Y,z))=="minecraft:water"
+                for lo,hi in runs:
+                    length=hi-lo+1
+                    max_run=max(max_run,length)
+                    if length<16 or surface_connected:continue
+                    total_columns+=1
+                    if len(suspicious)<200:
+                        suspicious.append({"x":x,"z":z,"min_y":lo,"max_y":hi,"length":length})
+    return {
+        "max_deep_vertical_water_run":max_run,
+        "suspicious_deep_water_columns":total_columns,
+        "examples":suspicious,
+        "pass":total_columns==0,
+        "minimum_flagged_run":16,
+    }
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--jar",type=Path,required=True)
@@ -118,6 +158,8 @@ def main():
             if len(berries)>=200:break
         if len(berries)>=200:break
 
+    water_walls=deep_water_wall_audit(volume,chunks)
+
     text=log.read_text(encoding="utf-8",errors="replace")
     chunk_errors=[
         line.strip() for line in text.splitlines()
@@ -136,10 +178,12 @@ def main():
         "dry_samples":dry_rows,
         "failed_dry_samples":failed_dry,
         "sweet_berry_bush_at_or_below_ocean":berries,
+        "deep_water_wall_audit":water_walls,
         "chunk_system_errors":chunk_errors[:100],
         "checks":{
             "reported_deep_cave_samples_not_water":len(failed_dry)==0,
             "sweet_berry_bush_only_above_ocean":len(berries)==0,
+            "no_isolated_deep_water_walls":water_walls["pass"],
             "no_chunk_system_failure":len(chunk_errors)==0,
         },
     }
@@ -148,7 +192,10 @@ def main():
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[FIELD-R24 water/flora] "+json.dumps({
         "seed":SEED,"pass":report["pass"],"dry_samples":dry_rows,
-        "berries_below_ocean":len(berries),"chunk_errors":len(chunk_errors)
+        "berries_below_ocean":len(berries),
+        "deep_water_columns":water_walls["suspicious_deep_water_columns"],
+        "max_deep_water_run":water_walls["max_deep_vertical_water_run"],
+        "chunk_errors":len(chunk_errors)
     },ensure_ascii=False,sort_keys=True),flush=True)
     require(report["pass"],"user-seed water/flora regression failed; see "+str(target))
 
