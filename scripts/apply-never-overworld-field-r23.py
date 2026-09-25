@@ -77,11 +77,7 @@ RECONCILE_START = (
 )
 SEED_NEIGHBOR_START = "    private static int seedFromNeighbor(\n"
 
-EXACT_RECONCILE = R23_MARKER + """    public static int reconcileSeams(
-        final WorldGenLevel level,
-        final StaticCache2D<GenerationChunkHolder> cache,
-        final ChunkAccess owner
-    ) {
+EXACT_RECONCILE = R23_MARKER + """    public static int reconcileSeams(final WorldGenLevel level, final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
         if (level == null || cache == null || owner == null) return 0;
         if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
