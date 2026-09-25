@@ -107,6 +107,19 @@ def load(name,path):
     require(spec is not None and spec.loader is not None,"missing module: "+str(path))
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 
+def missing_runtime_function_errors(*logs):
+    rows=[]
+    pattern=re.compile(
+        r"Enchantment run_function effect failed for non-existent function ([a-z0-9_.-]+:[a-z0-9_./-]+)"
+    )
+    for log in logs:
+        path=Path(log)
+        if not path.is_file():
+            continue
+        for match in pattern.finditer(path.read_text(encoding="utf-8",errors="replace")):
+            rows.append({"log":path.name,"function":match.group(1)})
+    return rows
+
 def box_values(raw):
     if isinstance(raw,dict): raw=raw.get("$int_array")
     if isinstance(raw,list) and len(raw)==6 and all(type(v) is int for v in raw):
@@ -378,13 +391,19 @@ def main_run(args):
         "policy":"unchanged source placement is validated by validate-external-structures-pack.py",
         "runtime_locate_skipped":True,
     }
+    function_errors=missing_runtime_function_errors(
+        out/"external-structures-runtime-discovery.log",
+        out/"external-structures-runtime-coverage.log",
+    )
+    report["runtime_missing_function_errors"]=function_errors
     report["checks"]={
+        "runtime_run_function_dependencies_resolved":len(function_errors)==0,
         "surface_source_groups_found":groups_found,
         "surface_representatives_found":surface_found,
         "found_surface_footprints_dry_at_y128":surface_dry,
         "source_placement_delegated_to_complete_static_graph_qa":True,
     }
-    report["pass"]=surface_found and surface_dry
+    report["pass"]=surface_found and surface_dry and len(function_errors)==0
     target=out/"external-structures-runtime-qa.json"
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[External Runtime QA] "+json.dumps({
@@ -423,6 +442,8 @@ def self_test():
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
+    require(missing_runtime_function_errors()==[],
+            "SELF-TEST empty log set must have no missing function errors")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():
