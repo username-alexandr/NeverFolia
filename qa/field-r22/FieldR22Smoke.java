@@ -45,16 +45,10 @@ public final class FieldR22Smoke {
         check(!NeverOverworldFloodConnectivityR15.horizontalSeamBelowOcean(0, 128, 8),
             "Y128 itself is not the below-ocean seam band");
 
-        check(NeverOverworldFloodConnectivityR15.proximityFallbackAllowed(768, 48, 8, true),
-            "measured seam component near ocean must qualify for bounded fallback");
-        check(!NeverOverworldFloodConnectivityR15.proximityFallbackAllowed(767, 48, 8, true),
-            "small component must remain dry");
-        check(!NeverOverworldFloodConnectivityR15.proximityFallbackAllowed(768, 47, 8, true),
-            "weak seam contact must remain dry");
-        check(!NeverOverworldFloodConnectivityR15.proximityFallbackAllowed(768, 48, 7, true),
-            "sub-8-block vertical-span cavity must remain dry");
-        check(!NeverOverworldFloodConnectivityR15.proximityFallbackAllowed(20000, 4000, 90, false),
-            "large inland cave without ocean proximity must remain dry");
+        // FIELD-R23 regression: proximity to an ocean is never itself a flood
+        // seed. There is intentionally no proximityFallbackAllowed API anymore;
+        // only surfaceOceanSeed/prospectiveOceanSurfaceSeed may authorize the
+        // component before seam propagation.
 
         out.println("PASS FieldR22Smoke checks=" + checks);
     }
