@@ -23,6 +23,8 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class NeverOverworldFloodConnectivityR15 {
     static final int SCAN_MIN_Y = -64;
     static final int SCAN_MAX_Y = 128;
+    static final int DEEP_FLOW_MAX_Y = 96;
+    static final int MIN_DEEP_APERTURE = 6;
 
     private NeverOverworldFloodConnectivityR15() {}
 
@@ -103,6 +105,8 @@ public final class NeverOverworldFloodConnectivityR15 {
                 neighborPos.set(neighborBaseX + nx, y, neighborBaseZ + nz);
                 if (!traversable(neighbor, neighborPos)) continue;
                 if (!traversable(owner, ownerPos)) continue;
+                if (y <= DEEP_FLOW_MAX_Y
+                    && (!hydraulicOpen(neighbor, nx, y, nz) || !hydraulicOpen(owner, ox, y, oz))) continue;
 
                 if (!owner.getBlockState(ownerPos).is(Blocks.WATER)) {
                     owner.setBlockState(ownerPos, Blocks.WATER.defaultBlockState(), 0);
@@ -156,6 +160,7 @@ public final class NeverOverworldFloodConnectivityR15 {
         if (connected[e]) return tailIn;
         final BlockPos pos = new BlockPos(chunk.getPos().getMinBlockX() + x, y, chunk.getPos().getMinBlockZ() + z);
         if (!traversable(chunk, pos)) return tailIn;
+        if (y <= DEEP_FLOW_MAX_Y && !hydraulicOpen(chunk, x, y, z)) return tailIn;
         connected[e] = true;
         queue[tailIn] = e;
         return tailIn + 1;
@@ -182,7 +187,8 @@ public final class NeverOverworldFloodConnectivityR15 {
             final int seed=encode(x,y,z,minY);
             if(visited[seed])continue;
             pos.set(baseX+x,y,baseZ+z);
-            if(!traversable(chunk,pos)){visited[seed]=true;continue;}
+            if(!traversable(chunk,pos)
+                || (y<=DEEP_FLOW_MAX_Y&&!hydraulicOpen(chunk,x,y,z))){visited[seed]=true;continue;}
             changed+=scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams);
         }
         return changed;
@@ -245,7 +251,22 @@ public final class NeverOverworldFloodConnectivityR15 {
         int e=encode(x,y,z,minY);if(visited[e])return tail;visited[e]=true;
         BlockPos pos=new BlockPos(chunk.getPos().getMinBlockX()+x,y,chunk.getPos().getMinBlockZ()+z);
         if(!traversable(chunk,pos))return tail;
+        if(y<=DEEP_FLOW_MAX_Y&&!hydraulicOpen(chunk,x,y,z))return tail;
         queue[tail++]=e;return tail;
+    }
+
+    static boolean hydraulicOpen(ChunkAccess chunk,int localX,int y,int localZ){
+        if(y>DEEP_FLOW_MAX_Y)return true;
+        final int baseX=chunk.getPos().getMinBlockX(),baseZ=chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
+        int open=0;
+        for(int dz=-1;dz<=1;++dz)for(int dx=-1;dx<=1;++dx){
+            final int x=localX+dx,z=localZ+dz;
+            if(x<0||x>15||z<0||z>15)continue;
+            p.set(baseX+x,y,baseZ+z);
+            if(traversable(chunk,p)&&++open>=MIN_DEEP_APERTURE)return true;
+        }
+        return false;
     }
 
     static boolean traversable(ChunkAccess chunk,BlockPos pos){
