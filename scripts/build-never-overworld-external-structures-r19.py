@@ -319,20 +319,48 @@ def should_copy_dependency(path: str) -> bool:
     if "/tags/worldgen/structure/" in path: return False
     return True
 
-def dat_runtime_dependency(path: str) -> bool:
-    """Copy inert D&T runtime helpers required by imported data-driven mechanics.
+def strip_dat_run_function_effects(value):
+    """Remove D&T scripted enchantment effects from the structure-only import.
 
-    Functions/predicates do not execute by themselves. We intentionally do not
-    import advancements or load/tick function tags here, so importing these
-    dependencies cannot start a global scheduler; they are only reachable from
-    copied enchantments/loot/item modifiers/structures.
+    The supplied D&T pack contains a broader gameplay layer (quests, bosses,
+    tick/load helpers and newer command syntax). NeverFolia imports structures,
+    not that global runtime. Keep the enchantment registry IDs so NBT/loot can
+    still resolve them, but remove run_function effects rather than importing
+    incompatible mcfunctions that spam the console or fail datapack reload.
     """
-    return (
-        path.startswith("data/nova_structures/function/")
-        or path.startswith("data/nova_structures/functions/")
-        or path.startswith("data/nova_structures/predicate/")
-        or path.startswith("data/nova_structures/predicates/")
-    )
+    if isinstance(value, list):
+        out=[]
+        for child in value:
+            sanitized=strip_dat_run_function_effects(child)
+            if sanitized is not None:
+                out.append(sanitized)
+        return out
+    if not isinstance(value, dict):
+        return value
+    if value.get("type") in ("minecraft:run_function", "run_function"):
+        return None
+
+    out={}
+    for key,child in value.items():
+        sanitized=strip_dat_run_function_effects(child)
+        if sanitized is None:
+            if key == "effect":
+                # An enchantment condition without an effect is invalid; drop
+                # the complete wrapper from its parent list.
+                return None
+            continue
+        out[key]=sanitized
+
+    # all_of with no remaining effects is itself a no-op and should disappear.
+    if out.get("type") in ("minecraft:all_of", "all_of") and out.get("effects") == []:
+        return None
+    return out
+
+def sanitize_dat_enchantment(data: dict) -> dict:
+    out=strip_dat_run_function_effects(copy.deepcopy(data))
+    if not isinstance(out,dict):
+        fail("D&T enchantment sanitizer removed JSON root")
+    return out
 
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
@@ -371,8 +399,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_dependency(n)):
+        if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
+            continue
+        if key=="dat" and "/enchantment/" in n and n.endswith(".json"):
+            d=sanitize_dat_enchantment(read_json(b,n))
+            out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         if not should_copy_dependency(n): continue
         if key in {"witch","monuments"} and "/tags/worldgen/biome/" in n:
@@ -436,14 +468,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
-        # D&T uses non-survival enchantments as data-driven mob/boss controllers.
-        # Keeping enchantment JSON while stripping every function creates a
-        # console-error loop and silently breaks those encounters.
-        required_runtime=(
-            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
-        )
-        for n in required_runtime:
-            if n not in out: fail("Dungeons & Taverns runtime dependency missing: "+n)
+
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
