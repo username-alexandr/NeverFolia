@@ -84,8 +84,14 @@ ORIGINS=(
     (12000,12000),(-12000,12000),(12000,-12000),(-12000,-12000),
     (24000,0),(-24000,0),(0,24000),(0,-24000),
 )
+MONUMENT_ORIGINS=ORIGINS+(
+    (36000,0),(-36000,0),(0,36000),(0,-36000),
+    (36000,36000),(-36000,36000),(36000,-36000),(-36000,-36000),
+    (48000,0),(-48000,0),(0,48000),(0,-48000),
+)
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
 MAX_GROUP_TARGET_CANDIDATES=2
+MAX_MONUMENT_CANDIDATES_PER_TARGET=6
 
 def require(ok,message):
     if not ok: raise ValueError("[External Runtime QA] "+message)
@@ -174,16 +180,23 @@ def locate_optional(server,target,x,z,timeout=10):
         time.sleep(.25)
     raise TimeoutError(f'{command}: no locate acknowledgement')
 
-def plan_candidates(server,target):
-    # Runtime QA needs one real persisted start, not an exhaustive locate
-    # census. Stop on the first distinct bounded candidate so one rare structure
-    # cannot turn this gate into a long-running world scan.
-    for ox,oz in ORIGINS:
+def plan_candidates(server,target,*,origins=ORIGINS,limit=1):
+    # /locate is intentionally a cheap predictive prefilter. Exact generated
+    # piece safety can still reject a shoreline candidate. Collect several
+    # distinct candidates when requested so runtime QA can prove that a large
+    # island structure really persists without weakening the generation gate.
+    require(type(limit) is int and 1<=limit<=8,"invalid runtime candidate limit")
+    seen=set();rows=[]
+    for ox,oz in origins:
         found=locate_optional(server,target,ox,oz)
         if found is None:continue
         x,z=found
-        return [{"origin":[ox,oz],"located_xz":[x,z],"chunk":[x//16,z//16]}]
-    return []
+        key=(x//16,z//16)
+        if key in seen:continue
+        seen.add(key)
+        rows.append({"origin":[ox,oz],"located_xz":[x,z],"chunk":[key[0],key[1]]})
+        if len(rows)>=limit:break
+    return rows
 
 def make_work(root,overworld,nether):
     work=root/".work"/"external-structures-runtime-qa"
@@ -229,8 +242,19 @@ def main_run(args):
                     f"{group} try {target}",
                     flush=True
                 )
-                candidates=plan_candidates(server,target)
-                attempts.append({"target":target,"candidate_count":len(candidates)})
+                candidate_limit=(
+                    MAX_MONUMENT_CANDIDATES_PER_TARGET
+                    if group=="better_monuments" else 1
+                )
+                origins=MONUMENT_ORIGINS if group=="better_monuments" else ORIGINS
+                candidates=plan_candidates(
+                    server,target,origins=origins,limit=candidate_limit
+                )
+                attempts.append({
+                    "target":target,
+                    "candidate_count":len(candidates),
+                    "candidate_limit":candidate_limit,
+                })
                 if candidates:
                     chosen.append((target,candidates))
                     if len(chosen)>=MAX_GROUP_TARGET_CANDIDATES:
@@ -349,8 +373,11 @@ def self_test():
     require((1,2) in cov and (2,2) in cov,"SELF-TEST piece coverage missing owner chunks")
     require(len(candidate_chunks(0,0))==9,"SELF-TEST discovery envelope must be 3x3")
     require(len(ORIGINS)==13,"SELF-TEST bounded locate origin set drifted")
+    require(len(MONUMENT_ORIGINS)==25,"SELF-TEST monument locate origin set drifted")
     require(len(SURFACE_GROUPS)==5 and len(SOURCE_IDS)==6,"SELF-TEST source group set drifted")
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
+    require(MAX_MONUMENT_CANDIDATES_PER_TARGET==6,
+            "SELF-TEST monument candidate retry width drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
