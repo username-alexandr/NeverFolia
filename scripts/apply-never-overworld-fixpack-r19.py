@@ -36,8 +36,10 @@ def verify(folia: Path) -> None:
             "R19 island dry height changed")
     require("WORLD_SURFACE_WG" in helper,
             "R19 must use surface height sampling")
-    require("getChunk(" not in helper and "getBlockState(" not in helper,
-            "R19 island policy must not load/read neighbour chunk state")
+    require("getChunk(" not in helper and "level.getBlockState(" not in helper,
+            "R19 island policy must not synchronously load/read neighbour chunk state")
+    require("chunk.getBlockState(pos)" in helper,
+            "R24 synthetic-island materializer must inspect only its owning chunk")
     for marker in (
         "nova_structures:tavern_oak",
         "explorify:tavern",
