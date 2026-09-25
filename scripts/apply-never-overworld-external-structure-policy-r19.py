@@ -116,7 +116,7 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         );
         if (base < MIN_DRY_SURFACE_Y) {{
             debugReject(structureId(structure), "reason=center base=" + base
-                + " chunk=" + chunkPos.x + "," + chunkPos.z);
+                + " chunk=" + chunkPos.x() + "," + chunkPos.z());
             return false;
         }}
         return true;
