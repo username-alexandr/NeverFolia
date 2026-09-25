@@ -16,6 +16,7 @@ QA_PROFILE="NeverOverworld-External-Structures-QA1"
 EXTERNAL_NAMESPACES={"nova_structures","explorify","structory_towers","repurposed_structures"}
 SURFACE_PROJECTIONS={"WORLD_SURFACE_WG","WORLD_SURFACE","MOTION_BLOCKING_NO_LEAVES"}
 DNT_SAFE_RUNTIME_FUNCTIONS={
+    "nova_structures:jockey/make_drowned_into_jockey",
     "nova_structures:jockey/spawn_bogged_horseman",
     "nova_structures:jockey/spawn_camel_husk_jockey",
     "nova_structures:jockey/spawn_chicken_jockey",
@@ -28,6 +29,15 @@ DNT_SAFE_RUNTIME_FUNCTIONS={
     "nova_structures:spawn_cave_spider_minion",
     "nova_structures:spawn_guardian_minion",
     "nova_structures:spawn_spider_minion",
+    "nova_structures:ghast_boss_defeat_chain",
+    "nova_structures:ghast_boss_fireball_damage",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghasted",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
+    "nova_structures:gravity_particles",
+    "nova_structures:hydro_veil_heal",
 }
 REPRESENTATIVES={
     "surface_land":[
