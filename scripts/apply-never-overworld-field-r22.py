@@ -118,14 +118,14 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
     }
 """
 
-CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
+CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
     private static final int CACHE_CHUNK_WIDTH = CACHE_CHUNK_RADIUS * 2 + 1;
     private static final int CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16;
     private static final int CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16;
     private static final int CACHE_BLOCK_AREA = CACHE_BLOCK_WIDTH * CACHE_BLOCK_WIDTH;
 
     /**
-     * Exact cache-bounded FEATURES flood solver. Prefer radius 2 when the
+     * Exact cache-bounded FEATURES flood solver. Use the native immediate-neighbour cache when the
      * scheduler exposes it; missing outer holders remain null and are never
      * synchronously loaded.
      *
@@ -215,32 +215,18 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
 
         int changed = 0;
         final BlockState water = Blocks.WATER.defaultBlockState();
-        final BlockState air = Blocks.AIR.defaultBlockState();
         final int ownerBaseX = ownerPos.getMinBlockX();
         final int ownerBaseZ = ownerPos.getMinBlockZ();
         for (int y = minY; y <= maxY; ++y) {
             for (int localZ = 0; localZ < 16; ++localZ) {
                 for (int localX = 0; localX < 16; ++localX) {
                     final int e = encodeCache(localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, minY);
-                    final boolean oceanConnected = connected.get(e);
+                    if (!connected.get(e)) continue;
                     pos.set(ownerBaseX + localX, y, ownerBaseZ + localZ);
                     final BlockState state = owner.getBlockState(pos);
-
-                    if (oceanConnected) {
-                        if (!state.is(Blocks.WATER)
-                            && traversableCache(chunks, localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, pos, adjacent)) {
-                            owner.setBlockState(pos, water, 0);
-                            ++changed;
-                        }
-                        continue;
-                    }
-
-                    // R23: never preserve a pure generated WATER cell below the
-                    // flood plane unless exact cache connectivity proves that
-                    // it belongs to the surface ocean. This drains stale
-                    // one-sided seam water instead of flooding a sealed cave.
-                    if (y < SCAN_MAX_Y && state.is(Blocks.WATER)) {
-                        owner.setBlockState(pos, air, 0);
+                    if (!state.is(Blocks.WATER)
+                        && traversableCache(chunks, localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, pos, adjacent)) {
+                        owner.setBlockState(pos, water, 0);
                         ++changed;
                     }
                 }
@@ -432,14 +418,12 @@ def verify(folia: Path) -> None:
         "reconcileSeams",
         "floodCacheConnectedOwner",
         "new BitSet(capacity)",
-        "CACHE_CHUNK_RADIUS = 2",
+        "CACHE_CHUNK_RADIUS = 1",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
         "CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16",
         "enqueueCache",
         "traversableCache",
         "lavaAtCache",
-        "final BlockState air = Blocks.AIR.defaultBlockState();",
-        "if (y < SCAN_MAX_Y && state.is(Blocks.WATER))",
         "cacheExact=true",
     ):
         require(marker in text, "R22 marker missing: " + marker)
@@ -459,10 +443,8 @@ def verify(folia: Path) -> None:
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
         "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in text,
-        "R23 exact radius-2 cache connectivity pass missing"
+        "R23 exact native-radius cache connectivity pass missing"
     )
-    require("owner.setBlockState(pos, air, 0);" in text,
-            "R23 must drain pure WATER outside exact ocean connectivity")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
     print("[FIELD-R23] exact cache-bounded ocean-connectivity seam invariants OK")
@@ -528,11 +510,6 @@ class X {
         "SELF-TEST reconcileSeams did not switch to exact-cache flood",
     )
     require(
-        "if (y < SCAN_MAX_Y && state.is(Blocks.WATER))" in reconcile_out
-        and "owner.setBlockState(pos, air, 0);" in reconcile_out,
-        "SELF-TEST stale-water drain policy missing",
-    )
-    require(
         patch(reconcile_out) == reconcile_out,
         "SELF-TEST exact-cache transformer is not idempotent",
     )
@@ -577,7 +554,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R23] installed: radius-2 exact ocean connectivity + stale-water drain; proximity flood disabled")
+    print("[FIELD-R23] installed: native-radius exact ocean connectivity; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
