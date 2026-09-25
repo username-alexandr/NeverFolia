@@ -61,6 +61,77 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
 CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.ConcurrentHashMap<
+        net.minecraft.server.level.ServerLevel,
+        java.util.concurrent.ConcurrentHashMap<Long, BitSet>
+    > FEATURE_BOUNDARY_SEEDS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static void publishFeatureBoundarySeeds(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess source
+    ) {
+        if (level == null || source == null
+            || !level.dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return;
+
+        final int minY = Math.max(SCAN_MIN_Y, source.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, source.getMaxY() - 1);
+        if (minY > maxY) return;
+
+        final boolean[] verified = oceanConnectedFloodable(source, minY, maxY);
+        final ChunkPos cp = source.getPos();
+        publishFeatureBoundary(level, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
+        publishFeatureBoundary(level, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
+        publishFeatureBoundary(level, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
+        publishFeatureBoundary(level, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
+    }
+
+    private static void publishFeatureBoundary(
+        final net.minecraft.server.level.ServerLevel level,
+        final int targetChunkX,
+        final int targetChunkZ,
+        final boolean[] verified,
+        final int sourceFixed,
+        final int targetFixed,
+        final boolean xAxis,
+        final int minY,
+        final int maxY
+    ) {
+        final BitSet seeds = new BitSet((maxY - minY + 1) * 256);
+        for (int y = minY; y <= maxY; ++y) {
+            for (int transverse = 0; transverse < 16; ++transverse) {
+                final int sx = xAxis ? sourceFixed : transverse;
+                final int sz = xAxis ? transverse : sourceFixed;
+                if (!verified[encode(sx, y, sz, minY)]) continue;
+                final int tx = xAxis ? targetFixed : transverse;
+                final int tz = xAxis ? transverse : targetFixed;
+                seeds.set(encode(tx, y, tz, minY));
+            }
+        }
+        if (seeds.isEmpty()) return;
+
+        final long key = ChunkPos.asLong(targetChunkX, targetChunkZ);
+        final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds =
+            FEATURE_BOUNDARY_SEEDS.computeIfAbsent(level, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        worldSeeds.compute(key, (ignored, existing) -> {
+            if (existing == null) return (BitSet)seeds.clone();
+            existing.or(seeds);
+            return existing;
+        });
+    }
+
+    private static BitSet takeFeatureBoundarySeeds(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess owner
+    ) {
+        final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds = FEATURE_BOUNDARY_SEEDS.get(level);
+        if (worldSeeds == null) return null;
+        final BitSet ret = worldSeeds.remove(owner.getPos().toLong());
+        if (worldSeeds.isEmpty()) FEATURE_BOUNDARY_SEEDS.remove(level, worldSeeds);
+        return ret;
+    }
+
+"""
 
 OLD_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel level, final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
         if (level == null || cache == null || owner == null) return 0;
@@ -105,7 +176,7 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
         // R23: solve the hydraulic connectivity over the complete scheduler cache
         // FEATURES cache in one deterministic pass. This is scheduling
         // independent and does not infer flooding from mere ocean proximity.
-        final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);
+        final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             final ChunkPos cp = owner.getPos();
             System.out.println(
@@ -136,6 +207,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
      * close to the ocean.
      */
     private static int floodCacheConnectedOwner(
+        final net.minecraft.server.level.ServerLevel level,
         final StaticCache2D<GenerationChunkHolder> cache,
         final ChunkAccess owner,
         final int minY,
@@ -195,6 +267,33 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
                     }
                 }
             }
+        }
+
+        final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
+        int featureSeedCount = 0;
+        if (featureSeeds != null) {
+            for (int y = minY; y <= maxY; ++y) {
+                for (int localZ = 0; localZ < 16; ++localZ) {
+                    for (int localX = 0; localX < 16; ++localX) {
+                        if (!featureSeeds.get(encode(localX, y, localZ, minY))) continue;
+                        final int regionX = localX + CACHE_OWNER_OFFSET;
+                        final int regionZ = localZ + CACHE_OWNER_OFFSET;
+                        if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) continue;
+                        final int e = encodeCache(regionX, y, regionZ, minY);
+                        if (!connected.get(e)) {
+                            connected.set(e);
+                            queue[tail++] = e;
+                            ++featureSeedCount;
+                        }
+                    }
+                }
+            }
+        }
+        if (featureSeedCount > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R23FeatureSeeds] chunk=" + ownerPos.x() + "," + ownerPos.z()
+                + " count=" + featureSeedCount
+            );
         }
 
         while (head < tail) {
@@ -385,6 +484,10 @@ def patch(text: str) -> str:
     elif "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text and "reconcileSeams(" in text:
         require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
 
+    if "public static void publishFeatureBoundarySeeds(" not in text and "reconcileSeams(" in text:
+        require(CACHE_METHODS_ANCHOR in text, "R23 feature handoff insertion anchor missing")
+        text = text.replace(CACHE_METHODS_ANCHOR, FEATURE_HANDOFF_METHODS + CACHE_METHODS_ANCHOR, 1)
+
     if "private static int floodCacheConnectedOwner(" not in text and "reconcileSeams(" in text:
         require(CACHE_METHODS_ANCHOR in text, "R23 cache helper insertion anchor missing")
         text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
@@ -417,6 +520,10 @@ def verify(folia: Path) -> None:
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
         "floodCacheConnectedOwner",
+        "R23FeatureSeeds",
+        "takeFeatureBoundarySeeds",
+        "FEATURE_BOUNDARY_SEEDS",
+        "publishFeatureBoundarySeeds",
         "new BitSet(capacity)",
         "CACHE_CHUNK_RADIUS = 1",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
@@ -442,7 +549,7 @@ def verify(folia: Path) -> None:
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
-        "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in text,
+        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in text,
         "R23 exact native-radius cache connectivity pass missing"
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
@@ -506,7 +613,12 @@ class X {
         "SELF-TEST exact-cache helper body missing",
     )
     require(
-        "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in reconcile_out,
+        "publishFeatureBoundarySeeds" in reconcile_out
+        and "takeFeatureBoundarySeeds" in reconcile_out,
+        "SELF-TEST feature-boundary handoff helper missing",
+    )
+    require(
+        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in reconcile_out,
         "SELF-TEST reconcileSeams did not switch to exact-cache flood",
     )
     require(
@@ -554,7 +666,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R23] installed: native-radius exact ocean connectivity; proximity flood disabled")
+    print("[FIELD-R23] installed: FEATURES border handoff + native LIGHT exact connectivity; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
