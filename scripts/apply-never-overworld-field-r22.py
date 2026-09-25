@@ -59,7 +59,222 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
-PROXIMITY_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+
+OLD_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel level, final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
+        if (level == null || cache == null || owner == null) return 0;
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
+        final int minY = Math.max(SCAN_MIN_Y, owner.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, owner.getMaxY() - 1);
+        if (minY > maxY) return 0;
+
+        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];
+        final ChunkPos cp = owner.getPos();
+        final int west = seedFromNeighbor(cache, owner, cp.x() - 1, cp.z(), 0, 15, true, minY, maxY, externalSeeds);
+        final int east = seedFromNeighbor(cache, owner, cp.x() + 1, cp.z(), 15, 0, true, minY, maxY, externalSeeds);
+        final int north = seedFromNeighbor(cache, owner, cp.x(), cp.z() - 1, 0, 15, false, minY, maxY, externalSeeds);
+        final int south = seedFromNeighbor(cache, owner, cp.x(), cp.z() + 1, 15, 0, false, minY, maxY, externalSeeds);
+        final int seeded = west + east + north + south;
+
+        // Always run the seam-capable owner pass. A component can be
+        // ocean-connected through the owner's own Y=128 seed even when no
+        // immediate neighbour contributes an external seed. Returning early
+        // here produced one-sided WATER/AIR chunk walls.
+        final int changed = floodVerifiedComponents(owner, externalSeeds, true);
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R22Seam] chunk=" + cp.x() + "," + cp.z()
+                + " seeds=" + west + "," + east + "," + north + "," + south
+                + " total=" + seeded + " changed=" + changed
+            );
+        }
+        return changed;
+    }
+"""
+
+NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel level, final StaticCache2D<GenerationChunkHolder> cache, final ChunkAccess owner) {
+        if (level == null || cache == null || owner == null) return 0;
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
+        final int minY = Math.max(SCAN_MIN_Y, owner.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, owner.getMaxY() - 1);
+        if (minY > maxY) return 0;
+
+        // R23: solve the hydraulic connectivity over the complete radius-1
+        // FEATURES cache in one deterministic pass. This is scheduling
+        // independent and does not infer flooding from mere ocean proximity.
+        final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            final ChunkPos cp = owner.getPos();
+            System.out.println(
+                "[NeverFolia][R22Seam] chunk=" + cp.x() + "," + cp.z()
+                + " seeds=0,0,0,0 total=0 changed=" + changed
+                + " cacheExact=true"
+            );
+        }
+        return changed;
+    }
+"""
+
+CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
+    private static final int CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16;
+    private static final int CACHE_BLOCK_AREA = CACHE_BLOCK_WIDTH * CACHE_BLOCK_WIDTH;
+
+    /**
+     * Exact radius-1 FEATURES-cache flood solver.
+     *
+     * Seeds come only from Y=128 columns that are actual/prospective flooded
+     * exterior according to OCEAN_FLOOR_WG. BFS then traverses real floodable
+     * cells across chunk boundaries. Only connected cells in the owner chunk
+     * are written. A sealed cave therefore stays dry even when geographically
+     * close to the ocean.
+     */
+    private static int floodCacheConnectedOwner(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int minY,
+        final int maxY
+    ) {
+        final ChunkAccess[] chunks = new ChunkAccess[CACHE_CHUNK_WIDTH * CACHE_CHUNK_WIDTH];
+        final ChunkPos ownerPos = owner.getPos();
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                final int slot = (dz + 1) * CACHE_CHUNK_WIDTH + (dx + 1);
+                if (dx == 0 && dz == 0) {
+                    chunks[slot] = owner;
+                    continue;
+                }
+                final int chunkX = ownerPos.x() + dx;
+                final int chunkZ = ownerPos.z() + dz;
+                if (!cache.contains(chunkX, chunkZ)) continue;
+                final GenerationChunkHolder holder = cache.get(chunkX, chunkZ);
+                if (holder != null) {
+                    chunks[slot] = holder.getChunkIfPresent(ChunkStatus.FEATURES);
+                }
+            }
+        }
+
+        final int layers = maxY - minY + 1;
+        final int capacity = layers * CACHE_BLOCK_AREA;
+        final boolean[] connected = new boolean[capacity];
+        final int[] queue = new int[capacity];
+        int head = 0;
+        int tail = 0;
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        // Seed every real/prospective exterior-water column in the 3x3 cache.
+        for (int tileZ = 0; tileZ < CACHE_CHUNK_WIDTH; ++tileZ) {
+            for (int tileX = 0; tileX < CACHE_CHUNK_WIDTH; ++tileX) {
+                final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+                if (chunk == null) continue;
+                final int chunkBaseX = chunk.getPos().getMinBlockX();
+                final int chunkBaseZ = chunk.getPos().getMinBlockZ();
+                for (int localZ = 0; localZ < 16; ++localZ) {
+                    for (int localX = 0; localX < 16; ++localX) {
+                        final int surfaceY = chunk.getHeight(
+                            Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ
+                        );
+                        pos.set(chunkBaseX + localX, SCAN_MAX_Y, chunkBaseZ + localZ);
+                        final BlockState state = chunk.getBlockState(pos);
+                        if (!surfaceOceanSeed(surfaceY, state) || !traversable(chunk, pos)) continue;
+                        final int regionX = tileX * 16 + localX;
+                        final int regionZ = tileZ * 16 + localZ;
+                        final int e = encodeCache(regionX, SCAN_MAX_Y, regionZ, minY);
+                        if (!connected[e]) {
+                            connected[e] = true;
+                            queue[tail++] = e;
+                        }
+                    }
+                }
+            }
+        }
+
+        while (head < tail) {
+            final int e = queue[head++];
+            final int layer = e / CACHE_BLOCK_AREA;
+            final int plane = e - layer * CACHE_BLOCK_AREA;
+            final int regionZ = plane / CACHE_BLOCK_WIDTH;
+            final int regionX = plane - regionZ * CACHE_BLOCK_WIDTH;
+            final int y = minY + layer;
+
+            tail = enqueueCache(chunks, connected, queue, tail, regionX - 1, y, regionZ, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX + 1, y, regionZ, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ - 1, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ + 1, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y - 1, regionZ, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y + 1, regionZ, minY, maxY);
+        }
+
+        int changed = 0;
+        final BlockState water = Blocks.WATER.defaultBlockState();
+        final int ownerBaseX = ownerPos.getMinBlockX();
+        final int ownerBaseZ = ownerPos.getMinBlockZ();
+        for (int y = minY; y <= maxY; ++y) {
+            for (int localZ = 0; localZ < 16; ++localZ) {
+                for (int localX = 0; localX < 16; ++localX) {
+                    final int e = encodeCache(localX + 16, y, localZ + 16, minY);
+                    if (!connected[e]) continue;
+                    pos.set(ownerBaseX + localX, y, ownerBaseZ + localZ);
+                    final BlockState state = owner.getBlockState(pos);
+                    if (!state.is(Blocks.WATER) && traversable(owner, pos)) {
+                        owner.setBlockState(pos, water, 0);
+                        ++changed;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static int enqueueCache(
+        final ChunkAccess[] chunks,
+        final boolean[] connected,
+        final int[] queue,
+        final int tailIn,
+        final int regionX,
+        final int y,
+        final int regionZ,
+        final int minY,
+        final int maxY
+    ) {
+        if (regionX < 0 || regionX >= CACHE_BLOCK_WIDTH
+            || regionZ < 0 || regionZ >= CACHE_BLOCK_WIDTH
+            || y < minY || y > maxY) return tailIn;
+
+        final int e = encodeCache(regionX, y, regionZ, minY);
+        if (connected[e]) return tailIn;
+
+        final int tileX = regionX >> 4;
+        final int tileZ = regionZ >> 4;
+        final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+        if (chunk == null) return tailIn;
+
+        final int localX = regionX & 15;
+        final int localZ = regionZ & 15;
+        final BlockPos pos = new BlockPos(
+            chunk.getPos().getMinBlockX() + localX,
+            y,
+            chunk.getPos().getMinBlockZ() + localZ
+        );
+        if (!traversable(chunk, pos)) return tailIn;
+
+        connected[e] = true;
+        queue[tailIn] = e;
+        return tailIn + 1;
+    }
+
+    private static int encodeCache(
+        final int regionX,
+        final int y,
+        final int regionZ,
+        final int minY
+    ) {
+        return (y - minY) * CACHE_BLOCK_AREA + regionZ * CACHE_BLOCK_WIDTH + regionX;
+    }
+
+"""
+
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -102,10 +317,16 @@ def patch(text: str) -> str:
         require(text.count(OLD_SEEDS) == 1, "R21 existing-water seed block missing/drifted")
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
-    # R21 already propagates only ocean-connected neighbour components.
-    # NEW_SEEDS above makes that classification scheduling-independent without
-    # inventing any proximity-based cave seed. Keep the strict R15 guard:
-    # a component without an actual/prospective ocean seed remains dry.
+    if OLD_RECONCILE in text:
+        text = text.replace(OLD_RECONCILE, NEW_RECONCILE, 1)
+    elif "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text and "reconcileSeams(" in text:
+        require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
+
+    if "floodCacheConnectedOwner(" not in text and "reconcileSeams(" in text:
+        require(CACHE_METHODS_ANCHOR in text, "R23 cache helper insertion anchor missing")
+        text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
+
+    # Exact cache-wide connectivity replaces the old proximity fallback.
     return text
 
 def verify(folia: Path) -> None:
@@ -132,6 +353,10 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
+        "floodCacheConnectedOwner",
+        "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
+        "enqueueCache",
+        "cacheExact=true",
     ):
         require(marker in text, "R22 marker missing: " + marker)
     for forbidden in (
@@ -149,13 +374,12 @@ def verify(folia: Path) -> None:
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
-        "return floodVerifiedComponents(owner, externalSeeds, true);" in text
-        or "final int changed = floodVerifiedComponents(owner, externalSeeds, true);" in text,
-        "R22 seam-capable owner pass missing"
+        "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in text,
+        "R23 exact 3x3 cache connectivity pass missing"
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
-    print("[FIELD-R22] existing + prospective OCEAN_FLOOR_WG seam seeds invariants OK")
+    print("[FIELD-R23] exact 3x3 ocean-connectivity seam invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -216,7 +440,7 @@ class X {
             "SELF-TEST historical R8 helper should remain")
     require(R15_CALL in retired, "SELF-TEST final R15 call was lost")
     require(patch_r8(retired) == retired, "SELF-TEST R8 retirement is not idempotent")
-    print("[FIELD-R22] SELF-TEST OK")
+    print("[FIELD-R23] SELF-TEST OK")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
@@ -241,7 +465,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R22] installed: strict ocean-connected prospective seam seeds; proximity cave flood disabled")
+    print("[FIELD-R23] installed: exact 3x3 ocean connectivity; proximity cave flood disabled")
 
 if __name__ == "__main__":
     main()
