@@ -30,7 +30,8 @@ on:
       - 'scripts/apply-never-overworld-field-r21.py'
       - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
-      - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-field-r23.py'
+      - 'scripts/apply-never-overworld-fixpack-r23.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
       - 'qa/field-r23/**'
@@ -86,9 +87,9 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
