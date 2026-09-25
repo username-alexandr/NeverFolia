@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "worldgen-spec/never-overworld-external-structures-r19.json"
 CHUNK_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java")
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java")
+GENERIC_REL = Path("folia-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java")
 MARKER = "// NeverFolia R19: external surface structures require a dry island footprint."
+ISLAND_HOOK = "// NeverFolia R24: materialize synthetic island slices after FEATURES."
 GENERATED_MARKER = "// NeverFolia R19: generated external-land pieces must stay on dry island terrain."
 
 def fail(message: str) -> None:
@@ -35,10 +37,14 @@ def java_helper(spec: dict) -> str:
     )
     return f'''package net.minecraft.world.level.chunk;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
@@ -55,12 +61,125 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
  * generated piece. Ocean/underground structures are not listed and therefore
  * preserve source placement.</p>
  */
-final class NeverOverworldExternalStructurePolicyR19 {{
+public final class NeverOverworldExternalStructurePolicyR19 {{
     static final int EXPECTED_MIN_Y = -512;
     static final int EXPECTED_HEIGHT = 1024;
     static final int MIN_DRY_SURFACE_Y = 129;
     static final int MAX_PIECE_SPAN = 256;
     static final int BETTER_MONUMENT_TERRAIN_RADIUS = 29;
+
+    private static final java.util.concurrent.ConcurrentHashMap<
+        ResourceKey<Level>,
+        java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>>
+    > SYNTHETIC_ISLANDS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record IslandSlice(int[] baseY, int[] fillTopY) {{}}
+
+    private static long chunkKey(final int chunkX, final int chunkZ) {{
+        return ((long)chunkX << 32) ^ (chunkZ & 0xffffffffL);
+    }}
+
+    private static boolean islandReplaceable(final BlockState state) {{
+        return state.isAir() || !state.getFluidState().isEmpty();
+    }}
+
+    private static void registerSyntheticIsland(
+        final ChunkGenerator generator,
+        final RandomState randomState,
+        final ChunkAccess heightAccessor,
+        final ChunkPos origin,
+        final ResourceKey<Level> dimension,
+        final int radius,
+        final int topY,
+        final StructureStart start
+    ) {{
+        final int centerX = origin.getMiddleBlockX();
+        final int centerZ = origin.getMiddleBlockZ();
+        final int minChunkX = (centerX - radius) >> 4;
+        final int maxChunkX = (centerX + radius) >> 4;
+        final int minChunkZ = (centerZ - radius) >> 4;
+        final int maxChunkZ = (centerZ + radius) >> 4;
+        final java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>> byChunk =
+            SYNTHETIC_ISLANDS.computeIfAbsent(dimension, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+
+        for (int cz = minChunkZ; cz <= maxChunkZ; ++cz) {{
+            for (int cx = minChunkX; cx <= maxChunkX; ++cx) {{
+                final int[] baseY = new int[256];
+                final int[] fillTopY = new int[256];
+                java.util.Arrays.fill(fillTopY, Integer.MIN_VALUE);
+                boolean any = false;
+                for (int lz = 0; lz < 16; ++lz) {{
+                    for (int lx = 0; lx < 16; ++lx) {{
+                        final int x = (cx << 4) + lx;
+                        final int z = (cz << 4) + lz;
+                        final long dx = (long)x - centerX;
+                        final long dz = (long)z - centerZ;
+                        if (dx * dx + dz * dz > (long)radius * radius) continue;
+                        final int index = (lz << 4) | lx;
+                        baseY[index] = generator.getBaseHeight(
+                            x, z, Heightmap.Types.WORLD_SURFACE_WG, heightAccessor, randomState
+                        );
+                        int fillTop = topY;
+                        for (final StructurePiece piece : start.getPieces()) {{
+                            final BoundingBox box = piece.getBoundingBox();
+                            if (x >= box.minX() && x <= box.maxX() && z >= box.minZ() && z <= box.maxZ()) {{
+                                fillTop = Math.min(fillTop, box.minY() - 1);
+                            }}
+                        }}
+                        fillTopY[index] = fillTop;
+                        any = true;
+                    }}
+                }}
+                if (!any) continue;
+                final long key = chunkKey(cx, cz);
+                byChunk.compute(key, (ignored, list) -> {{
+                    final java.util.List<IslandSlice> out =
+                        list == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(list);
+                    out.add(new IslandSlice(baseY, fillTopY));
+                    return java.util.List.copyOf(out);
+                }});
+            }}
+        }}
+    }}
+
+    public static int applySyntheticIslands(final ServerLevel level, final ChunkAccess chunk) {{
+        if (level == null || chunk == null || !inScope(level.dimension(), chunk)) return 0;
+        final var byChunk = SYNTHETIC_ISLANDS.get(level.dimension());
+        if (byChunk == null) return 0;
+        final java.util.List<IslandSlice> slices =
+            byChunk.remove(chunkKey(chunk.getPos().x(), chunk.getPos().z()));
+        if (slices == null || slices.isEmpty()) return 0;
+
+        int changed = 0;
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (final IslandSlice slice : slices) {{
+            for (int lz = 0; lz < 16; ++lz) {{
+                for (int lx = 0; lx < 16; ++lx) {{
+                    final int index = (lz << 4) | lx;
+                    final int fillTop = slice.fillTopY()[index];
+                    if (fillTop == Integer.MIN_VALUE) continue;
+                    final int fromY = Math.max(slice.baseY()[index] + 1, chunk.getMinY() + 1);
+                    if (fromY > fillTop) continue;
+                    for (int y = fromY; y <= fillTop; ++y) {{
+                        pos.set(baseX + lx, y, baseZ + lz);
+                        final BlockState current = chunk.getBlockState(pos);
+                        if (!islandReplaceable(current)) continue;
+                        final BlockState replacement =
+                            y == fillTop && fillTop >= MIN_DRY_SURFACE_Y
+                                ? Blocks.GRASS_BLOCK.defaultBlockState()
+                                : y >= fillTop - 3
+                                    ? Blocks.DIRT.defaultBlockState()
+                                    : Blocks.STONE.defaultBlockState();
+                        chunk.setBlockState(pos, replacement, 0);
+                        ++changed;
+                    }}
+                }}
+            }}
+        }}
+        return changed;
+    }}
 
     private NeverOverworldExternalStructurePolicyR19() {{}}
 
@@ -140,16 +259,10 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         final int radius = radiusForId(structureId(structure));
         if (radius <= 0) return true;
         final String id = structureId(structure);
-        if (isBetterMonumentId(id)) {{
-            return monumentTerrainAllowed(generator, randomState, heightAccessor, chunkPos);
-        }}
-        return dryAt(
-            generator,
-            randomState,
-            heightAccessor,
-            chunkPos.getMiddleBlockX(),
-            chunkPos.getMiddleBlockZ()
-        );
+        // R24: never reject an imported land structure solely because the
+        // candidate is ocean. The generated-piece pass below will either keep
+        // natural dry terrain or lift the start and schedule a synthetic island.
+        return true;
     }}
 
     static boolean allowsGenerated(
@@ -163,17 +276,11 @@ final class NeverOverworldExternalStructurePolicyR19 {{
     ) {{
         if (!inScope(dimension, heightAccessor)) return true;
         final String id = structureId(structure);
-        if (radiusForId(id) <= 0) return true;
+        final int radius = radiusForId(id);
+        if (radius <= 0) return true;
         if (start == null || !start.isValid()) return false;
 
-        // Source Repurposed Structures monument placement uses centre + four
-        // +/-29 WORLD_SURFACE_WG terrain probes. Converted Jigsaw piece boxes
-        // include large empty envelopes, so an all-column bbox test wrongly
-        // rejects every valid Better Monument candidate.
-        if (isBetterMonumentId(id)) {{
-            return monumentTerrainAllowed(generator, randomState, heightAccessor, chunkPos);
-        }}
-
+        boolean needsIsland = false;
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
             final long width = (long)box.maxX() - box.minX() + 1L;
@@ -181,21 +288,39 @@ final class NeverOverworldExternalStructurePolicyR19 {{
             if (width <= 0L || depth <= 0L || width > MAX_PIECE_SPAN || depth > MAX_PIECE_SPAN) {{
                 return false;
             }}
-            for (int z = box.minZ(); z <= box.maxZ(); ++z) {{
-                for (int x = box.minX(); x <= box.maxX(); ++x) {{
-                    final int base = generator.getBaseHeight(
-                        x,
-                        z,
-                        Heightmap.Types.WORLD_SURFACE_WG,
-                        heightAccessor,
-                        randomState
-                    );
-                    if (base < MIN_DRY_SURFACE_Y) return false;
+            if (!needsIsland) {{
+                for (int z = box.minZ(); z <= box.maxZ() && !needsIsland; ++z) {{
+                    for (int x = box.minX(); x <= box.maxX(); ++x) {{
+                        if (!dryAt(generator, randomState, heightAccessor, x, z)) {{
+                            needsIsland = true;
+                            break;
+                        }}
+                    }}
                 }}
             }}
         }}
+        if (!needsIsland) return true;
+
+        final int centerX = chunkPos.getMiddleBlockX();
+        final int centerZ = chunkPos.getMiddleBlockZ();
+        final int base = generator.getBaseHeight(
+            centerX, centerZ, Heightmap.Types.WORLD_SURFACE_WG, heightAccessor, randomState
+        );
+        final int targetTop = Math.max(MIN_DRY_SURFACE_Y, base);
+        final int deltaY = Math.max(0, MIN_DRY_SURFACE_Y - base);
+        if (deltaY > 0) {{
+            for (final StructurePiece piece : start.getPieces()) {{
+                piece.move(0, deltaY, 0);
+            }}
+        }}
+        registerSyntheticIsland(
+            generator, randomState, heightAccessor, chunkPos, dimension,
+            Math.max(radius, 24), targetTop, start
+        );
         return true;
     }}
+}}
+'''
 }}
 '''
 
@@ -293,10 +418,26 @@ def patch_source(source: str) -> str:
         fail("R19 generation guards were not injected exactly once")
     return source
 
+def patch_generic(source: str) -> str:
+    if ISLAND_HOOK in source:
+        return source
+    anchor = "        this.complete(newChunk, null);\n"
+    if source.count(anchor) != 1:
+        fail("Moonrise generic FEATURES completion anchor missing/duplicated")
+    injected = (
+        "        if (this.toStatus == ChunkStatus.FEATURES) {\n"
+        "            " + ISLAND_HOOK + "\n"
+        "            net.minecraft.world.level.chunk.NeverOverworldExternalStructurePolicyR19.applySyntheticIslands(this.world, newChunk);\n"
+        "        }\n\n"
+        + anchor
+    )
+    return source.replace(anchor, injected, 1)
+
 def verify(folia: Path) -> None:
     spec = load_spec()
     chunk = (folia / CHUNK_REL).read_text(encoding="utf-8")
     helper = (folia / HELPER_REL).read_text(encoding="utf-8")
+    generic = (folia / GENERIC_REL).read_text(encoding="utf-8")
     if MARKER not in chunk:
         fail("R19 ChunkGenerator guard missing")
     if "NeverOverworldExternalStructurePolicyR19.allows" not in chunk:
@@ -330,6 +471,17 @@ def verify(folia: Path) -> None:
             fail("untouched structure accidentally island-gated: " + untouched)
     if "WORLD_SURFACE_WG" not in helper or "MIN_DRY_SURFACE_Y = 129" not in helper:
         fail("R19 dry island height policy missing")
+    for marker in (
+        "SYNTHETIC_ISLANDS",
+        "registerSyntheticIsland(",
+        "applySyntheticIslands(",
+        "piece.move(0, deltaY, 0)",
+        "Blocks.GRASS_BLOCK.defaultBlockState()",
+    ):
+        if marker not in helper:
+            fail("R24 synthetic-island marker missing: " + marker)
+    if ISLAND_HOOK not in generic or "applySyntheticIslands(this.world, newChunk)" not in generic:
+        fail("R24 FEATURES synthetic-island hook missing")
     for marker in (
         "allowsGenerated(",
         "for (final StructurePiece piece : start.getPieces())",
@@ -401,6 +553,10 @@ def main() -> None:
     if not chunk.is_file():
         fail("ChunkGenerator source missing")
     chunk.write_text(patch_source(chunk.read_text(encoding="utf-8")), encoding="utf-8")
+    generic = folia / GENERIC_REL
+    if not generic.is_file():
+        fail("Moonrise generic status task missing")
+    generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
     helper = folia / HELPER_REL
     helper.parent.mkdir(parents=True, exist_ok=True)
     helper.write_text(java_helper(load_spec()), encoding="utf-8")
