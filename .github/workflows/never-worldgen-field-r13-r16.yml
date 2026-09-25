@@ -33,6 +33,7 @@ on:
       - 'scripts/apply-never-overworld-fixpack-r22.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
+      - 'qa/field-r22/**'
       - 'qa/field-r23/**'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
