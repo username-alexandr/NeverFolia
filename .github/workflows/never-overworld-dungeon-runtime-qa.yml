@@ -19,6 +19,8 @@ on:
       - 'scripts/weather-never-overworld-flooded-surface.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-field-r23.py'
+      - 'scripts/apply-never-overworld-fixpack-r23.py'
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
       - '.github/workflows/never-overworld-dungeon-runtime-qa.yml'
   workflow_dispatch:
@@ -58,9 +60,9 @@ jobs:
           python3 scripts/apply-never-nether-bug01-bounds.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r15.py .work/Folia --acknowledge-experimental-worldgen
           python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
           (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace)
           cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
