@@ -354,7 +354,7 @@ def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
         files[dest]=(json.dumps(base,indent=2,ensure_ascii=False)+"\n").encode()
 
 def dat_function_resource_id(path: str) -> str | None:
-    m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction",path)
+    m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\.mcfunction",path)
     return f"{m.group(1)}:{m.group(2)}" if m else None
 
 def sanitize_dat_runtime_function(rid: str, payload: bytes) -> bytes:
