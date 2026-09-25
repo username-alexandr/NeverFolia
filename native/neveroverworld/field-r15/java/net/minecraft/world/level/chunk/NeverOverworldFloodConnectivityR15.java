@@ -9,6 +9,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -217,6 +218,44 @@ public final class NeverOverworldFloodConnectivityR15 {
             tail=enqueue(chunk,visited,queue,tail,x,y+1,z,minY,maxY);
         }
         if(!hasOceanSeed){
+            // R24: FEATURES can add local/falling WATER after the earlier R13
+            // fluid reset. At final LIGHT reconciliation, drain an unverified
+            // component only when it contains actual flowing/falling water.
+            // Static source-only pools (including intentional structure water)
+            // are preserved.
+            if(allowSeams){
+                boolean hasFlowingWater=false;
+                for(int i=0;i<tail&&!hasFlowingWater;++i){
+                    int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
+                    pos.set(baseX+x,y,baseZ+z);
+                    BlockState state=chunk.getBlockState(pos);
+                    if(state.is(Blocks.WATER)
+                        &&state.hasProperty(LiquidBlock.LEVEL)
+                        &&state.getValue(LiquidBlock.LEVEL)>0){
+                        hasFlowingWater=true;
+                    }
+                }
+                if(hasFlowingWater){
+                    int drained=0;
+                    BlockState air=Blocks.AIR.defaultBlockState();
+                    for(int i=0;i<tail;++i){
+                        int e=queue[i],x=e&15,z=(e>>>4)&15,y=minY+(e>>>8);
+                        pos.set(baseX+x,y,baseZ+z);
+                        if(chunk.getBlockState(pos).is(Blocks.WATER)){
+                            chunk.setBlockState(pos,air,0);
+                            ++drained;
+                        }
+                    }
+                    if(drained>0&&Boolean.getBoolean("neverfolia.debugFloodSeams")){
+                        System.out.println(
+                            "[NeverFolia][R24Drain] chunk="+chunk.getPos().x()+","+chunk.getPos().z()
+                            +" size="+tail+" drained="+drained
+                            +" y="+componentMinY+":"+componentMaxY
+                        );
+                    }
+                    return drained;
+                }
+            }
             if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8
                 &&Boolean.getBoolean("neverfolia.debugFloodSeams")){
                 System.out.println(
