@@ -43,6 +43,22 @@ def resource_id(path:str,family:str)->str|None:
     m=re.fullmatch(r"data/([^/]+)/"+re.escape(family)+r"/(.+)\.json",path)
     return f"{m.group(1)}:{m.group(2)}" if m else None
 
+def collect_function_refs(value, refs:set[str])->None:
+    if isinstance(value,dict):
+        for key,item in value.items():
+            if key=="function" and isinstance(item,str) and ":" in item:
+                refs.add(item)
+            collect_function_refs(item,refs)
+    elif isinstance(value,list):
+        for item in value: collect_function_refs(item,refs)
+
+def function_paths(resource:str)->tuple[str,str]:
+    ns,path=resource.split(":",1)
+    return (
+        f"data/{ns}/function/{path}.mcfunction",
+        f"data/{ns}/functions/{path}.mcfunction",
+    )
+
 def read_json(archive:zipfile.ZipFile,name:str)->dict:
     try:value=json.loads(archive.read(name).decode("utf-8"))
     except Exception as exc:fail(f"invalid JSON {name}: {exc}")
@@ -89,6 +105,22 @@ def audit(pack:Path,spec_path:Path)->dict:
                 structures[sid]=read_json(archive,name);continue
             setid=resource_id(name,"worldgen/structure_set")
             if setid is not None:sets[setid]=read_json(archive,name)
+
+        function_refs=set()
+        for name in names:
+            if "/enchantment/" not in name or not name.endswith(".json"):
+                continue
+            payload=read_json(archive,name)
+            collect_function_refs(payload,function_refs)
+        missing_functions=[]
+        for resource in sorted(function_refs):
+            ns=resource.split(":",1)[0]
+            if ns not in EXTERNAL_NAMESPACES:
+                continue
+            if not any(candidate in names for candidate in function_paths(resource)):
+                missing_functions.append(resource)
+        if missing_functions:
+            fail("enchantment run_function references missing functions: "+repr(missing_functions[:20]))
 
         external={sid for sid in structures if sid.split(":",1)[0] in EXTERNAL_NAMESPACES}
         missing_island=sorted(island-external)
@@ -164,6 +196,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "spawnable_external":len(external-expected),
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
+                "enchantment_function_refs":len(function_refs),
             },
             "source_unused":sorted(expected),
             "representatives":reps,
@@ -213,6 +246,12 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
                 payload={"step":"surface_structures","project_start_to_heightmap":"OCEAN_FLOOR_WG"}
             z.writestr(f"data/{ns}/worldgen/structure/{name}.json",json.dumps(payload))
         spawnable=[sid for sid in island if sid not in unused]+untouched
+        z.writestr("data/nova_structures/enchantment/qa.json",json.dumps({
+            "effects":{"minecraft:post_attack":[{
+                "effect":{"type":"minecraft:run_function","function":"nova_structures:jockey/spawn_zautilus_jockey"}
+            }]}
+        }))
+        z.writestr("data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction","say qa\n")
         z.writestr("data/neverfolia/worldgen/structure_set/qa.json",json.dumps({
             "placement":{"type":"minecraft:random_spread","spacing":32,"separation":8,"salt":1},
             "structures":[{"structure":sid,"weight":1} for sid in spawnable],
