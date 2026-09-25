@@ -39,7 +39,9 @@ public final class NeverOverworldEcologyR13 {
         final BlockPos origin,
         final BlockState state
     ) {
-        return !scope(level) || !isHeightGated(state) || origin.getY() >= MIN_PLANT_Y;
+        if (!scope(level)) return true;
+        if (state.is(Blocks.SWEET_BERRY_BUSH)) return origin.getY() > OCEAN_Y;
+        return !isHeightGated(state) || origin.getY() >= MIN_PLANT_Y;
     }
 
     static boolean isHeightGated(final BlockState state) {
@@ -49,6 +51,7 @@ public final class NeverOverworldEcologyR13 {
             || state.is(Blocks.RED_MUSHROOM_BLOCK)
             || state.is(Blocks.MUSHROOM_STEM)
             || state.is(Blocks.PUMPKIN)
+            || state.is(Blocks.SWEET_BERRY_BUSH)
             || state.is(Blocks.BAMBOO)
             || state.is(Blocks.BAMBOO_SAPLING)
             || state.is(Blocks.MOSS_CARPET)
@@ -124,6 +127,7 @@ public final class NeverOverworldEcologyR13 {
         final boolean waterBelow,
         final boolean waterSide
     ) {
+        if (state.is(Blocks.SWEET_BERRY_BUSH) && y <= OCEAN_Y) return true;
         if (isHeightGated(state) && y < MIN_PLANT_Y) return true;
         return y <= WATER_SUPPORT_SCAN_MAX_Y
             && aquaticSensitive(state)
