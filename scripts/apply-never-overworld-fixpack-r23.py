@@ -31,7 +31,6 @@ def main() -> None:
 
     if a.check_only:
         run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
-        run("scripts/apply-never-overworld-field-r22.py", folia, True)
         run("scripts/apply-never-overworld-field-r23.py", folia, True)
         print(f"[NeverOverworld R23] {PROFILE} final invariants OK")
         return
@@ -39,7 +38,6 @@ def main() -> None:
     run("scripts/apply-never-overworld-fixpack-r22.py", folia)
     run("scripts/apply-never-overworld-field-r23.py", folia)
     run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
-    run("scripts/apply-never-overworld-field-r22.py", folia, True)
     run("scripts/apply-never-overworld-field-r23.py", folia, True)
     print(f"[NeverOverworld R23] {PROFILE} installed")
 
