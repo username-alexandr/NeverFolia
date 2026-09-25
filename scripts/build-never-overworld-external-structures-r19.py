@@ -355,7 +355,6 @@ def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
             "execute unless entity @s[tag=dnt_jockey_mounted] at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:[\"dnt_jockey_mount_tmp\"]}\n"
             "execute unless entity @s[tag=dnt_jockey_mounted] at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n"
             "execute unless entity @s[tag=dnt_jockey_mounted] run data modify entity @s Tags append value \"dnt_jockey_mounted\"\n"
-            "execute at @s run data modify entity @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1] Tags set value []\n"
         )
     if resource_id=="nova_structures:hydro_veil_heal":
         text="effect give @s minecraft:regeneration 1 6 true\n"
