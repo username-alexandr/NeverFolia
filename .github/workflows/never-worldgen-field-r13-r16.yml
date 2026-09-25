@@ -31,6 +31,8 @@ on:
       - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r23.py'
+      - 'scripts/apply-never-overworld-field-r23.py'
+      - 'qa/field-r23/**'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
       - 'qa/field-r14-r16/**'
