@@ -51,6 +51,7 @@ def verify(folia: Path) -> None:
     owner = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
     reconcile = ("net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
                  "reconcileSeams(task.world, task.neverOverworldNeighbours, task.fromChunk);")
+    reweather = "net.minecraft.world.level.chunk.NeverOverworldFlood.reweatherSubmergedSurface(task.world, task.fromChunk);"
     ecology13 = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.cleanup(task.world, task.fromChunk);"
     ecology15 = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
     require("NeverOverworldFlood.apply(" not in tasks
@@ -58,12 +59,15 @@ def verify(folia: Path) -> None:
             "bypassed ChunkStatusTasks must not own R21 runtime flood")
     require(moonrise.count(owner) == 1 and moonrise.count(reconcile) == 1,
             "R21 Moonrise owner/reconcile hook missing or duplicated")
+    require(moonrise.count(reweather) == 1,
+            "R21 post-seam drowned-surface weathering missing or duplicated")
     require(moonrise.count(ecology13) == 1 and moonrise.count(ecology15) == 1,
             "R21 post-seam ecology cleanup missing or duplicated")
     require(moonrise.find(owner) < moonrise.find(reconcile)
+            < moonrise.find(reweather)
             < moonrise.find(ecology13) < moonrise.find(ecology15)
             < moonrise.find("StarLightEngine.getEmptySectionsForChunk"),
-            "R21 Moonrise runtime order is not owner flood -> reconcile -> ecology -> Starlight")
+            "R21 Moonrise runtime order is not owner flood -> reconcile -> weathering -> ecology -> Starlight")
     require("StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours" in moonrise,
             "R21 Moonrise neighbour cache field missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
