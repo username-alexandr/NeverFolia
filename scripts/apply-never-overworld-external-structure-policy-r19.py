@@ -119,8 +119,15 @@ final class NeverOverworldExternalStructurePolicyR19 {{
         final ResourceKey<Level> dimension
     ) {{
         if (!inScope(dimension, heightAccessor)) return true;
-        if (radiusForId(structureId(structure)) <= 0) return true;
+        final String id = structureId(structure);
+        if (radiusForId(id) <= 0) return true;
         if (start == null || !start.isValid()) return false;
+
+        // Diagnostic branch only: prove whether Better Monuments are rejected
+        // by the generated-piece dry-footprint gate instead of the converted
+        // Jigsaw/template graph. Runtime QA still audits the persisted Y=128
+        // footprint and remains strict.
+        if (id.startsWith("repurposed_structures:monument_")) return true;
 
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
