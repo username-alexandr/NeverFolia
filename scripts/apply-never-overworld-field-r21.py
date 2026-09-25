@@ -3,7 +3,7 @@
 
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
 executes LIGHT through Moonrise ChunkLightTask. R21 therefore carries Moonrise's neighbour StaticCache2D into ChunkLightTask.
-NeverFolia requests a stable radius-2 FEATURES dependency for LIGHT and then
+NeverFolia requests a stable native-radius FEATURES dependency for LIGHT and then
 reconciles only the owner chunk after the existing owner flood. Because reconciliation
 can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
 cleanup runs once more on the same owner chunk before Starlight reads section
@@ -40,16 +40,14 @@ LIGHT_RADIUS_NEW = """        final int vanillaNeighbourReadRadius = Math.max(
                 0,
                 chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
         );
-        // NeverFolia: exact ocean connectivity needs a stable radius-2
-        // FEATURES view before LIGHT; flood writes remain owner-only.
-        final int neighbourReadRadius = toStatus == ChunkStatus.LIGHT
-                ? Math.max(3, vanillaNeighbourReadRadius)
-                : vanillaNeighbourReadRadius;
+        // NeverFolia: preserve Moonrise's native LIGHT dependency radius.
+        // Only strengthen the generation status of neighbours it already owns.
+        final int neighbourReadRadius = vanillaNeighbourReadRadius;
 """
 LIGHT_REQUIRED_OLD = """                final ChunkStatus requiredNeighbourStatus = ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
 """
 LIGHT_REQUIRED_NEW = """                final ChunkStatus requiredNeighbourStatus =
-                        toStatus == ChunkStatus.LIGHT && radius > vanillaNeighbourReadRadius
+                        toStatus == ChunkStatus.LIGHT && radius > 0
                                 ? ChunkStatus.FEATURES
                                 : ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
 """
@@ -186,7 +184,7 @@ def verify(folia: Path) -> None:
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
     require(LIGHT_RADIUS_NEW in scheduler,
-            "NeverFolia LIGHT must request a real radius-2 scheduler cache")
+            "NeverFolia LIGHT must request a native LIGHT scheduler radius")
     require(LIGHT_REQUIRED_NEW in scheduler,
             "NeverFolia LIGHT outer cache ring must be generated through FEATURES")
 
@@ -239,7 +237,7 @@ def apply(folia: Path) -> None:
     moonrise.write_text(patch_moonrise(moonrise.read_text(encoding="utf-8")), encoding="utf-8")
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R21] installed in Moonrise LIGHT with radius-2 FEATURES dependency")
+    print("[FIELD-R21] installed in Moonrise LIGHT with native-radius FEATURES dependency")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
