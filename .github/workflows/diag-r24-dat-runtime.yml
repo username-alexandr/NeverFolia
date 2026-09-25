@@ -1,0 +1,35 @@
+name: R24 D&T runtime source audit
+
+on:
+  push:
+    branches:
+      - 'fix/neveroverworld-r24-water-dungeons-mobs'
+    paths:
+      - 'qa/field-r24/audit-dat-runtime-source.py'
+      - 'scripts/build-never-overworld-external-structures-r19.py'
+      - '.github/workflows/diag-r24-dat-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Audit D&T enchantment runtime closure
+        run: |
+          set -euo pipefail
+          python3 qa/field-r24/audit-dat-runtime-source.py
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: R24-DAT-RUNTIME-AUDIT-${{ github.sha }}
+          path: artifacts/r24-dat-runtime-source.json
+          retention-days: 7
+          if-no-files-found: error
