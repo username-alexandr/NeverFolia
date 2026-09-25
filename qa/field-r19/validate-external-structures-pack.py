@@ -113,15 +113,25 @@ def audit(pack:Path,spec_path:Path)->dict:
             except Exception as exc:
                 fail(f"invalid JSON {name}: {exc}")
             run_function_refs |= collect_run_function_refs(payload)
-        unresolved_functions=[]
-        for rid in sorted(run_function_refs):
-            if rid.startswith("minecraft:"):
-                continue
-            candidates=function_path_candidates(rid)
-            if not any(candidate in names for candidate in candidates):
-                unresolved_functions.append(rid)
-        if unresolved_functions:
-            fail("run_function references missing imported functions: "+repr(unresolved_functions[:40]))
+        external_run_functions=sorted(
+            rid for rid in run_function_refs if not rid.startswith("minecraft:")
+        )
+        if external_run_functions:
+            fail(
+                "structure-only import retained scripted run_function effects: "
+                +repr(external_run_functions[:40])
+            )
+        imported_external_functions=sorted(
+            name for name in names
+            if ("/function/" in name or "/functions/" in name)
+            and name.startswith("data/nova_structures/")
+            and name.endswith(".mcfunction")
+        )
+        if imported_external_functions:
+            fail(
+                "structure-only import unexpectedly contains D&T mcfunctions: "
+                +repr(imported_external_functions[:40])
+            )
 
         structures={}
         sets={}
@@ -207,6 +217,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
                 "run_function_refs":len(run_function_refs),
+                "imported_external_functions":len(imported_external_functions),
             },
             "source_unused":sorted(expected),
             "representatives":reps,
