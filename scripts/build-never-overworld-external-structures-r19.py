@@ -31,6 +31,7 @@ SOURCES = {
 
 AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
 DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
+    "nova_structures:jockey/make_drowned_into_jockey",
     "nova_structures:jockey/spawn_bogged_horseman",
     "nova_structures:jockey/spawn_camel_husk_jockey",
     "nova_structures:jockey/spawn_chicken_jockey",
@@ -43,6 +44,15 @@ DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
     "nova_structures:spawn_cave_spider_minion",
     "nova_structures:spawn_guardian_minion",
     "nova_structures:spawn_spider_minion",
+    "nova_structures:ghast_boss_defeat_chain",
+    "nova_structures:ghast_boss_fireball_damage",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghasted",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
+    "nova_structures:gravity_particles",
+    "nova_structures:hydro_veil_heal",
 })
 
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
@@ -334,6 +344,35 @@ def should_copy_dependency(path: str) -> bool:
     if "/tags/worldgen/structure/" in path: return False
     return True
 
+def dat_runtime_function_id(path: str) -> str | None:
+    m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\.mcfunction",path)
+    return f"{m.group(1)}:{m.group(2)}" if m else None
+
+def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
+    text=payload.decode("utf-8")
+    if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
+        text=text.replace(
+            "item replace entity @s saddle with air",
+            "data remove entity @s equipment.saddle"
+        )
+    if resource_id=="nova_structures:ghast_boss_fireball_possess":
+        text=text.replace(
+            "@n[type=minecraft:fireball,distance=..45]",
+            "@e[type=minecraft:fireball,distance=..45,limit=1,sort=nearest]"
+        )
+    if resource_id in {
+        "nova_structures:ghasted_fireball_1",
+        "nova_structures:ghasted_fireball_2",
+        "nova_structures:ghasted_fireball_3",
+    }:
+        text=text.replace(
+            "@n[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest]",
+            "@e[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest,limit=1]"
+        )
+    if resource_id=="nova_structures:hydro_veil_heal":
+        text="effect give @s minecraft:regeneration 1 6 true\n"
+    return text.encode("utf-8")
+
 def strip_dat_run_function_effects(value):
     """Remove D&T scripted enchantment effects from the structure-only import.
 
@@ -495,10 +534,9 @@ def filter_pack(key: str, files: dict[str, bytes]):
     out={}
     for n,b in files.items():
         if key=="dat" and n.endswith(".mcfunction"):
-            m=re.match(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction$",n)
-            rid=f"{m.group(1)}:{m.group(2)}" if m else None
+            rid=dat_runtime_function_id(n)
             if rid in DNT_SAFE_RUNTIME_FUNCTIONS:
-                out[n]=b
+                out[n]=sanitize_dat_runtime_function(rid,b)
             continue
         if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
@@ -572,9 +610,8 @@ def filter_pack(key: str, files: dict[str, bytes]):
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
         sanitize_dat_enchantment_tags(out)
         imported_runtime={
-            f"{m.group(1)}:{m.group(2)}"
-            for n in out
-            if (m:=re.match(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction$",n))
+            rid for n in out
+            if (rid:=dat_runtime_function_id(n))
         }
         missing=sorted(DNT_SAFE_RUNTIME_FUNCTIONS-imported_runtime)
         unexpected=sorted(imported_runtime-DNT_SAFE_RUNTIME_FUNCTIONS)
