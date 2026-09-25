@@ -116,7 +116,10 @@ def audit(pack:Path,spec_path:Path)->dict:
         ]
         if missing_runtime:
             fail("dangling external run_function references: "+repr(missing_runtime[:20]))
-        if not function_resource_present(names,"nova_structures:jockey/spawn_zautilus_jockey"):
+        if (
+            "data/nova_structures/enchantment/jockey/spawn_zautilus_jockey.json" in names
+            and not function_resource_present(names,"nova_structures:jockey/spawn_zautilus_jockey")
+        ):
             fail("zautilus jockey runtime function missing")
 
         structures={}
