@@ -319,6 +319,21 @@ def should_copy_dependency(path: str) -> bool:
     if "/tags/worldgen/structure/" in path: return False
     return True
 
+def dat_runtime_dependency(path: str) -> bool:
+    """Copy inert D&T runtime helpers required by imported data-driven mechanics.
+
+    Functions/predicates do not execute by themselves. We intentionally do not
+    import advancements or load/tick function tags here, so importing these
+    dependencies cannot start a global scheduler; they are only reachable from
+    copied enchantments/loot/item modifiers/structures.
+    """
+    return (
+        path.startswith("data/nova_structures/function/")
+        or path.startswith("data/nova_structures/functions/")
+        or path.startswith("data/nova_structures/predicate/")
+        or path.startswith("data/nova_structures/predicates/")
+    )
+
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
     # namespace. They are not structure/structure_set/tag overrides and cannot
@@ -356,7 +371,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and dat_minecraft_compat(n):
+        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_dependency(n)):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -421,6 +436,14 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        # D&T uses non-survival enchantments as data-driven mob/boss controllers.
+        # Keeping enchantment JSON while stripping every function creates a
+        # console-error loop and silently breaks those encounters.
+        required_runtime=(
+            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
+        )
+        for n in required_runtime:
+            if n not in out: fail("Dungeons & Taverns runtime dependency missing: "+n)
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
