@@ -32,6 +32,13 @@ SOURCES = {
 AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
 
+# R24: imported custom structures are intentionally more common in NeverOverworld.
+# Scaling spacing by 3/4 increases candidate density without collapsing the
+# source random-spread separation contract.
+EXTERNAL_SPACING_NUM = 3
+EXTERNAL_SPACING_DEN = 4
+MIN_EXTERNAL_SPACING = 16
+
 def fail(msg: str) -> None:
     raise SystemExit("[NeverFolia][External Structures R19] " + msg)
 
@@ -390,6 +397,25 @@ def dat_minecraft_compat(path: str) -> bool:
             return True
     return False
 
+def densify_structure_set(data: dict) -> dict:
+    out=copy.deepcopy(data)
+    placement=out.get("placement")
+    if not isinstance(placement,dict):
+        return out
+    if placement.get("type") not in ("minecraft:random_spread","random_spread"):
+        return out
+    spacing=placement.get("spacing")
+    separation=placement.get("separation")
+    if not isinstance(spacing,int) or spacing<=1:
+        return out
+    new_spacing=max(MIN_EXTERNAL_SPACING,(spacing*EXTERNAL_SPACING_NUM+EXTERNAL_SPACING_DEN-1)//EXTERNAL_SPACING_DEN)
+    if isinstance(separation,int) and separation>0:
+        new_separation=max(1,(separation*EXTERNAL_SPACING_NUM+EXTERNAL_SPACING_DEN-1)//EXTERNAL_SPACING_DEN)
+        new_separation=min(new_separation,new_spacing-1)
+        placement["separation"]=new_separation
+    placement["spacing"]=new_spacing
+    return out
+
 def filter_pack(key: str, files: dict[str, bytes]):
     files=dict(files)
     if key=="witch":
@@ -442,6 +468,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
             entries=[e for e in d.get("structures",[]) if e.get("structure") in allowed]
             if not entries: continue
             d=copy.deepcopy(d); d["structures"]=entries
+            d=densify_structure_set(d)
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         if "/worldgen/processor_list/" in n and n.endswith(".json") and key in {"witch","monuments"}:
@@ -479,15 +506,15 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
 
     if key=="witch":
-        out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
+        out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps(densify_structure_set({
             "placement":{"type":"minecraft:random_spread","spacing":32,"separation":8,"salt":14357620,"spread_type":"linear"},
             "structures":[{"structure":s,"weight":1} for s in sorted(allowed)]
-        },indent=2)+"\n").encode()
+        }),indent=2)+"\n").encode()
     if key=="monuments":
-        out["data/neverfolia/worldgen/structure_set/external_better_monuments.json"]=(json.dumps({
+        out["data/neverfolia/worldgen/structure_set/external_better_monuments.json"]=(json.dumps(densify_structure_set({
             "placement":{"type":"minecraft:random_spread","spacing":32,"separation":5,"salt":10387313,"spread_type":"triangular"},
             "structures":[{"structure":s,"weight":1} for s in sorted(allowed)]
-        },indent=2)+"\n").encode()
+        }),indent=2)+"\n").encode()
     references=set()
     for n,b in out.items():
         if not resource_id(n,"worldgen/structure_set"):
