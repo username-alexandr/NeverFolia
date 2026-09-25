@@ -321,8 +321,6 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
     }}
 }}
 '''
-}}
-'''
 
 def matching_brace(source: str, opening: int) -> int:
     depth = 0
@@ -492,8 +490,10 @@ def verify(folia: Path) -> None:
     ):
         if marker not in helper:
             fail("R19 generated-piece safety marker missing: " + marker)
-    if "getChunk(" in helper or "getBlockState(" in helper:
-        fail("R19 policy must not read generated neighbour chunk state")
+    if "getChunk(" in helper or "level.getBlockState(" in helper:
+        fail("R19 policy must not synchronously load/read neighbour chunk state through level")
+    if "chunk.getBlockState(pos)" not in helper:
+        fail("R24 island materializer must inspect only its owning chunk before replacement")
     print("[NeverFolia][External Structure Policy R19] final invariants OK")
 
 def self_test() -> None:
