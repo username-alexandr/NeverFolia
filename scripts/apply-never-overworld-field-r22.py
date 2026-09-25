@@ -24,13 +24,14 @@ R8_CALL = "        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, 
 R15_CALL = "NeverOverworldFloodConnectivityR15.apply(level, chunk);"
 
 IMPORT = "import net.minecraft.world.level.levelgen.Heightmap;\n"
+IMPORT_BITSET = "import java.util.BitSet;\n"
 IMPORT_ANCHOR = "import net.minecraft.world.level.block.state.BlockState;\n"
 
 OLD_SEEDS = """        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x) {
             pos.set(baseX + x, SCAN_MAX_Y, baseZ + z);
             if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;
             final int e = encode(x, SCAN_MAX_Y, z, minY);
-            connected[e] = true;
+            connected.set(e);
             queue[tail++] = e;
         }
 """
@@ -117,7 +118,7 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
     }
 """
 
-CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
+CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 3;
     private static final int CACHE_CHUNK_WIDTH = CACHE_CHUNK_RADIUS * 2 + 1;
     private static final int CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16;
     private static final int CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16;
@@ -161,7 +162,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
 
         final int layers = maxY - minY + 1;
         final int capacity = layers * CACHE_BLOCK_AREA;
-        final boolean[] connected = new boolean[capacity];
+        final BitSet connected = new BitSet(capacity);
         final int[] queue = new int[capacity];
         int head = 0;
         int tail = 0;
@@ -187,8 +188,8 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
                         if (!surfaceOceanSeed(surfaceY, state)
                             || !traversableCache(chunks, regionX, SCAN_MAX_Y, regionZ, pos, adjacent)) continue;
                         final int e = encodeCache(regionX, SCAN_MAX_Y, regionZ, minY);
-                        if (!connected[e]) {
-                            connected[e] = true;
+                        if (!connected.get(e)) {
+                            connected.set(e);
                             queue[tail++] = e;
                         }
                     }
@@ -220,7 +221,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
             for (int localZ = 0; localZ < 16; ++localZ) {
                 for (int localX = 0; localX < 16; ++localX) {
                     final int e = encodeCache(localX + CACHE_OWNER_OFFSET, y, localZ + CACHE_OWNER_OFFSET, minY);
-                    if (!connected[e]) continue;
+                    if (!connected.get(e)) continue;
                     pos.set(ownerBaseX + localX, y, ownerBaseZ + localZ);
                     final BlockState state = owner.getBlockState(pos);
                     if (!state.is(Blocks.WATER)
@@ -236,7 +237,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
 
     private static int enqueueCache(
         final ChunkAccess[] chunks,
-        final boolean[] connected,
+        final BitSet connected,
         final int[] queue,
         final int tailIn,
         final int regionX,
@@ -252,7 +253,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 2;
             || y < minY || y > maxY) return tailIn;
 
         final int e = encodeCache(regionX, y, regionZ, minY);
-        if (connected[e]) return tailIn;
+        if (connected.get(e)) return tailIn;
 
         final int tileX = regionX >> 4;
         final int tileZ = regionZ >> 4;
@@ -360,6 +361,11 @@ def patch_r8(text: str) -> str:
     return text.replace(R8_CALL, "", 1)
 
 def patch(text: str) -> str:
+    if IMPORT_BITSET not in text:
+        package_end = text.find("\n", text.find("package "))
+        require(package_end >= 0, "Java package declaration missing")
+        text = text[:package_end + 1] + IMPORT_BITSET + text[package_end + 1:]
+
     if IMPORT not in text:
         require(IMPORT_ANCHOR in text, "Heightmap import anchor missing")
         text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + IMPORT, 1)
@@ -411,7 +417,8 @@ def verify(folia: Path) -> None:
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
         "floodCacheConnectedOwner",
-        "CACHE_CHUNK_RADIUS = 2",
+        "new BitSet(capacity)",
+        "CACHE_CHUNK_RADIUS = 3",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
         "CACHE_OWNER_OFFSET = CACHE_CHUNK_RADIUS * 16",
         "enqueueCache",
