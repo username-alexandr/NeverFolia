@@ -160,6 +160,12 @@ jobs:
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
 
+      - name: Apply integrated NeverOverworld R22 + R19 fixpack
+        run: |
+          set -euo pipefail
+          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia
+          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
@@ -184,7 +190,7 @@ jobs:
             echo "Git commit: ${GITHUB_SHA}"
             echo "Folia ref: ${FOLIA_REF}"
             echo "Overworld worldgen: ${WORLDGEN_OVERWORLD}"
-            echo "Overworld core: NR-DEV-1 native-final + structures-v1"
+            echo "Overworld core: NR-DEV-1 native-final + structures-v1 + external-structures-r19"
             echo "Overworld mode: VANILLA_FLOODED"
             echo "Overworld flood level: Y=128"
             echo "Overworld flood phase: Moonrise ChunkLightTask / surface-connected / chunk-owned v3"
@@ -192,7 +198,7 @@ jobs:
             echo "Overworld geology: deterministic native coal/iron/copper/gold/redstone/lapis/diamond/emerald; vanilla-like all-ore balance v3"
             echo "Overworld vanilla resource ores: original 26.2 vertical anchors + original write bounds Y=-64..319"
             echo "Overworld ore density validation: candidate-only true-vanilla 26.2 benchmark gate, 0.65..1.35x target, min 128 FULL chunks"
-            echo "Overworld structures: 8 native NeverFolia structures / natural structure_set placement"
+            echo "Overworld structures: 8 native NeverFolia structures + R19 imported Overworld structures / dry-island surface admission"
             echo "Overworld locate: predictive no-generation fast locate v1"
             echo "Overworld sculk: chunk-owned worldgen spread"
             echo "Nether worldgen: ${WORLDGEN_NETHER}"
@@ -229,6 +235,15 @@ jobs:
             --input "${PACK}"
           python3 ./scripts/normalize-never-overworld-structure-type.py \
             --input "${PACK}"
+          R19_PACK="artifacts/NeverOverworld-Core-NR-DEV-1-native-structures-v1-r19.zip"
+          python3 ./scripts/build-never-overworld-external-structures-r19.py \
+            --input "${PACK}" \
+            --output "${R19_PACK}"
+          mv "${R19_PACK}" "${PACK}"
+          python3 ./qa/field-r19/validate-external-structures-pack.py \
+            --pack "${PACK}" \
+            --spec worldgen-spec/never-overworld-external-structures-r19.json \
+            --output artifacts/NeverOverworld-external-structures-r19-qa.json
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --inject
           python3 ./scripts/fingerprint-never-overworld-pack.py --input "${PACK}" --verify
 
