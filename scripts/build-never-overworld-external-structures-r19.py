@@ -347,12 +347,15 @@ def dat_runtime_function_id(path: str) -> str | None:
 def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
     text=payload.decode("utf-8")
     if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
-        lines=[
-            line for line in text.splitlines()
-            if not line.strip().startswith("item replace entity @s saddle ")
-            and not line.strip().startswith("data remove entity @s ")
-        ]
-        text="\n".join(lines).rstrip()+"\n"
+        # The source clears the technical saddle slot after mounting, but that
+        # slot command is not accepted by the Folia 26.2 command parser. Use a
+        # one-shot entity tag instead so the tick enchantment cannot spawn a new
+        # nautilus every tick.
+        text=(
+            "execute unless entity @s[tag=dnt_jockey_mounted] summon minecraft:zombie_nautilus "
+            "run execute at @s run ride @e[type=minecraft:drowned,distance=..2,sort=nearest,limit=1,tag=!dnt_jockey_mounted] mount @s\n"
+            "tag @s add dnt_jockey_mounted\n"
+        )
     if resource_id=="nova_structures:hydro_veil_heal":
         text="effect give @s minecraft:regeneration 1 6 true\n"
     return text.encode("utf-8")
