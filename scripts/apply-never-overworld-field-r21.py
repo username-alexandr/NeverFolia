@@ -16,6 +16,7 @@ from pathlib import Path
 
 JAVA = Path("folia-server/src/minecraft/java")
 TASKS = JAVA / "net/minecraft/world/level/chunk/status/ChunkStatusTasks.java"
+FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 MOONRISE = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
 SCHEDULER = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java"
@@ -30,9 +31,36 @@ ECOLOGY13_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.clean
 ECOLOGY15_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
 
+REWEATHER_METHOD_ANCHOR = "    private static void weatherSubmergedSurface(\n"
+REWEATHER_METHOD = """    /**
+     * R21/R22: seam reconciliation may flood a column after the owner's first
+     * drowned-surface pass. Reuse the existing deterministic weathering policy
+     * before Starlight observes/persists the reconciled chunk.
+     */
+    public static void reweatherSubmergedSurface(
+        final WorldGenLevel level,
+        final ChunkAccess chunk
+    ) {
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != EXPECTED_MIN_Y
+            || level.getHeight() != EXPECTED_HEIGHT) {
+            return;
+        }
+        weatherSubmergedSurface(chunk, level.getMinY() + 1, FLOOD_LEVEL);
+    }
+
+"""
+
 def require(ok: bool, message: str) -> None:
     if not ok:
         raise ValueError("[FIELD-R21] " + message)
+
+def patch_flood(text: str) -> str:
+    if "public static void reweatherSubmergedSurface(" in text:
+        return text
+    require(text.count(REWEATHER_METHOD_ANCHOR) == 1,
+            "drowned-surface weathering method anchor missing/duplicated")
+    return text.replace(REWEATHER_METHOD_ANCHOR, REWEATHER_METHOD + REWEATHER_METHOD_ANCHOR, 1)
 
 def patch_moonrise(text: str) -> str:
     if "import net.minecraft.server.level.GenerationChunkHolder;" not in text:
@@ -87,6 +115,7 @@ def patch_scheduler(text: str) -> str:
 
 def verify(folia: Path) -> None:
     tasks = (folia / TASKS).read_text(encoding="utf-8")
+    owner_flood = (folia / FLOOD).read_text(encoding="utf-8")
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     moonrise = (folia / MOONRISE).read_text(encoding="utf-8")
     scheduler = (folia / SCHEDULER).read_text(encoding="utf-8")
@@ -94,6 +123,11 @@ def verify(folia: Path) -> None:
     # Vanilla ChunkStatusTasks.light is bypassed by Moonrise on Folia. Keeping a
     # second owner-flood/reconcile there is misleading and can never be the
     # authoritative runtime contract.
+    require(owner_flood.count("public static void reweatherSubmergedSurface(") == 1,
+            "owner flood must expose exactly one post-seam weathering entry point")
+    require("weatherSubmergedSurface(chunk, level.getMinY() + 1, FLOOD_LEVEL);" in owner_flood,
+            "post-seam weathering must reuse the canonical drowned-surface pass")
+
     require("NeverOverworldFloodConnectivityR15.reconcileSeams(" not in tasks,
             "bypassed ChunkStatusTasks still contains R21 reconcile hook")
     require("NeverOverworldFlood.apply(" not in tasks,
@@ -140,9 +174,11 @@ def verify(folia: Path) -> None:
     print("[FIELD-R21] Moonrise runtime cache-aware seam reconciliation invariants OK")
 
 def apply(folia: Path) -> None:
+    owner_flood = folia / FLOOD
     moonrise = folia / MOONRISE
     scheduler = folia / SCHEDULER
     tasks = folia / TASKS
+    require(owner_flood.is_file(), "NeverOverworldFlood missing")
     require(moonrise.is_file(), "Moonrise ChunkLightTask missing")
     require(scheduler.is_file(), "Moonrise ChunkTaskScheduler missing")
     require(tasks.is_file(), "ChunkStatusTasks missing")
@@ -162,6 +198,7 @@ def apply(folia: Path) -> None:
     )
     tasks.write_text(tasks_text, encoding="utf-8")
 
+    owner_flood.write_text(patch_flood(owner_flood.read_text(encoding="utf-8")), encoding="utf-8")
     moonrise.write_text(patch_moonrise(moonrise.read_text(encoding="utf-8")), encoding="utf-8")
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
