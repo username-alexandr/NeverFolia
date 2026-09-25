@@ -315,6 +315,21 @@ def main_run(args):
                     "discovery_chunks":[list(p) for p in sorted(selected)],
                 }
         code=server.stop();require(code==0,"discovery server stop failed");normal=True
+        discovery_text=(out/"external-structures-runtime-discovery.log").read_text(
+            encoding="utf-8",errors="replace"
+        )
+        runtime_error_needles=(
+            "Failed to load function nova_structures:",
+            "Enchantment run_function effect failed",
+            "Couldn't parse data file 'nova_structures:",
+        )
+        dat_runtime_errors=[
+            line.strip() for line in discovery_text.splitlines()
+            if any(needle in line for needle in runtime_error_needles)
+        ]
+        report["dat_runtime_errors"]=dat_runtime_errors[:100]
+        require(not dat_runtime_errors,
+                "D&T selective runtime failed to load; see external-structures-runtime-discovery.log")
     finally:
         if not normal: server.close()
 
@@ -382,9 +397,10 @@ def main_run(args):
         "surface_source_groups_found":groups_found,
         "surface_representatives_found":surface_found,
         "found_surface_footprints_dry_at_y128":surface_dry,
+        "dat_selective_runtime_loads_without_errors":not report.get("dat_runtime_errors"),
         "source_placement_delegated_to_complete_static_graph_qa":True,
     }
-    report["pass"]=surface_found and surface_dry
+    report["pass"]=surface_found and surface_dry and not report.get("dat_runtime_errors")
     target=out/"external-structures-runtime-qa.json"
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[External Runtime QA] "+json.dumps({
