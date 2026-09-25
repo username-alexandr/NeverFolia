@@ -149,6 +149,27 @@ def audit(pack:Path,spec_path:Path)->dict:
         if unresolved_functions:
             fail("safe D&T runtime function closure broken: "+repr(unresolved_functions[:40]))
 
+        jockey_path="data/nova_structures/function/jockey/make_drowned_into_jockey.mcfunction"
+        if jockey_path in names:
+            jockey=archive.read(jockey_path).decode("utf-8","replace")
+            forbidden_jockey=(
+                "execute summon ",
+                "@n[",
+                "item replace entity @s saddle",
+                "data remove entity @s equipment.saddle",
+            )
+            bad=[token for token in forbidden_jockey if token in jockey]
+            if bad:
+                fail("D&T drowned-jockey controller still contains 26.2-incompatible syntax: "+repr(bad))
+            required_jockey=(
+                "summon minecraft:zombie_nautilus",
+                "ride @s mount @e[type=minecraft:zombie_nautilus",
+                "tag @s add dnt_jockey_mounted",
+            )
+            missing=[token for token in required_jockey if token not in jockey]
+            if missing:
+                fail("D&T drowned-jockey controller migration incomplete: "+repr(missing))
+
         imported_external_functions=sorted(
             name for name in names
             if ("/function/" in name or "/functions/" in name)
