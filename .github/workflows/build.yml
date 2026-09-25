@@ -160,6 +160,12 @@ jobs:
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
 
+      - name: Defer upper ore pruning to LIGHT barrier
+        run: |
+          set -euo pipefail
+          python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia
+          python3 ./qa/ore-light-r12/defer-upper-pruning.py ./.work/Folia --check-only
+
       - name: Apply integrated NeverOverworld R22 + R19 fixpack
         run: |
           set -euo pipefail
