@@ -18,6 +18,11 @@ DRY_SAMPLES=(
     (-2275,-9,-1445),
     (-2272,-13,-1442),
 )
+# Positive control from the user's underwater-monument screenshot. R23 must
+# not "fix" cave flooding by drying real ocean volume.
+WATER_SAMPLES=(
+    (-2251,111,-1336),
+)
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
 
 def require(ok,message):
@@ -33,7 +38,7 @@ def sha(path):
         return hashlib.file_digest(stream,"sha256").hexdigest()
 
 def sample_chunks():
-    centers={(x//16,z//16) for x,_,z in DRY_SAMPLES}
+    centers={(x//16,z//16) for x,_,z in DRY_SAMPLES + WATER_SAMPLES}
     chunks=set()
     for cx,cz in centers:
         for dx in range(-1,2):
@@ -99,6 +104,14 @@ def main():
         rows.append(row)
         if not row["dry"]:failed.append(row)
 
+    water_rows=[]
+    failed_water=[]
+    for x,y,z in WATER_SAMPLES:
+        state=state_name(volume.at(x,y,z))
+        row={"pos":[x,y,z],"state":state,"water":state=="minecraft:water"}
+        water_rows.append(row)
+        if not row["water"]:failed_water.append(row)
+
     text=log.read_text(encoding="utf-8",errors="replace")
     proximity_lines=[line.strip() for line in text.splitlines() if "[NeverFolia][R22ProximityFlood]" in line]
     report={
@@ -112,9 +125,12 @@ def main():
         "chunks":[list(x) for x in chunks],
         "dry_samples":rows,
         "failed_samples":failed,
+        "water_samples":water_rows,
+        "failed_water_samples":failed_water,
         "proximity_flood_runtime_markers":proximity_lines[:100],
         "checks":{
             "user_reported_cave_samples_not_water":len(failed)==0,
+            "underwater_monument_sample_remains_water":len(failed_water)==0,
             "proximity_flood_path_absent":len(proximity_lines)==0,
         },
     }
@@ -123,7 +139,7 @@ def main():
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[FIELD-R23 cave seed] "+json.dumps({
         "seed":SEED,"pass":report["pass"],"dry_samples":rows,
-        "proximity_markers":len(proximity_lines)
+        "water_samples":water_rows,"proximity_markers":len(proximity_lines)
     },ensure_ascii=False,sort_keys=True),flush=True)
     require(report["pass"],"sealed-cave overflood regression failed; see "+str(target))
 
