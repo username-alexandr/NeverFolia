@@ -53,8 +53,10 @@ def verify(folia: Path) -> None:
             "R19 external surface structure table changed")
     require("MIN_DRY_SURFACE_Y = 129" in r19,
             "R19 island admission changed")
-    require("getChunk(" not in r19 and "getBlockState(" not in r19,
-            "R19 external structure admission must remain generation-state-only")
+    require("getChunk(" not in r19 and "level.getBlockState(" not in r19,
+            "R19 external structure admission must not synchronously load/read neighbours")
+    require("chunk.getBlockState(pos)" in r19,
+            "R24 synthetic-island materializer must read only its owning chunk")
 
     print(f"[NeverOverworld R20] {PROFILE} final invariants OK")
 
