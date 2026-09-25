@@ -61,6 +61,19 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
+SEAM_SCAN_DECL_OLD = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
+SEAM_SCAN_DECL_NEW = "        int head=0,tail=0;boolean hasOceanSeed=false,hasExternalSeed=false,touchesHorizontalSeam=false;\n"
+SEAM_EXTERNAL_OLD = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+SEAM_EXTERNAL_NEW = """            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER)){
+                hasOceanSeed=true;
+                hasExternalSeed=true;
+            }
+"""
+SEAM_CONFIRM_ANCHOR = "        if(!allowSeams&&touchesHorizontalSeam)return 0;\n"
+SEAM_CONFIRM_NEW = """        if(allowSeams&&touchesHorizontalSeam&&!hasExternalSeed)return 0;
+        if(!allowSeams&&touchesHorizontalSeam)return 0;
+"""
+
 
 CACHE_METHODS = r'''    /**
      * Compute each already-present radius-1 FEATURES chunk's ocean-connected
@@ -341,6 +354,16 @@ def patch(text: str) -> str:
         if new_mask not in text:
             require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
             text = text.replace(old_mask, new_mask, 1)
+    if SEAM_SCAN_DECL_NEW not in text:
+        require(text.count(SEAM_SCAN_DECL_OLD) == 1, "R22 seam scan declaration anchor missing")
+        text = text.replace(SEAM_SCAN_DECL_OLD, SEAM_SCAN_DECL_NEW, 1)
+    if SEAM_EXTERNAL_NEW not in text:
+        require(text.count(SEAM_EXTERNAL_OLD) == 1, "R22 external-seed scan anchor missing")
+        text = text.replace(SEAM_EXTERNAL_OLD, SEAM_EXTERNAL_NEW, 1)
+    if SEAM_CONFIRM_NEW not in text:
+        require(text.count(SEAM_CONFIRM_ANCHOR) == 1, "R22 seam confirmation anchor missing")
+        text = text.replace(SEAM_CONFIRM_ANCHOR, SEAM_CONFIRM_NEW, 1)
+
     require("seedOceanProximityFallback(" not in text,
             "unsafe R22 proximity fallback already present in input")
     require("proximityConnectedFloodable(" not in text,
@@ -381,6 +404,9 @@ def verify(folia: Path) -> None:
         "final boolean[][] localOceanMasks = localOceanConnectedMasks(cache, owner, minY, maxY);",
         "final boolean[] neighborOceanWater = pairNeighborOceanMask(",
         "if (!neighborOceanWater[ne]) continue;",
+        "boolean hasOceanSeed=false,hasExternalSeed=false,touchesHorizontalSeam=false",
+        "hasExternalSeed=true;",
+        "if(allowSeams&&touchesHorizontalSeam&&!hasExternalSeed)return 0;",
     ):
         require(marker in text, "R22 strict-ocean marker missing: " + marker)
 
