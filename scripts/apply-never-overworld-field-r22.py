@@ -8,9 +8,12 @@ order could consequently leave deterministic WATER/AIR walls.
 
 R22 keeps an already-present Y=128 WATER block as an authoritative ocean seed
 and additionally derives a *prospective* seed from OCEAN_FLOOR_WG when the
-FEATURES neighbour has not been flooded yet. It reads only the already-built
-FEATURES ChunkAccess from R21's StaticCache2D, never synchronously loads a chunk,
-and never writes the neighbour.
+FEATURES neighbour has not been flooded yet. A cave component is flood-eligible
+only when a continuous floodable path reaches one of those Y=128 ocean seeds.
+Horizontal distance/proximity to an ocean column is deliberately NOT evidence
+of connectivity. The implementation reads only already-built FEATURES
+ChunkAccess instances from R21's StaticCache2D, never synchronously loads a
+chunk, and never writes a neighbour.
 """
 from __future__ import annotations
 
@@ -22,16 +25,6 @@ FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 R8_CALL = "        floodLargeBoundaryConnectedCaverns(chunk, minY, FLOOD_LEVEL, water);\n"
 R15_CALL = "NeverOverworldFloodConnectivityR15.apply(level, chunk);"
-PROXIMITY_RADIUS = 16
-PROXIMITY_MIN_SIZE = 768
-PROXIMITY_MIN_BOUNDARY = 48
-PROXIMITY_MIN_SPAN = 8
-# User-seed QA after retiring R8: 99.08% of residual WATER/AIR seam faces
-# are within 16 horizontal blocks of saved Y128 ocean water. The worst
-# remaining ocean-exposed cavities have vertical spans 9..20, so keep the
-# conservative size/boundary gates and only relax span to 8. Radius 16 is the
-# maximum that stays inside the LIGHT radius-1 (3x3) FEATURES cache.
- 
 IMPORT = "import net.minecraft.world.level.levelgen.Heightmap;\n"
 IMPORT_ANCHOR = "import net.minecraft.world.level.block.state.BlockState;\n"
 
@@ -64,169 +57,197 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
         return state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed(surfaceY, state);
     }
 
-    static boolean proximityFallbackAllowed(
-        final int componentSize,
-        final int boundaryCells,
-        final int verticalSpan,
-        final boolean nearOcean
-    ) {
-        return nearOcean
-            && componentSize >= 768
-            && boundaryCells >= 48
-            && verticalSpan >= 8;
-    }
-
 """
 
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
-PROXIMITY_METHODS = """    private static int seedOceanProximityFallback(
+SEAM_SCAN_DECL_OLD = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
+SEAM_SCAN_DECL_NEW = "        int head=0,tail=0;boolean hasOceanSeed=false,hasExternalSeed=false,touchesHorizontalSeam=false;\n"
+SEAM_EXTERNAL_OLD = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+SEAM_EXTERNAL_NEW = """            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER)){
+                hasOceanSeed=true;
+                hasExternalSeed=true;
+            }
+"""
+SEAM_CONFIRM_ANCHOR = "        if(!allowSeams&&touchesHorizontalSeam)return 0;\n"
+SEAM_CONFIRM_NEW = """        if(allowSeams&&touchesHorizontalSeam&&!hasExternalSeed)return 0;
+        if(!allowSeams&&touchesHorizontalSeam)return 0;
+"""
+
+
+CACHE_METHODS = r'''    /**
+     * Compute each already-present radius-1 FEATURES chunk's ocean-connected
+     * cells from only real/prospective Y128 ocean seeds. These local masks are
+     * immutable inputs for the symmetric per-seam domains below.
+     */
+    private static boolean[][] localOceanConnectedMasks(
         final StaticCache2D<GenerationChunkHolder> cache,
         final ChunkAccess owner,
         final int minY,
-        final int maxY,
-        final boolean[] externalSeeds
+        final int maxY
     ) {
-        final boolean[] nearOcean = nearOceanColumns(cache, owner);
-        final int baseX = owner.getPos().getMinBlockX();
-        final int baseZ = owner.getPos().getMinBlockZ();
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        int marked = 0;
-        for (int z = 0; z < 16; ++z) {
-            for (int x = 0; x < 16; ++x) {
-                if (!nearOcean[(z << 4) | x] || (x != 0 && x != 15 && z != 0 && z != 15)) continue;
-                for (int y = minY; y < SCAN_MAX_Y; ++y) {
-                    pos.set(baseX + x, y, baseZ + z);
-                    if (!traversable(owner, pos)) continue;
-                    final int e = encode(x, y, z, minY);
-                    if (!externalSeeds[e]) {
-                        externalSeeds[e] = true;
-                        ++marked;
-                    }
+        final boolean[][] masks = new boolean[9][];
+        final ChunkPos cp = owner.getPos();
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                final int index = cacheMaskIndex(dx, dz);
+                final ChunkAccess chunk = cachedFeaturesChunk(cache, owner, cp.x() + dx, cp.z() + dz);
+                if (chunk != null) {
+                    masks[index] = oceanConnectedFloodable(chunk, minY, maxY);
                 }
             }
         }
-        return marked;
+        return masks;
     }
 
-    private static boolean[] proximityConnectedFloodable(
+    /**
+     * Return the neighbour-side ocean mask for one owner<->neighbour seam.
+     *
+     * Both LIGHT tasks for the same seam must make the same decision. Their
+     * radius-1 caches overlap in exactly 2x3 chunks for an X seam or 3x2 for a
+     * Z seam. Restrict cross-chunk propagation to that common domain, while
+     * starting from the same per-chunk Y128 seed masks. The result is therefore
+     * scheduling-independent without any distance/proximity heuristic.
+     */
+    private static boolean[] pairNeighborOceanMask(
         final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int neighborChunkX,
+        final int neighborChunkZ,
+        final int minY,
+        final int maxY,
+        final boolean[][] localMasks
+    ) {
+        final ChunkPos cp = owner.getPos();
+        final int deltaX = neighborChunkX - cp.x();
+        final int deltaZ = neighborChunkZ - cp.z();
+        if (Math.abs(deltaX) + Math.abs(deltaZ) != 1) return null;
+
+        final boolean xAxis = deltaX != 0;
+        final int minChunkX = xAxis ? Math.min(cp.x(), neighborChunkX) : cp.x() - 1;
+        final int maxChunkX = xAxis ? Math.max(cp.x(), neighborChunkX) : cp.x() + 1;
+        final int minChunkZ = xAxis ? cp.z() - 1 : Math.min(cp.z(), neighborChunkZ);
+        final int maxChunkZ = xAxis ? cp.z() + 1 : Math.max(cp.z(), neighborChunkZ);
+        final int width = maxChunkX - minChunkX + 1;
+        final int height = maxChunkZ - minChunkZ + 1;
+        if (width * height != 6) return null;
+
+        final ChunkAccess[] chunks = new ChunkAccess[6];
+        final boolean[][] masks = new boolean[6][];
+        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+            for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+                final int index = (chunkZ - minChunkZ) * width + (chunkX - minChunkX);
+                final ChunkAccess chunk = cachedFeaturesChunk(cache, owner, chunkX, chunkZ);
+                if (chunk == null) return null;
+                final int localIndex = cacheMaskIndex(chunkX - cp.x(), chunkZ - cp.z());
+                if (localIndex < 0 || localMasks[localIndex] == null) return null;
+                chunks[index] = chunk;
+                masks[index] = localMasks[localIndex].clone();
+            }
+        }
+
+        final int capacity = (maxY - minY + 1) * 256;
+        final int[] queue = new int[capacity];
+        boolean changed;
+        do {
+            changed = false;
+            for (int z = 0; z < height; ++z) {
+                for (int x = 0; x + 1 < width; ++x) {
+                    final int first = z * width + x;
+                    final int second = first + 1;
+                    changed |= bridgeMasks(
+                        chunks[first], masks[first], 15,
+                        chunks[second], masks[second], 0,
+                        true, minY, maxY, queue
+                    );
+                }
+            }
+            for (int z = 0; z + 1 < height; ++z) {
+                for (int x = 0; x < width; ++x) {
+                    final int first = z * width + x;
+                    final int second = first + width;
+                    changed |= bridgeMasks(
+                        chunks[first], masks[first], 15,
+                        chunks[second], masks[second], 0,
+                        false, minY, maxY, queue
+                    );
+                }
+            }
+        } while (changed);
+
+        final int neighborIndex =
+            (neighborChunkZ - minChunkZ) * width + (neighborChunkX - minChunkX);
+        return masks[neighborIndex];
+    }
+
+    private static boolean bridgeMasks(
+        final ChunkAccess first,
+        final boolean[] firstMask,
+        final int firstEdge,
+        final ChunkAccess second,
+        final boolean[] secondMask,
+        final int secondEdge,
+        final boolean xAxis,
+        final int minY,
+        final int maxY,
+        final int[] queue
+    ) {
+        boolean changed = false;
+        for (int y = minY; y < SCAN_MAX_Y; ++y) {
+            for (int lateral = 0; lateral < 16; ++lateral) {
+                final int fx = xAxis ? firstEdge : lateral;
+                final int fz = xAxis ? lateral : firstEdge;
+                final int sx = xAxis ? secondEdge : lateral;
+                final int sz = xAxis ? lateral : secondEdge;
+                final int fe = encode(fx, y, fz, minY);
+                final int se = encode(sx, y, sz, minY);
+                if (firstMask[fe] && !secondMask[se]) {
+                    changed |= expandMaskFromSeed(second, secondMask, queue, sx, y, sz, minY, maxY);
+                }
+                if (secondMask[se] && !firstMask[fe]) {
+                    changed |= expandMaskFromSeed(first, firstMask, queue, fx, y, fz, minY, maxY);
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static boolean expandMaskFromSeed(
         final ChunkAccess chunk,
+        final boolean[] connected,
+        final int[] queue,
+        final int seedX,
+        final int seedY,
+        final int seedZ,
         final int minY,
         final int maxY
     ) {
-        final int capacity = (maxY - minY + 1) * 256;
-        final boolean[] accepted = new boolean[capacity];
-        final boolean[] visited = new boolean[capacity];
-        final int[] queue = new int[capacity];
-        final boolean[] nearOcean = nearOceanColumns(cache, chunk);
-        final int baseX = chunk.getPos().getMinBlockX();
-        final int baseZ = chunk.getPos().getMinBlockZ();
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final int seed = encode(seedX, seedY, seedZ, minY);
+        if (connected[seed]) return false;
+        final BlockPos seedPos = new BlockPos(
+            chunk.getPos().getMinBlockX() + seedX,
+            seedY,
+            chunk.getPos().getMinBlockZ() + seedZ
+        );
+        if (!traversable(chunk, seedPos)) return false;
 
-        for (int y = minY; y <= maxY; ++y) {
-            for (int z = 0; z < 16; ++z) {
-                for (int x = 0; x < 16; ++x) {
-                    final int seed = encode(x, y, z, minY);
-                    if (visited[seed]) continue;
-                    pos.set(baseX + x, y, baseZ + z);
-                    if (!traversable(chunk, pos)) {
-                        visited[seed] = true;
-                        continue;
-                    }
-
-                    int head = 0;
-                    int tail = 0;
-                    int boundaryCells = 0;
-                    int componentMinY = y;
-                    int componentMaxY = y;
-                    boolean nearOceanBoundary = false;
-                    visited[seed] = true;
-                    queue[tail++] = seed;
-
-                    while (head < tail) {
-                        final int e = queue[head++];
-                        final int cx = e & 15;
-                        final int cz = (e >>> 4) & 15;
-                        final int cy = minY + (e >>> 8);
-                        componentMinY = Math.min(componentMinY, cy);
-                        componentMaxY = Math.max(componentMaxY, cy);
-                        if (horizontalSeamBelowOcean(cx, cy, cz)) {
-                            ++boundaryCells;
-                            if (nearOcean[(cz << 4) | cx]) {
-                                nearOceanBoundary = true;
-                            }
-                        }
-
-                        tail = enqueue(chunk, visited, queue, tail, cx - 1, cy, cz, minY, maxY);
-                        tail = enqueue(chunk, visited, queue, tail, cx + 1, cy, cz, minY, maxY);
-                        tail = enqueue(chunk, visited, queue, tail, cx, cy, cz - 1, minY, maxY);
-                        tail = enqueue(chunk, visited, queue, tail, cx, cy, cz + 1, minY, maxY);
-                        tail = enqueue(chunk, visited, queue, tail, cx, cy - 1, cz, minY, maxY);
-                        tail = enqueue(chunk, visited, queue, tail, cx, cy + 1, cz, minY, maxY);
-                    }
-
-                    final int verticalSpan = componentMaxY - componentMinY + 1;
-                    if (!proximityFallbackAllowed(tail, boundaryCells, verticalSpan, nearOceanBoundary)) {
-                        continue;
-                    }
-                    for (int i = 0; i < tail; ++i) {
-                        accepted[queue[i]] = true;
-                    }
-                }
-            }
+        int head = 0;
+        int tail = 0;
+        connected[seed] = true;
+        queue[tail++] = seed;
+        while (head < tail) {
+            final int e = queue[head++];
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
         }
-        return accepted;
-    }
-
-    private static boolean[] nearOceanColumns(
-        final StaticCache2D<GenerationChunkHolder> cache,
-        final ChunkAccess owner
-    ) {
-        final int radius = 16;
-        final int width = 16 + 2 * radius;
-        final boolean[] ocean = new boolean[width * width];
-        final boolean[] near = new boolean[256];
-        final ChunkPos ownerPos = owner.getPos();
-        final int ownerBaseX = ownerPos.getMinBlockX();
-        final int ownerBaseZ = ownerPos.getMinBlockZ();
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-
-        for (int gz = 0; gz < width; ++gz) {
-            final int worldZ = ownerBaseZ - radius + gz;
-            final int chunkZ = Math.floorDiv(worldZ, 16);
-            final int localZ = Math.floorMod(worldZ, 16);
-            for (int gx = 0; gx < width; ++gx) {
-                final int worldX = ownerBaseX - radius + gx;
-                final int chunkX = Math.floorDiv(worldX, 16);
-                final int localX = Math.floorMod(worldX, 16);
-                final ChunkAccess source = cachedFeaturesChunk(cache, owner, chunkX, chunkZ);
-                if (source == null) continue;
-                final int surfaceY = source.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ);
-                pos.set(worldX, SCAN_MAX_Y, worldZ);
-                ocean[gz * width + gx] =
-                    surfaceOceanSeed(surfaceY, source.getBlockState(pos));
-            }
-        }
-
-        for (int z = 0; z < 16; ++z) {
-            for (int x = 0; x < 16; ++x) {
-                boolean found = false;
-                final int centerX = x + radius;
-                final int centerZ = z + radius;
-                for (int dz = -radius; dz <= radius && !found; ++dz) {
-                    final int row = (centerZ + dz) * width;
-                    for (int dx = -radius; dx <= radius; ++dx) {
-                        if (ocean[row + centerX + dx]) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                near[(z << 4) | x] = found;
-            }
-        }
-        return near;
+        return true;
     }
 
     private static ChunkAccess cachedFeaturesChunk(
@@ -235,15 +256,21 @@ PROXIMITY_METHODS = """    private static int seedOceanProximityFallback(
         final int chunkX,
         final int chunkZ
     ) {
-        final ChunkPos ownerPos = owner.getPos();
-        if (ownerPos.x() == chunkX && ownerPos.z() == chunkZ) return owner;
+        final ChunkPos cp = owner.getPos();
+        if (cp.x() == chunkX && cp.z() == chunkZ) return owner;
         if (!cache.contains(chunkX, chunkZ)) return null;
         final GenerationChunkHolder holder = cache.get(chunkX, chunkZ);
         return holder == null ? null : holder.getChunkIfPresent(ChunkStatus.FEATURES);
     }
 
-"""
-PROXIMITY_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+    private static int cacheMaskIndex(final int dx, final int dz) {
+        if (dx < -1 || dx > 1 || dz < -1 || dz > 1) return -1;
+        return (dz + 1) * 3 + (dx + 1);
+    }
+
+'''
+CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -286,100 +313,63 @@ def patch(text: str) -> str:
         require(text.count(OLD_SEEDS) == 1, "R21 existing-water seed block missing/drifted")
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
+    # R22 must not infer ocean connectivity from distance, component size or a
+    # seam touch. Compute local Y128 seed masks once, then make each seam
+    # decision inside the 2x3/3x2 FEATURES-cache intersection shared by both
+    # adjacent LIGHT tasks.
     if "reconcileSeams(" in text:
-        if "seedOceanProximityFallback(" not in text:
-            require(PROXIMITY_METHODS_ANCHOR in text, "R22 proximity method anchor missing")
-            text = text.replace(PROXIMITY_METHODS_ANCHOR, PROXIMITY_METHODS + PROXIMITY_METHODS_ANCHOR, 1)
+        if "pairNeighborOceanMask(" not in text:
+            require(CACHE_METHODS_ANCHOR in text, "R22 pair-mask insertion anchor missing")
+            text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
 
-        if "final int proximity = seedOceanProximityFallback(" not in text:
-            anchor = "        final int seeded = west + east + north + south;\n"
-            require(anchor in text, "R22 reconcile seeded-count anchor missing")
-            text = text.replace(
-                anchor,
-                anchor + "        final int proximity = seedOceanProximityFallback(cache, owner, minY, maxY, externalSeeds);\n",
-                1,
-            )
+        cache_anchor = "        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];\n"
+        cache_line = "        final boolean[][] localOceanMasks = localOceanConnectedMasks(cache, owner, minY, maxY);\n"
+        if cache_line not in text:
+            require(text.count(cache_anchor) == 1, "R22 local-mask reconcile anchor missing")
+            text = text.replace(cache_anchor, cache_anchor + cache_line, 1)
 
-        old_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,touchesHorizontalSeam=false;\n"
-        new_scan_seed = "        int head=0,tail=0;boolean hasOceanSeed=false,hasProximitySeed=false,touchesHorizontalSeam=false;\n"
-        if new_scan_seed not in text:
-            require(text.count(old_scan_seed) == 1, "R22 scan state anchor missing")
-            text = text.replace(old_scan_seed, new_scan_seed, 1)
+        old_calls = ", minY, maxY, externalSeeds);"
+        new_calls = ", minY, maxY, externalSeeds, localOceanMasks);"
+        if new_calls not in text:
+            require(text.count(old_calls) == 4, "R22 neighbour seed call count drifted")
+            text = text.replace(old_calls, new_calls)
 
-        old_external = (
-            "            if(externalSeeds!=null&&externalSeeds[e]"
-            "&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-        )
-        new_external = (
-            "            if(externalSeeds!=null&&externalSeeds[e]){\n"
-            "                if(chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
-            "                else hasProximitySeed=true;\n"
-            "            }\n"
-        )
-        if new_external not in text:
-            require(text.count(old_external) == 1, "R22 external seed classification anchor missing")
-            text = text.replace(old_external, new_external, 1)
+        old_signature = """        final int maxY,
+        final boolean[] externalSeeds
+    ) {"""
+        new_signature = """        final int maxY,
+        final boolean[] externalSeeds,
+        final boolean[][] localOceanMasks
+    ) {"""
+        if new_signature not in text:
+            require(text.count(old_signature) == 1, "R22 seedFromNeighbor signature anchor missing")
+            text = text.replace(old_signature, new_signature, 1)
 
-        old_guard = (
-            "        if(!hasOceanSeed){\n"
-            "            if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
-            "                &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                System.out.println(\n"
-            "                    \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                    +\" y=\"+componentMinY+\":\"+componentMaxY\n"
-            "                    +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
-            "                );\n"
-            "            }\n"
-            "            return 0;\n"
-            "        }\n"
-        )
-        new_guard = (
-            "        if(!hasOceanSeed){\n"
-            "            final int verticalSpan=componentMaxY-componentMinY+1;\n"
-            "            final boolean proximityFallback=allowSeams&&touchesHorizontalSeam\n"
-            "                &&proximityFallbackAllowed(tail,boundaryCells,verticalSpan,hasProximitySeed);\n"
-            "            if(!proximityFallback){\n"
-            "                if(allowSeams&&touchesHorizontalSeam&&tail>=64&&boundaryCells>=8\n"
-            "                    &&Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                    System.out.println(\n"
-            "                        \"[NeverFolia][R22DrySeam] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                        +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                        +\" y=\"+componentMinY+\":\"+componentMaxY\n"
-            "                        +\" sample=\"+sampleSeamX+\",\"+sampleSeamY+\",\"+sampleSeamZ\n"
-            "                    );\n"
-            "                }\n"
-            "                return 0;\n"
-            "            }\n"
-            "            if(Boolean.getBoolean(\"neverfolia.debugFloodSeams\")){\n"
-            "                System.out.println(\n"
-            "                    \"[NeverFolia][R22ProximityFlood] chunk=\"+chunk.getPos().x()+\",\"+chunk.getPos().z()\n"
-            "                    +\" size=\"+tail+\" boundary=\"+boundaryCells\n"
-            "                    +\" span=\"+verticalSpan+\" nearOcean=true\"\n"
-            "                );\n"
-            "            }\n"
-            "        }\n"
-        )
-        if new_guard not in text:
-            require(text.count(old_guard) == 1, "R22 dry-seam guard anchor missing")
-            text = text.replace(old_guard, new_guard, 1)
+        old_mask = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
+        new_mask = """        final boolean[] neighborOceanWater = pairNeighborOceanMask(
+            cache, owner, neighborChunkX, neighborChunkZ, minY, maxY, localOceanMasks
+        );
+        if (neighborOceanWater == null) return 0;
+"""
+        if new_mask not in text:
+            require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
+            text = text.replace(old_mask, new_mask, 1)
+        if SEAM_SCAN_DECL_NEW not in text:
+            require(text.count(SEAM_SCAN_DECL_OLD) == 1, "R22 seam scan declaration anchor missing")
+            text = text.replace(SEAM_SCAN_DECL_OLD, SEAM_SCAN_DECL_NEW, 1)
+        if SEAM_EXTERNAL_NEW not in text:
+            require(text.count(SEAM_EXTERNAL_OLD) == 1, "R22 external-seed scan anchor missing")
+            text = text.replace(SEAM_EXTERNAL_OLD, SEAM_EXTERNAL_NEW, 1)
+        if SEAM_CONFIRM_NEW not in text:
+            require(text.count(SEAM_CONFIRM_ANCHOR) == 1, "R22 seam confirmation anchor missing")
+            text = text.replace(SEAM_CONFIRM_ANCHOR, SEAM_CONFIRM_NEW, 1)
 
-        proximity_mask = (
-            "        final boolean[] neighborProximityWater = "
-            "proximityConnectedFloodable(cache, neighbor, minY, maxY);\n"
-        )
-        if proximity_mask not in text:
-            anchor = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
-            require(text.count(anchor) == 1, "R22 neighbour ocean mask anchor missing")
-            text = text.replace(anchor, anchor + proximity_mask, 1)
-
-        old_neighbor_gate = "                if (!neighborOceanWater[ne]) continue;\n"
-        new_neighbor_gate = (
-            "                if (!neighborOceanWater[ne] && !neighborProximityWater[ne]) continue;\n"
-        )
-        if new_neighbor_gate not in text:
-            require(text.count(old_neighbor_gate) == 1, "R22 neighbour seam gate anchor missing")
-            text = text.replace(old_neighbor_gate, new_neighbor_gate, 1)
+    require("seedOceanProximityFallback(" not in text,
+            "unsafe R22 proximity fallback already present in input")
+    require("proximityConnectedFloodable(" not in text,
+            "unsafe R22 proximity neighbour mask already present in input")
+    require("neighborProximityWater" not in text,
+            "unsafe R22 proximity neighbour gate already present in input")
     return text
 
 def verify(folia: Path) -> None:
@@ -406,23 +396,35 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
+        "localOceanConnectedMasks",
+        "pairNeighborOceanMask",
+        "bridgeMasks",
+        "expandMaskFromSeed",
+        "cachedFeaturesChunk",
+        "final boolean[][] localOceanMasks = localOceanConnectedMasks(cache, owner, minY, maxY);",
+        "final boolean[] neighborOceanWater = pairNeighborOceanMask(",
+        "if (!neighborOceanWater[ne]) continue;",
+        "boolean hasOceanSeed=false,hasExternalSeed=false,touchesHorizontalSeam=false",
+        "hasExternalSeed=true;",
+        "if(allowSeams&&touchesHorizontalSeam&&!hasExternalSeed)return 0;",
+    ):
+        require(marker in text, "R22 strict-ocean marker missing: " + marker)
+
+    for forbidden in (
         "seedOceanProximityFallback",
         "nearOceanColumns",
         "proximityFallbackAllowed",
         "proximityConnectedFloodable",
         "neighborProximityWater",
-        "!neighborOceanWater[ne] && !neighborProximityWater[ne]",
-        "componentSize >= 768",
-        "boundaryCells >= 48",
-        "verticalSpan >= 8",
+        "hasProximitySeed",
+        "R22ProximityFlood",
     ):
-        require(marker in text, "R22 marker missing: " + marker)
+        require(forbidden not in text, "unsafe proximity flood logic survived: " + forbidden)
+
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in text,
             "R21 scheduling-dependent WATER-only seed survived")
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
-    require("final int radius = 16;" in text,
-            "R22 proximity radius drifted from cache-safe 16-block bound")
     require(
         "return floodVerifiedComponents(owner, externalSeeds, true);" in text
         or "final int changed = floodVerifiedComponents(owner, externalSeeds, true);" in text,
@@ -430,7 +432,10 @@ def verify(folia: Path) -> None:
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
-    print("[FIELD-R22] existing + prospective OCEAN_FLOOR_WG seam seeds invariants OK")
+    require("cache.contains(chunkX, chunkZ)" in text
+            and "holder.getChunkIfPresent(ChunkStatus.FEATURES)" in text,
+            "R22 cache traversal must use only already-present FEATURES chunks")
+    print("[FIELD-R22] symmetric pair-domain Y128 ocean-connectivity invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -466,18 +471,14 @@ class X {
             "SELF-TEST existing WATER preservation missing")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
-    require("seedOceanProximityFallback" in PROXIMITY_METHODS,
-            "SELF-TEST proximity seed pass missing")
-    require("proximityConnectedFloodable" in PROXIMITY_METHODS,
-            "SELF-TEST neighbour proximity component mask missing")
-    require("proximityFallbackAllowed(tail, boundaryCells, verticalSpan, nearOceanBoundary)" in PROXIMITY_METHODS,
-            "SELF-TEST neighbour proximity qualification missing")
-    require("final int radius = 16;" in PROXIMITY_METHODS,
-            "SELF-TEST proximity radius missing")
-    require("componentSize >= 768" in HELPER
-            and "boundaryCells >= 48" in HELPER
-            and "verticalSpan >= 8" in HELPER,
-            "SELF-TEST bounded proximity fallback policy missing")
+    for forbidden in (
+        "seedOceanProximityFallback",
+        "proximityConnectedFloodable",
+        "nearOceanColumns",
+        "neighborProximityWater",
+        "proximityFallbackAllowed",
+    ):
+        require(forbidden not in out, "SELF-TEST proximity flood survived: " + forbidden)
     require(patch(out) == out, "SELF-TEST transformer is not idempotent")
 
     flood_fixture = """class NeverOverworldFlood {
@@ -495,7 +496,7 @@ class X {
             "SELF-TEST historical R8 helper should remain")
     require(R15_CALL in retired, "SELF-TEST final R15 call was lost")
     require(patch_r8(retired) == retired, "SELF-TEST R8 retirement is not idempotent")
-    print("[FIELD-R22] SELF-TEST OK")
+    print("[FIELD-R22] STRICT-OCEAN SELF-TEST OK")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
@@ -520,7 +521,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R22] installed: prospective seam seeds + obsolete R8 cavern fallback retired")
+    print("[FIELD-R22] installed: symmetric pair-domain Y128 ocean connectivity + obsolete R8/proximity fallbacks retired")
 
 if __name__ == "__main__":
     main()
