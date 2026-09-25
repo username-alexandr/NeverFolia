@@ -2,7 +2,11 @@ name: NeverOverworld external dungeon runtime QA
 
 on:
   push:
-    branches: [wip/neveroverworld-field-r12, wip/neveroverworld-r22-r19-integration-v2]
+    branches:
+      - wip/neveroverworld-field-r12
+      - wip/neveroverworld-r22-r19-integration-v2
+      - 'fix/**'
+      - 'release/**'
     paths:
       - 'qa/field-r19/**'
       - 'scripts/build-never-overworld-external-structures-r19.py'
@@ -11,6 +15,8 @@ on:
       - 'scripts/apply-never-overworld-fixpack-r19.py'
       - 'scripts/apply-never-overworld-fixpack-r20.py'
       - 'scripts/apply-never-overworld-fixpack-r21.py'
+      - 'scripts/apply-never-overworld-field-r21.py'
+      - 'scripts/weather-never-overworld-flooded-surface.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
