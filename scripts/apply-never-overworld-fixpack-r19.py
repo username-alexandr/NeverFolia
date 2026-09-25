@@ -60,6 +60,12 @@ def verify(folia: Path) -> None:
     ):
         require(f'case "{marker}"' not in helper,
                 "non-R19 surface structure was island-gated: " + marker)
+    require("BETTER_MONUMENT_TERRAIN_RADIUS = 29" in helper
+            and "monumentTerrainAllowed(" in helper
+            and "isBetterMonumentId(" in helper,
+            "R19 Better Monument source-faithful terrain gate missing")
+    require("BETTER_MONUMENT_PROBE_RADIUS=29" in fast,
+            "R19 Better Monument fast-locate terrain probe missing")
     require("NeverOverworldExternalStructurePolicyR19.radiusForId" in fast,
             "R19 external fast-locate policy link missing")
     require("getPotentialStructureChunk" in fast and "isStructureChunk" in fast,
