@@ -62,6 +62,160 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
 
+CACHE_METHODS = r'''    /**
+     * Build strict ocean-connected masks for the already-present 3x3 FEATURES
+     * cache. Each chunk starts from only its real/prospective Y128 ocean seeds.
+     * Connectivity is then propagated across actual traversable seam cells
+     * until stable. Distance to ocean, component size and seam geometry are
+     * never used as evidence.
+     */
+    private static boolean[][] cacheOceanConnectedMasks(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int minY,
+        final int maxY
+    ) {
+        final boolean[][] masks = new boolean[9][];
+        final ChunkAccess[] chunks = new ChunkAccess[9];
+        final ChunkPos cp = owner.getPos();
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                final int index = cacheMaskIndex(dx, dz);
+                final ChunkAccess chunk = cachedFeaturesChunk(cache, owner, cp.x() + dx, cp.z() + dz);
+                chunks[index] = chunk;
+                if (chunk != null) {
+                    masks[index] = oceanConnectedFloodable(chunk, minY, maxY);
+                }
+            }
+        }
+
+        final int capacity = (maxY - minY + 1) * 256;
+        final int[] queue = new int[capacity];
+        boolean changed;
+        do {
+            changed = false;
+            for (int gz = 0; gz < 3; ++gz) {
+                for (int gx = 0; gx < 2; ++gx) {
+                    final int left = gz * 3 + gx;
+                    final int right = left + 1;
+                    if (chunks[left] != null && chunks[right] != null) {
+                        changed |= bridgeMasks(
+                            chunks[left], masks[left], 15,
+                            chunks[right], masks[right], 0,
+                            true, minY, maxY, queue
+                        );
+                    }
+                }
+            }
+            for (int gz = 0; gz < 2; ++gz) {
+                for (int gx = 0; gx < 3; ++gx) {
+                    final int north = gz * 3 + gx;
+                    final int south = north + 3;
+                    if (chunks[north] != null && chunks[south] != null) {
+                        changed |= bridgeMasks(
+                            chunks[north], masks[north], 15,
+                            chunks[south], masks[south], 0,
+                            false, minY, maxY, queue
+                        );
+                    }
+                }
+            }
+        } while (changed);
+        return masks;
+    }
+
+    private static boolean bridgeMasks(
+        final ChunkAccess first,
+        final boolean[] firstMask,
+        final int firstEdge,
+        final ChunkAccess second,
+        final boolean[] secondMask,
+        final int secondEdge,
+        final boolean xAxis,
+        final int minY,
+        final int maxY,
+        final int[] queue
+    ) {
+        boolean changed = false;
+        for (int y = minY; y < SCAN_MAX_Y; ++y) {
+            for (int lateral = 0; lateral < 16; ++lateral) {
+                final int fx = xAxis ? firstEdge : lateral;
+                final int fz = xAxis ? lateral : firstEdge;
+                final int sx = xAxis ? secondEdge : lateral;
+                final int sz = xAxis ? lateral : secondEdge;
+                final int fe = encode(fx, y, fz, minY);
+                final int se = encode(sx, y, sz, minY);
+                if (firstMask[fe] && !secondMask[se]) {
+                    changed |= expandMaskFromSeed(second, secondMask, queue, sx, y, sz, minY, maxY);
+                }
+                if (secondMask[se] && !firstMask[fe]) {
+                    changed |= expandMaskFromSeed(first, firstMask, queue, fx, y, fz, minY, maxY);
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static boolean expandMaskFromSeed(
+        final ChunkAccess chunk,
+        final boolean[] connected,
+        final int[] queue,
+        final int seedX,
+        final int seedY,
+        final int seedZ,
+        final int minY,
+        final int maxY
+    ) {
+        final int seed = encode(seedX, seedY, seedZ, minY);
+        if (connected[seed]) return false;
+        final BlockPos seedPos = new BlockPos(
+            chunk.getPos().getMinBlockX() + seedX,
+            seedY,
+            chunk.getPos().getMinBlockZ() + seedZ
+        );
+        if (!traversable(chunk, seedPos)) return false;
+
+        int head = 0;
+        int tail = 0;
+        connected[seed] = true;
+        queue[tail++] = seed;
+        while (head < tail) {
+            final int e = queue[head++];
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
+        }
+        return true;
+    }
+
+    private static ChunkAccess cachedFeaturesChunk(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int chunkX,
+        final int chunkZ
+    ) {
+        final ChunkPos cp = owner.getPos();
+        if (cp.x() == chunkX && cp.z() == chunkZ) return owner;
+        if (!cache.contains(chunkX, chunkZ)) return null;
+        final GenerationChunkHolder holder = cache.get(chunkX, chunkZ);
+        return holder == null ? null : holder.getChunkIfPresent(ChunkStatus.FEATURES);
+    }
+
+    private static int cacheMaskIndex(final int dx, final int dz) {
+        if (dx < -1 || dx > 1 || dz < -1 || dz > 1) return -1;
+        return (dz + 1) * 3 + (dx + 1);
+    }
+
+'''
+CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
+
+
 def require(ok: bool, message: str) -> None:
     if not ok:
         raise ValueError("[FIELD-R22] " + message)
@@ -104,9 +258,46 @@ def patch(text: str) -> str:
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
     # R22 must not infer ocean connectivity from distance, component size or a
-    # seam touch. R21's seedFromNeighbor already propagates only cells that are
-    # connected, through floodable volume, to a Y=128 ocean seed in that
-    # FEATURES neighbour. Keep that strict path unchanged.
+    # seam touch. Build strict masks over the existing radius-1 FEATURES cache
+    # and propagate connectivity only across real traversable seam cells.
+    if "cacheOceanConnectedMasks(" not in text:
+        require(CACHE_METHODS_ANCHOR in text, "R22 cache-mask insertion anchor missing")
+        text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
+
+    cache_anchor = "        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];\n"
+    cache_line = "        final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);\n"
+    if cache_line not in text:
+        require(text.count(cache_anchor) == 1, "R22 cache-mask reconcile anchor missing")
+        text = text.replace(cache_anchor, cache_anchor + cache_line, 1)
+
+    old_calls = ", minY, maxY, externalSeeds);"
+    new_calls = ", minY, maxY, externalSeeds, cacheOceanMasks);"
+    if new_calls not in text:
+        require(text.count(old_calls) == 4, "R22 neighbour seed call count drifted")
+        text = text.replace(old_calls, new_calls)
+
+    old_signature = """        final int maxY,
+        final boolean[] externalSeeds
+    ) {"""
+    new_signature = """        final int maxY,
+        final boolean[] externalSeeds,
+        final boolean[][] cacheOceanMasks
+    ) {"""
+    if new_signature not in text:
+        require(text.count(old_signature) == 1, "R22 seedFromNeighbor signature anchor missing")
+        text = text.replace(old_signature, new_signature, 1)
+
+    old_mask = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
+    new_mask = """        final int maskIndex = cacheMaskIndex(
+            neighborChunkX - owner.getPos().x(),
+            neighborChunkZ - owner.getPos().z()
+        );
+        if (maskIndex < 0 || cacheOceanMasks[maskIndex] == null) return 0;
+        final boolean[] neighborOceanWater = cacheOceanMasks[maskIndex];
+"""
+    if new_mask not in text:
+        require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
+        text = text.replace(old_mask, new_mask, 1)
     require("seedOceanProximityFallback(" not in text,
             "unsafe R22 proximity fallback already present in input")
     require("proximityConnectedFloodable(" not in text,
@@ -139,7 +330,12 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
-        "final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);",
+        "cacheOceanConnectedMasks",
+        "bridgeMasks",
+        "expandMaskFromSeed",
+        "cachedFeaturesChunk",
+        "final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);",
+        "final boolean[] neighborOceanWater = cacheOceanMasks[maskIndex];",
         "if (!neighborOceanWater[ne]) continue;",
     ):
         require(marker in text, "R22 strict-ocean marker missing: " + marker)
@@ -166,7 +362,10 @@ def verify(folia: Path) -> None:
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
-    print("[FIELD-R22] strict Y128 ocean-connectivity seam invariants OK")
+    require("cache.contains(chunkX, chunkZ)" in text
+            and "holder.getChunkIfPresent(ChunkStatus.FEATURES)" in text,
+            "R22 cache traversal must use only already-present FEATURES chunks")
+    print("[FIELD-R22] strict 3x3 Y128 ocean-connectivity seam invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -252,7 +451,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R22] installed: strict Y128 ocean connectivity + obsolete R8/proximity cavern fallbacks retired")
+    print("[FIELD-R22] installed: strict 3x3 Y128 ocean connectivity + obsolete R8/proximity cavern fallbacks retired")
 
 if __name__ == "__main__":
     main()
