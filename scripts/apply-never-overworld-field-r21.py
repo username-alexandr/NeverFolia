@@ -36,6 +36,27 @@ FEATURE_PUBLISH_CALL = (
     "publishFeatureBoundarySeeds(this.world, newChunk);"
 )
 
+LIGHT_RADIUS_OLD = """        final int neighbourReadRadius = Math.max(
+                0,
+                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
+        );
+"""
+LIGHT_RADIUS_NEW = """        final int vanillaNeighbourReadRadius = Math.max(
+                0,
+                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
+        );
+        // NeverFolia: keep Moonrise's native dependency radius unchanged.
+        // Only neighbours already required by LIGHT are strengthened to FEATURES.
+        final int neighbourReadRadius = vanillaNeighbourReadRadius;
+"""
+LIGHT_REQUIRED_OLD = """                final ChunkStatus requiredNeighbourStatus = ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
+"""
+LIGHT_REQUIRED_NEW = """                final ChunkStatus requiredNeighbourStatus =
+                        toStatus == ChunkStatus.LIGHT && radius > 0
+                                ? ChunkStatus.FEATURES
+                                : ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
+"""
+
 REWEATHER_METHOD_ANCHOR = "    private static void weatherSubmergedSurface(\n"
 REWEATHER_METHOD = """    /**
      * R21/R22: seam reconciliation may flood a column after the owner's first
@@ -125,12 +146,22 @@ def patch_generic(text: str) -> str:
     return text.replace(anchor, injected, 1)
 
 def patch_scheduler(text: str) -> str:
-    old = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
-    new = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
-    if new in text:
-        return text
-    require(text.count(old) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
-    return text.replace(old, new, 1)
+    old_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
+    new_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
+    if new_ctor not in text:
+        require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
+        text = text.replace(old_ctor, new_ctor, 1)
+
+    if LIGHT_RADIUS_NEW not in text:
+        require(text.count(LIGHT_RADIUS_OLD) == 1,
+                "Moonrise scheduler neighbourReadRadius anchor missing/drifted")
+        text = text.replace(LIGHT_RADIUS_OLD, LIGHT_RADIUS_NEW, 1)
+
+    if LIGHT_REQUIRED_NEW not in text:
+        require(text.count(LIGHT_REQUIRED_OLD) == 1,
+                "Moonrise scheduler required-neighbour anchor missing/drifted")
+        text = text.replace(LIGHT_REQUIRED_OLD, LIGHT_REQUIRED_NEW, 1)
+    return text
 
 def verify(folia: Path) -> None:
     tasks = (folia / TASKS).read_text(encoding="utf-8")
@@ -172,6 +203,10 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT neighbour cache assignment missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
+    require(LIGHT_RADIUS_NEW in scheduler,
+            "NeverFolia must preserve Moonrise native LIGHT radius")
+    require(LIGHT_REQUIRED_NEW in scheduler,
+            "NeverFolia LIGHT neighbours must be FEATURES before owner LIGHT")
     require(FEATURE_PUBLISH_CALL in generic,
             "Moonrise FEATURES handoff hook missing")
     require(
@@ -231,7 +266,7 @@ def apply(folia: Path) -> None:
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
     generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R21] installed in Moonrise FEATURES->LIGHT seam handoff runtime path")
+    print("[FIELD-R21] installed: native LIGHT radius + FEATURES neighbours + seam handoff")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
