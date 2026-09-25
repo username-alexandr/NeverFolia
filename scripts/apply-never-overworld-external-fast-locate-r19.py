@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIELD-R19 no-generation fast locate for island-adapted external structures.
+"""FIELD-R24 no-generation fast locate for natural/synthetic-island external structures.
 
 Vanilla /locate calls Structure#findValidGenerationPoint while scanning random
 spread candidates. For imported surface Jigsaw structures on NeverOverworld
@@ -60,13 +60,10 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
 /**
  * Watchdog-safe predictive locate for FIELD-R19 external island structures.
  *
- * <p>Natural generation has the authoritative actual-piece dry-island gate.
- * Locate intentionally uses the dry centre plus four nearby cardinal probes.
- * Using the full policy radius here caused false negatives for large structures
- * such as Better Monuments: the radius is a policy envelope, not an exact piece
- * footprint. The Folia global region therefore never performs Structure#generate
- * or synchronous chunk loads, while natural generation remains the final
- * terrain-safety authority.</p>
+ * <p>R24 surface structures can use a natural island or a synthetic beard-box
+ * island. Locate therefore reproduces placement/biome selection without
+ * rejecting wet terrain and never performs Structure#generate or synchronous
+ * chunk loads from Folia's global region.</p>
  */
 final class NeverOverworldExternalFastLocateR19 {
     private static final int EXPECTED_MIN_Y=-512;
@@ -254,40 +251,9 @@ final class NeverOverworldExternalFastLocateR19 {
             return true;
         }
 
-        final int centerX=chunkPos.getMiddleBlockX();
-        final int centerZ=chunkPos.getMiddleBlockZ();
-        if(centerSurface==Integer.MIN_VALUE){
-            centerSurface=preliminarySurfaceY(state,centerX,centerZ,surfaceBudget);
-        }
-        if(centerSurface<MIN_DRY_SURFACE_Y) return false;
-
-        // Exact generated-piece safety is authoritative. Do not sample the
-        // full policy radius here: large irregular structures may never occupy
-        // those distant columns, so doing so makes /locate stricter than
-        // natural generation. Four 16-block cardinal probes only reject an
-        // obviously shoreline-centred candidate; the generated piece bbox is
-        // still checked column-by-column before StructureStart persistence.
-        final boolean betterMonument=id.equals("repurposed_structures:monument_desert")
-            ||id.equals("repurposed_structures:monument_jungle")
-            ||id.equals("repurposed_structures:monument_icy");
-        final int probeRadius=betterMonument
-            ? BETTER_MONUMENT_PROBE_RADIUS
-            : Math.min(radius,LOCATE_PROBE_RADIUS);
-        final int[][] probes=betterMonument
-            ? new int[][]{
-                {-probeRadius,-probeRadius},{-probeRadius,probeRadius},
-                {probeRadius,-probeRadius},{probeRadius,probeRadius}
-              }
-            : new int[][]{
-                {-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}
-              };
-        for(final int[] probe:probes){
-            if(preliminarySurfaceY(
-                state,centerX+probe[0],centerZ+probe[1],surfaceBudget
-            )<MIN_DRY_SURFACE_Y){
-                return false;
-            }
-        }
+        // R24: surface structures are viable even over ocean. The matching
+        // datapack uses WORLD_SURFACE_WG + Y1 + beard_box to create a
+        // synthetic island, so predictive locate must not reject wet terrain.
         return true;
     }
 
@@ -374,18 +340,15 @@ def verify(root:Path)->None:
         ".preliminarySurfaceLevel()",
         "MAX_CANDIDATE_RINGS=16",
         "MAX_SURFACE_PROBES=512",
-        "LOCATE_PROBE_RADIUS=16",
-        "BETTER_MONUMENT_PROBE_RADIUS=29",
-        "final boolean betterMonument=",
-        "{-probeRadius,-probeRadius},{-probeRadius,probeRadius}",
-        "{-probeRadius,0},{probeRadius,0},{0,-probeRadius},{0,probeRadius}",
+        "synthetic island",
+        "surface structures are viable even over ocean",
     ):
         if marker not in chunk+helper:
             fail("fast-locate marker missing: "+marker)
     for forbidden in ("moonrise$syncLoadNonFull","getChunk(","getBaseHeight("):
         if forbidden in helper:
             fail("chunk-loading/expensive primitive leaked into helper: "+forbidden)
-    print("[NeverFolia][External Fast Locate R19] invariants OK")
+    print("[NeverFolia][External Fast Locate R24] invariants OK")
 
 def self_test()->None:
     with tempfile.TemporaryDirectory(prefix="nr-r19-fast-locate-") as tmp:
@@ -422,6 +385,6 @@ def main()->None:
     helper=root/HELPER_REL;helper.parent.mkdir(parents=True,exist_ok=True)
     helper.write_text(HELPER,encoding="utf-8")
     verify(root)
-    print("[NeverFolia][External Fast Locate R19] installed")
+    print("[NeverFolia][External Fast Locate R24] installed")
 
 if __name__=="__main__":main()
