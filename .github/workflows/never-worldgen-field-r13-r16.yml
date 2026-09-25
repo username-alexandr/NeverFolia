@@ -33,6 +33,7 @@ on:
       - 'scripts/apply-never-overworld-fixpack-r22.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
+      - 'qa/field-r23/**'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
       - 'qa/field-r16-r16/**'
@@ -235,6 +236,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 qa/field-r20/probe-user-seed.py \
+            --jar artifacts/server.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --source-sha "$GITHUB_SHA"
+
+      - name: Reproduce FIELD-R23 sealed-cave overflood seed
+        run: |
+          set -euo pipefail
+          python3 qa/field-r23/probe-cave-flood-seed.py \
             --jar artifacts/server.jar \
             --overworld artifacts/NeverOverworld.zip \
             --nether artifacts/NeverNether.zip \
