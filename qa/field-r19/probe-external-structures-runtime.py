@@ -92,6 +92,12 @@ MONUMENT_ORIGINS=ORIGINS+(
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
 MAX_GROUP_TARGET_CANDIDATES=2
 MAX_MONUMENT_CANDIDATES_PER_TARGET=6
+BETTER_MONUMENT_IDS={
+    "repurposed_structures:monument_desert",
+    "repurposed_structures:monument_jungle",
+    "repurposed_structures:monument_icy",
+}
+BETTER_MONUMENT_TERRAIN_RADIUS=29
 
 def require(ok,message):
     if not ok: raise ValueError("[External Runtime QA] "+message)
@@ -154,6 +160,27 @@ def water_at_y128(volume,boxes):
                     water+=1
                     if len(examples)<24: examples.append([x,128,z])
     return {"columns":columns,"water_columns":water,"examples":examples,"pass":water==0}
+
+def monument_probe_columns(candidate):
+    cx,cz=map(int,candidate["chunk"])
+    x=cx*16+8
+    z=cz*16+8
+    r=BETTER_MONUMENT_TERRAIN_RADIUS
+    return [(x,z),(x-r,z-r),(x-r,z+r),(x+r,z-r),(x+r,z+r)]
+
+def monument_terrain_audit(volume,candidate):
+    probes=[]
+    for x,z in monument_probe_columns(candidate):
+        state=volume.at(x,128,z)
+        name=state.get("Name") if isinstance(state,dict) else None
+        probes.append({"x":x,"z":z,"y128_block":name,"water":name=="minecraft:water"})
+    return {
+        "policy":"source MonumentStructure center + four +/-29 terrain probes",
+        "radius":BETTER_MONUMENT_TERRAIN_RADIUS,
+        "probes":probes,
+        "water_probes":sum(1 for p in probes if p["water"]),
+        "pass":all(not p["water"] for p in probes),
+    }
 
 def locate_optional(server,target,x,z,timeout=10):
     command=f'execute in minecraft:overworld positioned {x} 200 {z} run locate structure {target}'
@@ -301,7 +328,12 @@ def main_run(args):
         item["found"]=bool(starts)
         if starts and target in SURFACE_IDS:
             boxes=starts[0]["boxes"]
-            coverage=piece_coverage(boxes,margin=1)
+            coverage=set(piece_coverage(boxes,margin=1))
+            if target in BETTER_MONUMENT_IDS:
+                candidate=item["candidates"][0]
+                for x,z in monument_probe_columns(candidate):
+                    coverage.add((x//16,z//16))
+            coverage=sorted(coverage)
             require(len(coverage)<=324,"piece coverage too large for "+target)
             coverage_requests[target]=coverage
             item["coverage_chunks"]=[list(p) for p in coverage]
@@ -322,7 +354,12 @@ def main_run(args):
             roots={p:nbt.read_chunk_nbt(region,*p) for p in chunks}
             volume=observer.Volume(roots)
             start=report["targets"][target]["persisted_starts"][0]
-            report["targets"][target]["y128_piece_footprint"]=water_at_y128(volume,start["boxes"])
+            if target in BETTER_MONUMENT_IDS:
+                report["targets"][target]["y128_piece_footprint"]=monument_terrain_audit(
+                    volume,report["targets"][target]["candidates"][0]
+                )
+            else:
+                report["targets"][target]["y128_piece_footprint"]=water_at_y128(volume,start["boxes"])
 
     groups_found={
         group:any(
@@ -378,6 +415,11 @@ def self_test():
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
     require(MAX_MONUMENT_CANDIDATES_PER_TARGET==6,
             "SELF-TEST monument candidate retry width drifted")
+    require(BETTER_MONUMENT_TERRAIN_RADIUS==29 and len(BETTER_MONUMENT_IDS)==3,
+            "SELF-TEST Better Monument terrain contract drifted")
+    probes=monument_probe_columns({"chunk":[10,-3]})
+    require(probes==[(168,-40),(139,-69),(139,-11),(197,-69),(197,-11)],
+            "SELF-TEST Better Monument probe geometry drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
