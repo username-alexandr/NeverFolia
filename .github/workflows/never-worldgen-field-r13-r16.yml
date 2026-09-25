@@ -36,6 +36,7 @@ on:
       - 'qa/field-r23/**'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
+      - 'qa/field-r22/**'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
       - 'qa/field-r16-r16/**'
