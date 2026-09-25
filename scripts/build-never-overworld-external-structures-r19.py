@@ -360,6 +360,14 @@ def sanitize_dat_enchantment(data: dict) -> dict:
     out=strip_dat_run_function_effects(copy.deepcopy(data))
     if not isinstance(out,dict):
         fail("D&T enchantment sanitizer removed JSON root")
+    effects=out.get("effects")
+    if isinstance(effects,dict):
+        out["effects"]={
+            key:value for key,value in effects.items()
+            if value not in (None, [], {})
+        }
+        if not out["effects"]:
+            out.pop("effects",None)
     return out
 
 def dat_minecraft_compat(path: str) -> bool:
