@@ -96,7 +96,10 @@ def audit(pack:Path,spec_path:Path)->dict:
         for name in names:
             if not name.endswith(".json"):
                 continue
-            payload=read_json(archive,name)
+            try:
+                payload=json.loads(archive.read(name).decode("utf-8"))
+            except Exception as exc:
+                fail(f"invalid JSON {name}: {exc}")
             for rid in run_function_refs(payload):
                 run_function_count+=1
                 if ":" not in rid:
