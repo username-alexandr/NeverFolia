@@ -351,6 +351,37 @@ PREDICATE_CALL_RE = re.compile(
 )
 
 
+# D&T 5.3.2 contains a handful of run_function payloads written for command
+# grammar/features that are not accepted by the pinned Folia 26.2 parser.
+# Keep compatible structure-related functions verbatim (notably zautilus and
+# the ordinary jockey spawners), but neutralize only the known incompatible
+# effects instead of importing D&T's global tick/load/quest runtime.
+DAT_FUNCTION_OVERRIDES: dict[str, bytes] = {
+    "nova_structures:ghast_boss_fireball_possess":
+        b"# NeverFolia 26.2: disabled incompatible Nether-only @n selector effect\n",
+    "nova_structures:ghast_boss_summon_child":
+        b"# NeverFolia 26.2: disabled incompatible Nether boss summon effect\n",
+    "nova_structures:ghasted_fireball_1":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:ghasted_fireball_2":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:ghasted_fireball_3":
+        b"# NeverFolia 26.2: disabled incompatible Nether fireball effect\n",
+    "nova_structures:jockey/make_drowned_into_jockey":
+        b"# NeverFolia 26.2: disabled incompatible @n/ride conversion; spawn_zautilus_jockey remains active\n",
+    "nova_structures:swift_soar_1":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:swift_soar_2":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:swift_soar_3":
+        b"# NeverFolia 26.2: disabled unsupported controller/vehicle sprint effect\n",
+    "nova_structures:quest/saddle_trade_checker":
+        b"# NeverFolia: D&T quest/tick subsystem is intentionally not imported\n",
+    "nova_structures:hydro_veil_heal":
+        b"effect give @s minecraft:regeneration 1 6 true\n",
+}
+
+
 def run_function_refs(payload) -> set[str]:
     refs=set()
     def walk(value):
@@ -406,9 +437,10 @@ def copy_dat_runtime_closure(source: dict[str, bytes], out: dict[str, bytes]) ->
         src=next((name for name in candidates if name in source),None)
         if src is None:
             fail("run_function target missing in D&T source: "+rid)
-        out[src]=source[src]
+        payload=DAT_FUNCTION_OVERRIDES.get(rid,source[src])
+        out[src]=payload
         copied.add(rid)
-        text=source[src].decode("utf-8",errors="strict")
+        text=payload.decode("utf-8",errors="strict")
         for nested in FUNCTION_CALL_RE.findall(text):
             if nested not in copied:
                 pending.append(nested)
@@ -571,6 +603,14 @@ def filter_pack(key: str, files: dict[str, bytes]):
             fail("Dungeons & Taverns runtime function closure incomplete")
         if "nova_structures:jockey/spawn_zautilus_jockey" not in refs:
             fail("Dungeons & Taverns zautilus enchantment runtime reference disappeared")
+        zautilus_path="data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction"
+        if b"zombie_nautilus" not in out.get(zautilus_path,b""):
+            fail("Dungeons & Taverns zautilus jockey function was neutralized or corrupted")
+        for rid,payload in DAT_FUNCTION_OVERRIDES.items():
+            candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+            installed=next((out[name] for name in candidates if name in out),None)
+            if installed is None or installed != payload:
+                fail("Dungeons & Taverns compatibility override missing: "+rid)
         if any(
             "/tags/function/" in n or "/tags/functions/" in n
             for n in out
