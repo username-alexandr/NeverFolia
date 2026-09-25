@@ -30,6 +30,21 @@ SOURCES = {
 }
 
 AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
+DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
+    "nova_structures:jockey/spawn_bogged_horseman",
+    "nova_structures:jockey/spawn_camel_husk_jockey",
+    "nova_structures:jockey/spawn_chicken_jockey",
+    "nova_structures:jockey/spawn_hoglin_jockey",
+    "nova_structures:jockey/spawn_ravager_jockey",
+    "nova_structures:jockey/spawn_skeleton_horseman",
+    "nova_structures:jockey/spawn_stray_horseman",
+    "nova_structures:jockey/spawn_zautilus_jockey",
+    "nova_structures:jockey/spawn_zombie_horseman",
+    "nova_structures:spawn_cave_spider_minion",
+    "nova_structures:spawn_guardian_minion",
+    "nova_structures:spawn_spider_minion",
+})
+
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
 
 def fail(msg: str) -> None:
@@ -338,6 +353,9 @@ def strip_dat_run_function_effects(value):
     if not isinstance(value, dict):
         return value
     if value.get("type") in ("minecraft:run_function", "run_function"):
+        function=value.get("function")
+        if function in DNT_SAFE_RUNTIME_FUNCTIONS:
+            return copy.deepcopy(value)
         return None
 
     out={}
@@ -476,6 +494,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
+        if key=="dat" and n.endswith(".mcfunction"):
+            m=re.match(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction$",n)
+            rid=f"{m.group(1)}:{m.group(2)}" if m else None
+            if rid in DNT_SAFE_RUNTIME_FUNCTIONS:
+                out[n]=b
+            continue
         if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
@@ -547,6 +571,15 @@ def filter_pack(key: str, files: dict[str, bytes]):
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
         sanitize_dat_enchantment_tags(out)
+        imported_runtime={
+            f"{m.group(1)}:{m.group(2)}"
+            for n in out
+            if (m:=re.match(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction$",n))
+        }
+        missing=sorted(DNT_SAFE_RUNTIME_FUNCTIONS-imported_runtime)
+        unexpected=sorted(imported_runtime-DNT_SAFE_RUNTIME_FUNCTIONS)
+        if missing: fail("D&T safe runtime functions missing: "+repr(missing))
+        if unexpected: fail("unexpected D&T runtime functions imported: "+repr(unexpected))
 
 
     if key=="witch":
