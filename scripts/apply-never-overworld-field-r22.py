@@ -264,7 +264,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 3;
         final int localZ = regionZ & 15;
         if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) return tailIn;
 
-        connected[e] = true;
+        connected.set(e);
         queue[tailIn] = e;
         return tailIn + 1;
     }
@@ -443,7 +443,7 @@ def verify(folia: Path) -> None:
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
         "final int changed = floodCacheConnectedOwner(cache, owner, minY, maxY);" in text,
-        "R23 exact 3x3 cache connectivity pass missing"
+        "R23 exact radius-3 cache connectivity pass missing"
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
