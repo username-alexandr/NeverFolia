@@ -91,14 +91,6 @@ jobs:
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
           python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
-          echo '=== NeverFolia R23 FULL TASK DIAGNOSTIC ==='
-          FULL='.work/Folia/folia-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkFullTask.java'
-          SCHED='.work/Folia/folia-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java'
-          test -f "$FULL"
-          test -f "$SCHED"
-          sed -n '1,220p' "$FULL"
-          echo '=== ChunkFullTask constructor call sites ==='
-          grep -n -B 12 -A 20 'ChunkFullTask' "$SCHED" || true
       - name: Compile and run regressions
         run: |
           set -euo pipefail
