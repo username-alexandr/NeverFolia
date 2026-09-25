@@ -157,7 +157,7 @@ def audit(pack:Path,spec_path:Path)->dict:
         )
         imported_function_ids=set()
         for name in imported_external_functions:
-            m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction",name)
+            m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\.mcfunction",name)
             if m: imported_function_ids.add(f"{m.group(1)}:{m.group(2)}")
         if imported_function_ids!=DNT_SAFE_RUNTIME_FUNCTIONS:
             fail(
