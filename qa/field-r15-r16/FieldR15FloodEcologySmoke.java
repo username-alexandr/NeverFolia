@@ -81,9 +81,11 @@ public final class FieldR15FloodEcologySmoke {
         check(oceanConnected[deepSeam],
             "R21 neighbour ocean seed must propagate through unflooded AIR to deep seam");
 
-        // R22: even with zero external neighbour seeds, the LIGHT reconciliation
-        // pass must flood a seam-touching component that has its own verified
-        // Y128 ocean seed. The pre-reconcile pass intentionally defers it.
+        // R22/R23 strict pair-domain: an owner-local Y128 ocean seed is enough
+        // for interior volume, but a component that reaches a horizontal seam
+        // must not be committed unless the symmetric neighbour-domain also
+        // proves ocean connectivity. This prevents one-sided WATER/AIR walls
+        // and prevents "near ocean" caves from being filled by geometry alone.
         var localOceanSeam=fixture();
         set(localOceanSeam,2,128,8,Blocks.WATER);
         for(int y=127;y>=80;y--)set(localOceanSeam,2,y,8,Blocks.AIR);
@@ -94,12 +96,26 @@ public final class FieldR15FloodEcologySmoke {
             (NeverOverworldFloodConnectivityR15.SCAN_MAX_Y
              - NeverOverworldFloodConnectivityR15.SCAN_MIN_Y + 1) * 256
         ];
-        int localFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
+        int unconfirmedFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
             localOceanSeam,noExternalSeeds,true);
-        check(localFlood>0,
-            "seam reconciliation must use owner's own Y128 ocean seed without external seeds");
-        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).is(Blocks.WATER),
-            "owner-local ocean seed must flood the deep seam cell");
+        check(unconfirmedFlood==0,
+            "seam component must stay deferred without symmetric external proof");
+        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).isAir(),
+            "unconfirmed deep seam cell must remain dry");
+
+        // seedFromNeighbor writes WATER at the confirmed owner-side seam cell
+        // and marks the same encoded cell in externalSeeds. Mirror that exact
+        // contract here, then the whole physically connected component may
+        // flood from the real owner Y128 ocean seed.
+        int confirmed=((80-NeverOverworldFloodConnectivityR15.SCAN_MIN_Y)<<8)|(8<<4)|15;
+        noExternalSeeds[confirmed]=true;
+        set(localOceanSeam,15,80,8,Blocks.WATER);
+        int confirmedFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
+            localOceanSeam,noExternalSeeds,true);
+        check(confirmedFlood>0,
+            "pair-domain-confirmed seam component must flood");
+        check(localOceanSeam.getBlockState(new BlockPos(14,80,8)).is(Blocks.WATER),
+            "confirmed seam proof must flood physically connected owner cells");
 
         // Lava contact blocks continuation.
         var lava=fixture();
