@@ -207,6 +207,24 @@ def locate_optional(server,target,x,z,timeout=10):
         time.sleep(.25)
     raise TimeoutError(f'{command}: no locate acknowledgement')
 
+def runtime_resource_errors(paths):
+    patterns=(
+        "Enchantment run_function effect failed for non-existent function",
+        "Unknown function nova_structures:",
+    )
+    rows=[]
+    for path in paths:
+        path=Path(path)
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8",errors="replace").splitlines():
+            if any(pattern in line for pattern in patterns):
+                rows.append({"log":path.name,"line":line.strip()})
+                if len(rows)>=100:
+                    return rows
+    return rows
+
+
 def plan_candidates(server,target,*,origins=ORIGINS,limit=1):
     # /locate is intentionally a cheap predictive prefilter. Exact generated
     # piece safety can still reject a shoreline candidate. Collect several
@@ -373,6 +391,11 @@ def main_run(args):
         item.get("y128_piece_footprint",{}).get("pass") is True
         for item in report["targets"].values() if item.get("found")
     )
+    runtime_errors=runtime_resource_errors((
+        out/"external-structures-runtime-discovery.log",
+        out/"external-structures-runtime-coverage.log",
+    ))
+    report["runtime_resource_errors"]=runtime_errors
     report["source_placement_static_qa"]={
         "ids":list(SOURCE_IDS),
         "policy":"unchanged source placement is validated by validate-external-structures-pack.py",
@@ -382,9 +405,10 @@ def main_run(args):
         "surface_source_groups_found":groups_found,
         "surface_representatives_found":surface_found,
         "found_surface_footprints_dry_at_y128":surface_dry,
+        "runtime_resource_errors_absent":len(runtime_errors)==0,
         "source_placement_delegated_to_complete_static_graph_qa":True,
     }
-    report["pass"]=surface_found and surface_dry
+    report["pass"]=surface_found and surface_dry and not runtime_errors
     target=out/"external-structures-runtime-qa.json"
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[External Runtime QA] "+json.dumps({
@@ -423,6 +447,7 @@ def self_test():
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
+    require(runtime_resource_errors(())==[],"SELF-TEST empty runtime resource log set must pass")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():
