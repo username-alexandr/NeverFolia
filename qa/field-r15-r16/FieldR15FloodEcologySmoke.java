@@ -81,9 +81,9 @@ public final class FieldR15FloodEcologySmoke {
         check(oceanConnected[deepSeam],
             "R21 neighbour ocean seed must propagate through unflooded AIR to deep seam");
 
-        // R22: even with zero external neighbour seeds, the LIGHT reconciliation
-        // pass must flood a seam-touching component that has its own verified
-        // Y128 ocean seed. The pre-reconcile pass intentionally defers it.
+        // R22 final: a seam-touching component needs pair-confirmed external
+        // connectivity. A local Y128 ocean seed alone is not enough because the
+        // adjacent LIGHT task may not see the same owner-centred cache context.
         var localOceanSeam=fixture();
         set(localOceanSeam,2,128,8,Blocks.WATER);
         for(int y=127;y>=80;y--)set(localOceanSeam,2,y,8,Blocks.AIR);
@@ -94,12 +94,30 @@ public final class FieldR15FloodEcologySmoke {
             (NeverOverworldFloodConnectivityR15.SCAN_MAX_Y
              - NeverOverworldFloodConnectivityR15.SCAN_MIN_Y + 1) * 256
         ];
-        int localFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
+        int unconfirmedFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
             localOceanSeam,noExternalSeeds,true);
-        check(localFlood>0,
-            "seam reconciliation must use owner's own Y128 ocean seed without external seeds");
-        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).is(Blocks.WATER),
-            "owner-local ocean seed must flood the deep seam cell");
+        check(unconfirmedFlood==0,
+            "seam component must remain dry without pair-confirmed external seed");
+        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).isAir(),
+            "unconfirmed seam cell must remain air");
+
+        var confirmedOceanSeam=fixture();
+        set(confirmedOceanSeam,2,128,8,Blocks.WATER);
+        for(int y=127;y>=80;y--)set(confirmedOceanSeam,2,y,8,Blocks.AIR);
+        for(int x=3;x<=15;x++)set(confirmedOceanSeam,x,80,8,Blocks.AIR);
+        set(confirmedOceanSeam,15,80,8,Blocks.WATER);
+        boolean[] externalSeeds=new boolean[
+            (NeverOverworldFloodConnectivityR15.SCAN_MAX_Y
+             - NeverOverworldFloodConnectivityR15.SCAN_MIN_Y + 1) * 256
+        ];
+        int confirmedIndex=((80-NeverOverworldFloodConnectivityR15.SCAN_MIN_Y)<<8)|(8<<4)|15;
+        externalSeeds[confirmedIndex]=true;
+        int confirmedFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
+            confirmedOceanSeam,externalSeeds,true);
+        check(confirmedFlood>0,
+            "pair-confirmed seam component must flood");
+        check(confirmedOceanSeam.getBlockState(new BlockPos(14,80,8)).is(Blocks.WATER),
+            "pair-confirmed seam component must propagate inward");
 
         // Lava contact blocks continuation.
         var lava=fixture();
