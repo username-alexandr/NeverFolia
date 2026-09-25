@@ -15,6 +15,20 @@ PROFILE="NeverOverworld-External-Structures-R19"
 QA_PROFILE="NeverOverworld-External-Structures-QA1"
 EXTERNAL_NAMESPACES={"nova_structures","explorify","structory_towers","repurposed_structures"}
 SURFACE_PROJECTIONS={"WORLD_SURFACE_WG","WORLD_SURFACE","MOTION_BLOCKING_NO_LEAVES"}
+DNT_SAFE_RUNTIME_FUNCTIONS={
+    "nova_structures:jockey/spawn_bogged_horseman",
+    "nova_structures:jockey/spawn_camel_husk_jockey",
+    "nova_structures:jockey/spawn_chicken_jockey",
+    "nova_structures:jockey/spawn_hoglin_jockey",
+    "nova_structures:jockey/spawn_ravager_jockey",
+    "nova_structures:jockey/spawn_skeleton_horseman",
+    "nova_structures:jockey/spawn_stray_horseman",
+    "nova_structures:jockey/spawn_zautilus_jockey",
+    "nova_structures:jockey/spawn_zombie_horseman",
+    "nova_structures:spawn_cave_spider_minion",
+    "nova_structures:spawn_guardian_minion",
+    "nova_structures:spawn_spider_minion",
+}
 REPRESENTATIVES={
     "surface_land":[
         "nova_structures:tavern_oak",
@@ -113,24 +127,37 @@ def audit(pack:Path,spec_path:Path)->dict:
             except Exception as exc:
                 fail(f"invalid JSON {name}: {exc}")
             run_function_refs |= collect_run_function_refs(payload)
-        external_run_functions=sorted(
+        external_run_functions={
             rid for rid in run_function_refs if not rid.startswith("minecraft:")
-        )
-        if external_run_functions:
-            fail(
-                "structure-only import retained scripted run_function effects: "
-                +repr(external_run_functions[:40])
-            )
+        }
+        unexpected_run_functions=sorted(external_run_functions-DNT_SAFE_RUNTIME_FUNCTIONS)
+        missing_run_functions=sorted(DNT_SAFE_RUNTIME_FUNCTIONS-external_run_functions)
+        if unexpected_run_functions:
+            fail("unexpected D&T run_function effects survived: "+repr(unexpected_run_functions[:40]))
+        if missing_run_functions:
+            fail("safe D&T mob controller effects missing: "+repr(missing_run_functions[:40]))
+        unresolved_functions=[]
+        for rid in sorted(external_run_functions):
+            if not any(candidate in names for candidate in function_path_candidates(rid)):
+                unresolved_functions.append(rid)
+        if unresolved_functions:
+            fail("safe D&T runtime function closure broken: "+repr(unresolved_functions[:40]))
+
         imported_external_functions=sorted(
             name for name in names
             if ("/function/" in name or "/functions/" in name)
             and name.startswith("data/nova_structures/")
             and name.endswith(".mcfunction")
         )
-        if imported_external_functions:
+        imported_function_ids=set()
+        for name in imported_external_functions:
+            m=re.fullmatch(r"data/([^/]+)/(?:function|functions)/(.+)\\.mcfunction",name)
+            if m: imported_function_ids.add(f"{m.group(1)}:{m.group(2)}")
+        if imported_function_ids!=DNT_SAFE_RUNTIME_FUNCTIONS:
             fail(
-                "structure-only import unexpectedly contains D&T mcfunctions: "
-                +repr(imported_external_functions[:40])
+                "D&T runtime import differs from safe allowlist: missing="
+                +repr(sorted(DNT_SAFE_RUNTIME_FUNCTIONS-imported_function_ids)[:40])
+                +" unexpected="+repr(sorted(imported_function_ids-DNT_SAFE_RUNTIME_FUNCTIONS)[:40])
             )
 
         structures={}
