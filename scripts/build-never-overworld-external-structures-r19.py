@@ -347,14 +347,15 @@ def dat_runtime_function_id(path: str) -> str | None:
 def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
     text=payload.decode("utf-8")
     if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
-        # The source clears the technical saddle slot after mounting, but that
-        # slot command is not accepted by the Folia 26.2 command parser. Use a
-        # one-shot entity tag instead so the tick enchantment cannot spawn a new
-        # nautilus every tick.
+        # The enchantment runs on the drowned carrying the technical saddle
+        # item. 26.2 does not accept the source's "execute summon ... run ride"
+        # chain. Spawn the vehicle first, mount the current drowned explicitly,
+        # then make the controller one-shot with an entity tag.
         text=(
-            "execute unless entity @s[tag=dnt_jockey_mounted] summon minecraft:zombie_nautilus "
-            "run execute at @s run ride @e[type=minecraft:drowned,distance=..2,sort=nearest,limit=1,tag=!dnt_jockey_mounted] mount @s\n"
+            "execute unless entity @s[tag=dnt_jockey_mounted] at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:[\"dnt_jockey_mount_tmp\"]}\n"
+            "execute unless entity @s[tag=dnt_jockey_mounted] at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n"
             "tag @s add dnt_jockey_mounted\n"
+            "execute at @s run tag @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1] remove dnt_jockey_mount_tmp\n"
         )
     if resource_id=="nova_structures:hydro_veil_heal":
         text="effect give @s minecraft:regeneration 1 6 true\n"
