@@ -340,22 +340,15 @@ def dat_minecraft_compat(path: str) -> bool:
     return False
 
 
-def dat_runtime_compat(path: str) -> bool:
-    """Keep D&T runtime resources required by imported enchantments/functions.
 
-    R19 originally excluded all functions and predicates while still importing
-    D&T enchantments. That leaves valid minecraft:run_function effects pointing
-    at resources that no longer exist and causes runtime console spam.
-    Functions are inert unless explicitly invoked; predicates are dependencies
-    of those functions. Function tags remain covered by the normal dependency
-    copier (category 'tags').
-    """
-    return path.startswith((
-        "data/nova_structures/function/",
-        "data/nova_structures/functions/",
-        "data/nova_structures/predicate/",
-        "data/nova_structures/predicates/",
-    ))
+FUNCTION_CALL_RE = re.compile(
+    r"(?:^|\\s)(?:function|schedule\\s+function)\\s+#?([a-z0-9_.-]+:[a-z0-9_./-]+)",
+    re.MULTILINE,
+)
+PREDICATE_CALL_RE = re.compile(
+    r"(?:^|\\s)(?:if|unless)\\s+predicate\\s+([a-z0-9_.-]+:[a-z0-9_./-]+)",
+    re.MULTILINE,
+)
 
 
 def run_function_refs(payload) -> set[str]:
@@ -373,7 +366,7 @@ def run_function_refs(payload) -> set[str]:
     return refs
 
 
-def validate_run_function_closure(files: dict[str, bytes]) -> set[str]:
+def json_run_function_refs(files: dict[str, bytes]) -> set[str]:
     refs=set()
     for name,payload in files.items():
         if not name.endswith(".json"):
@@ -383,19 +376,97 @@ def validate_run_function_closure(files: dict[str, bytes]) -> set[str]:
         except Exception:
             continue
         refs.update(run_function_refs(data))
+    return refs
+
+
+def resource_candidates(rid: str, families: tuple[str,...], suffix: str) -> tuple[str,...]:
+    if ":" not in rid:
+        return ()
+    ns,name=rid.split(":",1)
+    return tuple(f"data/{ns}/{family}/{name}{suffix}" for family in families)
+
+
+def copy_dat_runtime_closure(source: dict[str, bytes], out: dict[str, bytes]) -> set[str]:
+    """Copy only runtime resources reachable from imported JSON.
+
+    D&T ships many global quest/load/tick functions that are unrelated to the
+    imported Overworld structures. Importing the complete function tree causes
+    those systems to load with intentionally omitted tags/advancements. Start
+    from actual minecraft:run_function effects that survived filtering and walk
+    only direct function/predicate dependencies.
+    """
+    pending=list(sorted(json_run_function_refs(out)))
+    copied=set()
+    predicate_pending=[]
+    while pending:
+        rid=pending.pop()
+        if rid in copied:
+            continue
+        candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+        src=next((name for name in candidates if name in source),None)
+        if src is None:
+            fail("run_function target missing in D&T source: "+rid)
+        out[src]=source[src]
+        copied.add(rid)
+        text=source[src].decode("utf-8",errors="strict")
+        for nested in FUNCTION_CALL_RE.findall(text):
+            if nested not in copied:
+                pending.append(nested)
+        predicate_pending.extend(PREDICATE_CALL_RE.findall(text))
+
+    predicate_seen=set()
+    while predicate_pending:
+        rid=predicate_pending.pop()
+        if rid in predicate_seen:
+            continue
+        candidates=resource_candidates(rid,("predicate","predicates"),".json")
+        src=next((name for name in candidates if name in source),None)
+        if src is None:
+            fail("function predicate target missing in D&T source: "+rid)
+        out[src]=source[src]
+        predicate_seen.add(rid)
+        data=read_json(source[src],src)
+        # Predicate references can be nested as minecraft:reference/name.
+        stack=[data]
+        while stack:
+            value=stack.pop()
+            if isinstance(value,dict):
+                if value.get("condition")=="minecraft:reference" and isinstance(value.get("name"),str):
+                    predicate_pending.append(value["name"])
+                stack.extend(value.values())
+            elif isinstance(value,list):
+                stack.extend(value)
+    return copied
+
+
+def validate_run_function_closure(files: dict[str, bytes]) -> set[str]:
+    refs=json_run_function_refs(files)
     missing=[]
     for rid in sorted(refs):
-        if ":" not in rid:
-            continue
-        ns,fn=rid.split(":",1)
-        candidates=(
-            f"data/{ns}/function/{fn}.mcfunction",
-            f"data/{ns}/functions/{fn}.mcfunction",
-        )
+        candidates=resource_candidates(rid,("function","functions"),".mcfunction")
         if not any(candidate in files for candidate in candidates):
             missing.append(rid)
-    if missing:
-        fail("run_function targets missing after filtering: "+repr(missing[:40]))
+    nested_missing=[]
+    predicate_missing=[]
+    for name,payload in files.items():
+        if not name.endswith(".mcfunction"):
+            continue
+        text=payload.decode("utf-8",errors="strict")
+        for rid in FUNCTION_CALL_RE.findall(text):
+            candidates=resource_candidates(rid,("function","functions"),".mcfunction")
+            if not any(candidate in files for candidate in candidates):
+                nested_missing.append(rid)
+        for rid in PREDICATE_CALL_RE.findall(text):
+            candidates=resource_candidates(rid,("predicate","predicates"),".json")
+            if not any(candidate in files for candidate in candidates):
+                predicate_missing.append(rid)
+    if missing or nested_missing or predicate_missing:
+        fail(
+            "runtime dependency closure incomplete: json="
+            +repr(sorted(set(missing))[:20])
+            +" nested="+repr(sorted(set(nested_missing))[:20])
+            +" predicates="+repr(sorted(set(predicate_missing))[:20])
+        )
     return refs
 
 def filter_pack(key: str, files: dict[str, bytes]):
@@ -415,7 +486,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and (dat_minecraft_compat(n) or dat_runtime_compat(n)):
+        if key=="dat" and (
+            "/tags/function/" in n or "/tags/functions/" in n
+        ):
+            # Never import D&T global load/tick function tags into NeverOverworld.
+            continue
+        if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
         if not should_copy_dependency(n): continue
@@ -467,6 +543,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         if any("/worldgen/configured_feature/" in n or "/worldgen/placed_feature/" in n for n in out if n.startswith("data/betteroceanmonuments/")):
             fail("legacy Better Monuments random_patch feature survived")
     if key=="dat":
+        copied_runtime_functions=copy_dat_runtime_closure(files,out)
         required=(
             "data/minecraft/worldgen/placed_feature/donjon_base.json",
             "data/minecraft/worldgen/processor_list/ruined_town_degradation.json",
@@ -488,8 +565,17 @@ def filter_pack(key: str, files: dict[str, bytes]):
         for n in required_runtime:
             if n not in out: fail("Dungeons & Taverns runtime function missing: "+n)
         refs=validate_run_function_closure(out)
+        if refs != json_run_function_refs(out):
+            fail("Dungeons & Taverns runtime reference audit drifted")
+        if not refs.issubset(copied_runtime_functions):
+            fail("Dungeons & Taverns runtime function closure incomplete")
         if "nova_structures:jockey/spawn_zautilus_jockey" not in refs:
             fail("Dungeons & Taverns zautilus enchantment runtime reference disappeared")
+        if any(
+            "/tags/function/" in n or "/tags/functions/" in n
+            for n in out
+        ):
+            fail("Dungeons & Taverns global function tag survived filtering")
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
