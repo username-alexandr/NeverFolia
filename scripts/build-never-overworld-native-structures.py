@@ -28,20 +28,20 @@ STRUCTURES = {
 
 GROUPS = {
     "deep_major": {
-        "spacing": 96,
-        "separation": 36,
+        "spacing": 72,
+        "separation": 27,
         "salt": 147302113,
         "structures": [("buried_sanctum", 4), ("abyssal_archive", 2), ("ancient_cistern", 3)],
     },
     "deep_medium": {
-        "spacing": 48,
-        "separation": 18,
+        "spacing": 36,
+        "separation": 14,
         "salt": 913440721,
         "structures": [("collapsed_mine", 5), ("geode_vault", 3), ("flooded_ruins", 3)],
     },
     "deep_ambient": {
-        "spacing": 22,
-        "separation": 8,
+        "spacing": 17,
+        "separation": 6,
         "salt": 1880479151,
         "structures": [("prospector_camp", 5), ("sealed_cache", 3)],
     },
