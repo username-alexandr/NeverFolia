@@ -19,6 +19,8 @@ on:
       - 'scripts/weather-never-overworld-flooded-surface.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r23.py'
+      - 'scripts/apply-never-overworld-field-r23.py'
+      - 'qa/field-r23/**'
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
       - '.github/workflows/never-overworld-dungeon-runtime-qa.yml'
   workflow_dispatch:
