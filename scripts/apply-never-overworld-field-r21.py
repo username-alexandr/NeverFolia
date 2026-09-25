@@ -20,6 +20,7 @@ FLOOD = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
 FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 MOONRISE = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
 SCHEDULER = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java"
+GENERIC = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java"
 
 OWNER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
 RECONCILE_CALL = (
@@ -30,6 +31,10 @@ REWEATHER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.reweatherS
 ECOLOGY13_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.cleanup(task.world, task.fromChunk);"
 ECOLOGY15_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
+FEATURE_PUBLISH_CALL = (
+    "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
+    "publishFeatureBoundarySeeds(this.world, newChunk);"
+)
 
 REWEATHER_METHOD_ANCHOR = "    private static void weatherSubmergedSurface(\n"
 REWEATHER_METHOD = """    /**
@@ -105,6 +110,20 @@ def patch_moonrise(text: str) -> str:
         text = text.replace(ECOLOGY13_CALL, ECOLOGY13_CALL + "\n                " + ECOLOGY15_CALL, 1)
     return text
 
+def patch_generic(text: str) -> str:
+    if FEATURE_PUBLISH_CALL in text:
+        return text
+    anchor = "        this.complete(newChunk, null);\n"
+    require(text.count(anchor) == 1,
+            "Moonrise generic-status completion anchor missing/duplicated")
+    injected = (
+        "        if (this.toStatus == ChunkStatus.FEATURES) {\n"
+        "            " + FEATURE_PUBLISH_CALL + "\n"
+        "        }\n\n"
+        + anchor
+    )
+    return text.replace(anchor, injected, 1)
+
 def patch_scheduler(text: str) -> str:
     old = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
     new = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
@@ -119,6 +138,7 @@ def verify(folia: Path) -> None:
     flood = (folia / FLOOD15).read_text(encoding="utf-8")
     moonrise = (folia / MOONRISE).read_text(encoding="utf-8")
     scheduler = (folia / SCHEDULER).read_text(encoding="utf-8")
+    generic = (folia / GENERIC).read_text(encoding="utf-8")
 
     # Vanilla ChunkStatusTasks.light is bypassed by Moonrise on Folia. Keeping a
     # second owner-flood/reconcile there is misleading and can never be the
@@ -152,6 +172,12 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT neighbour cache assignment missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
+    require(FEATURE_PUBLISH_CALL in generic,
+            "Moonrise FEATURES handoff hook missing")
+    require(
+        generic.find("if (this.toStatus == ChunkStatus.FEATURES)") < generic.find("this.complete(newChunk, null);"),
+        "FEATURES seam seed publication must run before status completion"
+    )
 
     for marker in (
         "StaticCache2D<GenerationChunkHolder>",
@@ -177,10 +203,12 @@ def apply(folia: Path) -> None:
     owner_flood = folia / FLOOD
     moonrise = folia / MOONRISE
     scheduler = folia / SCHEDULER
+    generic = folia / GENERIC
     tasks = folia / TASKS
     require(owner_flood.is_file(), "NeverOverworldFlood missing")
     require(moonrise.is_file(), "Moonrise ChunkLightTask missing")
     require(scheduler.is_file(), "Moonrise ChunkTaskScheduler missing")
+    require(generic.is_file(), "Moonrise ChunkUpgradeGenericStatusTask missing")
     require(tasks.is_file(), "ChunkStatusTasks missing")
 
     # Remove the dead R21 canonical hook if an earlier R21 attempt materialized it.
@@ -201,8 +229,9 @@ def apply(folia: Path) -> None:
     owner_flood.write_text(patch_flood(owner_flood.read_text(encoding="utf-8")), encoding="utf-8")
     moonrise.write_text(patch_moonrise(moonrise.read_text(encoding="utf-8")), encoding="utf-8")
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
+    generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R21] installed in actual Moonrise LIGHT runtime path")
+    print("[FIELD-R21] installed in Moonrise FEATURES->LIGHT seam handoff runtime path")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
