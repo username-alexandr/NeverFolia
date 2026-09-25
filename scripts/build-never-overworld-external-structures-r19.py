@@ -29,7 +29,8 @@ SOURCES = {
     },
 }
 
-AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "function", "functions", "recipe", "recipes", "villager_trade", "villager_trades", "predicate", "predicates"}
+AUTO_EXCLUDED_CATEGORIES = {"advancement", "advancements", "recipe", "recipes", "villager_trade", "villager_trades"}
+DAT_RUNTIME_DEPENDENCY_CATEGORIES = {"function", "functions", "predicate", "predicates"}
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
 
 def fail(msg: str) -> None:
@@ -308,16 +309,56 @@ def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
         base["elements"].extend(d.get("elements",[]))
         files[dest]=(json.dumps(base,indent=2,ensure_ascii=False)+"\n").encode()
 
-def should_copy_dependency(path: str) -> bool:
+def should_copy_dependency(path: str, key: str) -> bool:
     if not path.startswith("data/"): return False
     parts=path.split("/")
     if len(parts) < 3: return False
     ns,category=parts[1],parts[2]
     if ns=="minecraft": return False
     if category in AUTO_EXCLUDED_CATEGORIES: return False
+    # Dungeons & Taverns ships data-driven enchantments whose run_function
+    # effects call nova_structures functions. These are passive dependencies:
+    # without minecraft:load/tick function tags they do not execute by
+    # themselves, but omitting them makes equipped structure loot spam the
+    # console and breaks the intended mob/enchantment behavior.
+    if category in DAT_RUNTIME_DEPENDENCY_CATEGORIES and key!="dat": return False
     if category=="rs_pool_additions": return False
     if "/tags/worldgen/structure/" in path: return False
     return True
+
+def run_function_refs(value):
+    if isinstance(value, dict):
+        if value.get("type") == "minecraft:run_function" and isinstance(value.get("function"), str):
+            yield value["function"]
+        for child in value.values():
+            yield from run_function_refs(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from run_function_refs(child)
+
+def validate_run_function_dependencies(files: dict[str, bytes]) -> None:
+    missing=[]
+    for n,b in files.items():
+        if not n.endswith(".json"):
+            continue
+        try:
+            data=read_json(b,n)
+        except SystemExit:
+            raise
+        for rid in run_function_refs(data):
+            if ":" not in rid:
+                continue
+            ns,path=rid.split(":",1)
+            if ns=="minecraft":
+                continue
+            candidates=(
+                f"data/{ns}/function/{path}.mcfunction",
+                f"data/{ns}/functions/{path}.mcfunction",
+            )
+            if not any(candidate in files for candidate in candidates):
+                missing.append((n,rid))
+    if missing:
+        fail("missing run_function dependencies: "+repr(missing[:20]))
 
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
@@ -359,7 +400,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         if key=="dat" and dat_minecraft_compat(n):
             out[n]=b
             continue
-        if not should_copy_dependency(n): continue
+        if not should_copy_dependency(n,key): continue
         if key in {"witch","monuments"} and "/tags/worldgen/biome/" in n:
             # Converted RS structures carry direct vanilla biome lists and must
             # not depend on the missing base Repurposed Structures tag pack.
@@ -421,6 +462,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        runtime_required=(
+            "data/nova_structures/function/jockey/spawn_zautilus_jockey.mcfunction",
+        )
+        for n in runtime_required:
+            if n not in out: fail("Dungeons & Taverns runtime dependency missing: "+n)
+        validate_run_function_dependencies(out)
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
