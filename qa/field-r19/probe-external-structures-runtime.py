@@ -86,6 +86,12 @@ ORIGINS=(
 )
 AIR={"minecraft:air","minecraft:cave_air","minecraft:void_air"}
 MAX_GROUP_TARGET_CANDIDATES=2
+BIOME_HINT_ORIGINS=((0,0),(24000,0),(-24000,0),(0,24000),(0,-24000))
+TARGET_BIOME_HINTS={
+    "repurposed_structures:monument_desert":("minecraft:desert",),
+    "repurposed_structures:monument_jungle":("minecraft:jungle","minecraft:sparse_jungle"),
+    "repurposed_structures:monument_icy":("minecraft:snowy_plains","minecraft:grove"),
+}
 
 def require(ok,message):
     if not ok: raise ValueError("[External Runtime QA] "+message)
@@ -174,11 +180,56 @@ def locate_optional(server,target,x,z,timeout=10):
         time.sleep(.25)
     raise TimeoutError(f'{command}: no locate acknowledgement')
 
-def plan_candidates(server,target):
+def locate_biome_optional(server,target,x,z,timeout=15):
+    command=f'execute in minecraft:overworld positioned {x} 200 {z} run locate biome {target}'
+    print(f"[External Runtime QA] biome locate start target={target} origin={x},{z}",flush=True)
+    start=len(server.text());server.send(command)
+    deadline=time.monotonic()+timeout
+    positive=re.compile(re.escape(target)+r'.*?\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\]')
+    not_found=re.compile(r'Could not find a biome of type .*?'+re.escape(target)+r'.*? nearby')
+    while time.monotonic()<deadline:
+        segment=server.text()[start:]
+        match=positive.search(segment)
+        if match:
+            found=(int(match.group(1)),int(match.group(3)))
+            print(f"[External Runtime QA] biome locate found target={target} xz={found[0]},{found[1]}",flush=True)
+            return found
+        if not_found.search(segment):
+            print(f"[External Runtime QA] biome locate none target={target} origin={x},{z}",flush=True)
+            return None
+        fatal=re.search(r'Unknown or incomplete command|Incorrect argument|Unknown command',segment)
+        require(fatal is None,f'biome locate command failed: {command}\n{segment[-2000:]}')
+        require(server.p.poll() is None,'server exited during biome locate')
+        time.sleep(.25)
+    raise TimeoutError(f'{command}: no biome locate acknowledgement')
+
+def hinted_origins(server,target):
+    hints=TARGET_BIOME_HINTS.get(target)
+    if not hints:
+        return ORIGINS
+    located=[]
+    seen=set()
+    for biome in hints:
+        for ox,oz in BIOME_HINT_ORIGINS:
+            found=locate_biome_optional(server,biome,ox,oz)
+            if found is None: continue
+            if found not in seen:
+                seen.add(found);located.append(found)
+            break
+    # Keep the broad deterministic origins as fallback. Biome-local positions
+    # are tried first so rare monument variants are not rejected simply because
+    # the QA origins sit in unrelated climates.
+    for origin in ORIGINS:
+        if origin not in seen:
+            seen.add(origin);located.append(origin)
+    return tuple(located)
+
+def plan_candidates(server,target,origins=None):
     # Runtime QA needs one real persisted start, not an exhaustive locate
     # census. Stop on the first distinct bounded candidate so one rare structure
     # cannot turn this gate into a long-running world scan.
-    for ox,oz in ORIGINS:
+    origins=ORIGINS if origins is None else origins
+    for ox,oz in origins:
         found=locate_optional(server,target,ox,oz)
         if found is None:continue
         x,z=found
@@ -229,8 +280,14 @@ def main_run(args):
                     f"{group} try {target}",
                     flush=True
                 )
-                candidates=plan_candidates(server,target)
-                attempts.append({"target":target,"candidate_count":len(candidates)})
+                origins=hinted_origins(server,target)
+                candidates=plan_candidates(server,target,origins)
+                attempts.append({
+                    "target":target,
+                    "candidate_count":len(candidates),
+                    "probe_origin_count":len(origins),
+                    "biome_hints":list(TARGET_BIOME_HINTS.get(target,())),
+                })
                 if candidates:
                     chosen.append((target,candidates))
                     if len(chosen)>=MAX_GROUP_TARGET_CANDIDATES:
@@ -351,6 +408,12 @@ def self_test():
     require(len(ORIGINS)==13,"SELF-TEST bounded locate origin set drifted")
     require(len(SURFACE_GROUPS)==5 and len(SOURCE_IDS)==6,"SELF-TEST source group set drifted")
     require(MAX_GROUP_TARGET_CANDIDATES==2,"SELF-TEST per-group runtime sample width drifted")
+    require(set(TARGET_BIOME_HINTS)=={
+        "repurposed_structures:monument_desert",
+        "repurposed_structures:monument_jungle",
+        "repurposed_structures:monument_icy",
+    },"SELF-TEST Better Monuments biome hints drifted")
+    require(len(BIOME_HINT_ORIGINS)==5,"SELF-TEST biome hint origin set drifted")
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
