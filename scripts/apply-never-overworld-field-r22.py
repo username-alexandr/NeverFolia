@@ -198,12 +198,12 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
             final int regionX = plane - regionZ * CACHE_BLOCK_WIDTH;
             final int y = minY + layer;
 
-            tail = enqueueCache(chunks, connected, queue, tail, regionX - 1, y, regionZ, minY, maxY);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX + 1, y, regionZ, minY, maxY);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ - 1, minY, maxY);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ + 1, minY, maxY);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y - 1, regionZ, minY, maxY);
-            tail = enqueueCache(chunks, connected, queue, tail, regionX, y + 1, regionZ, minY, maxY);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX - 1, y, regionZ, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX + 1, y, regionZ, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ - 1, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y, regionZ + 1, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y - 1, regionZ, minY, maxY, pos);
+            tail = enqueueCache(chunks, connected, queue, tail, regionX, y + 1, regionZ, minY, maxY, pos);
         }
 
         int changed = 0;
@@ -236,7 +236,8 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
         final int y,
         final int regionZ,
         final int minY,
-        final int maxY
+        final int maxY,
+        final BlockPos.MutableBlockPos pos
     ) {
         if (regionX < 0 || regionX >= CACHE_BLOCK_WIDTH
             || regionZ < 0 || regionZ >= CACHE_BLOCK_WIDTH
@@ -252,7 +253,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_WIDTH = 3;
 
         final int localX = regionX & 15;
         final int localZ = regionZ & 15;
-        final BlockPos pos = new BlockPos(
+        pos.set(
             chunk.getPos().getMinBlockX() + localX,
             y,
             chunk.getPos().getMinBlockZ() + localZ
