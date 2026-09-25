@@ -169,8 +169,8 @@ jobs:
       - name: Apply integrated NeverOverworld R22 + R19 fixpack
         run: |
           set -euo pipefail
-          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia
-          python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
+          python3 ./scripts/apply-never-overworld-fixpack-r23.py ./.work/Folia
+          python3 ./scripts/apply-never-overworld-fixpack-r23.py ./.work/Folia --check-only
 
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
