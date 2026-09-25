@@ -211,6 +211,8 @@ def runtime_resource_errors(paths):
     patterns=(
         "Enchantment run_function effect failed for non-existent function",
         "Unknown function nova_structures:",
+        "Failed to load function nova_structures:",
+        "Couldn't parse data file 'nova_structures:",
     )
     rows=[]
     for path in paths:
