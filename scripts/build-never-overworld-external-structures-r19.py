@@ -370,6 +370,40 @@ def sanitize_dat_enchantment(data: dict) -> dict:
             out.pop("effects",None)
     return out
 
+def tune_external_structure_set(data: dict) -> dict:
+    """Increase encounter density without changing structure membership or salt."""
+    out=copy.deepcopy(data)
+    placement=out.get("placement")
+    if not isinstance(placement,dict):
+        return out
+    ptype=placement.get("type")
+    if ptype=="minecraft:random_spread":
+        spacing=placement.get("spacing")
+        separation=placement.get("separation")
+        if isinstance(spacing,int) and spacing>1:
+            tuned=max(12, int(round(spacing*0.65)))
+            if isinstance(separation,int):
+                tuned=max(tuned, 3)
+                new_sep=min(separation, max(2, tuned//3))
+                if new_sep>=tuned:
+                    new_sep=max(1,tuned-1)
+                placement["separation"]=new_sep
+            placement["spacing"]=tuned
+        # Source packs often use sub-1 frequency on top of large spacing.
+        # NeverOverworld already has strict placement/island admission, so use
+        # every deterministic random-spread candidate and let terrain policy be
+        # the final arbiter.
+        placement["frequency"]=1.0
+        placement.pop("frequency_reduction_method",None)
+    elif ptype=="minecraft:concentric_rings":
+        count=placement.get("count")
+        distance=placement.get("distance")
+        if isinstance(count,int) and count>0:
+            placement["count"]=max(count+1, int(round(count*1.5)))
+        if isinstance(distance,int) and distance>8:
+            placement["distance"]=max(8, int(round(distance*0.75)))
+    return out
+
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
     # namespace. They are not structure/structure_set/tag overrides and cannot
@@ -442,6 +476,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
             entries=[e for e in d.get("structures",[]) if e.get("structure") in allowed]
             if not entries: continue
             d=copy.deepcopy(d); d["structures"]=entries
+            d=tune_external_structure_set(d)
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         if "/worldgen/processor_list/" in n and n.endswith(".json") and key in {"witch","monuments"}:
@@ -480,12 +515,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     if key=="witch":
         out["data/neverfolia/worldgen/structure_set/external_better_witch_huts.json"]=(json.dumps({
-            "placement":{"type":"minecraft:random_spread","spacing":32,"separation":8,"salt":14357620,"spread_type":"linear"},
+            "placement":{"type":"minecraft:random_spread","spacing":22,"separation":6,"salt":14357620,"spread_type":"linear","frequency":1.0},
             "structures":[{"structure":s,"weight":1} for s in sorted(allowed)]
         },indent=2)+"\n").encode()
     if key=="monuments":
         out["data/neverfolia/worldgen/structure_set/external_better_monuments.json"]=(json.dumps({
-            "placement":{"type":"minecraft:random_spread","spacing":32,"separation":5,"salt":10387313,"spread_type":"triangular"},
+            "placement":{"type":"minecraft:random_spread","spacing":22,"separation":5,"salt":10387313,"spread_type":"triangular","frequency":1.0},
             "structures":[{"structure":s,"weight":1} for s in sorted(allowed)]
         },indent=2)+"\n").encode()
     references=set()
