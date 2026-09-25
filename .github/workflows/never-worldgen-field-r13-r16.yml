@@ -1,4 +1,4 @@
-name: NeverWorldgen FIELD-R22 FIXPACK / Nether-R16 natural acceptance
+name: NeverWorldgen FIELD-R23 FIXPACK / Nether-R16 natural acceptance
 on:
   push:
     branches:
@@ -30,7 +30,7 @@ on:
       - 'scripts/apply-never-overworld-field-r21.py'
       - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
-      - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-fixpack-r23.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
       - 'qa/field-r14-r16/**'
@@ -50,7 +50,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ${{ github.workflow }}-r22-fixpack-${{ github.ref }}
+  group: ${{ github.workflow }}-r23-fixpack-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   natural:
@@ -63,11 +63,11 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Materialize unified FIELD-R22 FIXPACK / Nether-R16 candidate
+      - name: Materialize unified FIELD-R23 FIXPACK / Nether-R16 candidate
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          python3 -m py_compile qa/field-r13-r16/probe-natural.py
+          python3 -m py_compile qa/field-r13-r16/probe-natural.py qa/field-r23/probe-cave-flood.py
           git config --global user.email actions@github.com
           git config --global user.name 'NeverFolia CI'
           python3 scripts/prepare-never-nether-r13-upstream.py
@@ -85,9 +85,9 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
@@ -198,7 +198,7 @@ jobs:
             'workflow_run':int(os.environ['GITHUB_RUN_ID']),
             'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
             'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(),
-            'r22_fixpack':True,'nether_r16_installed':True,'production_ready':False
+            'r22_fixpack':True,'r23_strict_cave_flood':True,'nether_r16_installed':True,'production_ready':False
           }
           Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(p,indent=2)+'\n')
           PY
@@ -241,7 +241,17 @@ jobs:
             --output artifacts \
             --source-sha "$GITHUB_SHA"
 
-      - name: Generate independent worlds and require FIELD-R22 FIXPACK / Nether-R16 natural acceptance
+      - name: Reproduce FIELD-R23 user seed and reject proximity-flooded caves
+        run: |
+          set -euo pipefail
+          python3 qa/field-r23/probe-cave-flood.py \
+            --jar artifacts/server.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --source-sha "$GITHUB_SHA"
+
+      - name: Generate independent worlds and require FIELD-R23 FIXPACK / Nether-R16 natural acceptance
         run: |
           set -euo pipefail
           python3 qa/field-r13-r16/probe-natural.py \
