@@ -46,11 +46,7 @@ DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
     "nova_structures:spawn_spider_minion",
     "nova_structures:ghast_boss_defeat_chain",
     "nova_structures:ghast_boss_fireball_damage",
-    "nova_structures:ghast_boss_fireball_possess",
     "nova_structures:ghasted",
-    "nova_structures:ghasted_fireball_1",
-    "nova_structures:ghasted_fireball_2",
-    "nova_structures:ghasted_fireball_3",
     "nova_structures:gravity_particles",
     "nova_structures:hydro_veil_heal",
 })
@@ -351,24 +347,12 @@ def dat_runtime_function_id(path: str) -> str | None:
 def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
     text=payload.decode("utf-8")
     if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
-        text=text.replace(
-            "item replace entity @s saddle with air",
-            "data remove entity @s equipment.saddle"
-        )
-    if resource_id=="nova_structures:ghast_boss_fireball_possess":
-        text=text.replace(
-            "@n[type=minecraft:fireball,distance=..45]",
-            "@e[type=minecraft:fireball,distance=..45,limit=1,sort=nearest]"
-        )
-    if resource_id in {
-        "nova_structures:ghasted_fireball_1",
-        "nova_structures:ghasted_fireball_2",
-        "nova_structures:ghasted_fireball_3",
-    }:
-        text=text.replace(
-            "@n[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest]",
-            "@e[type=minecraft:fireball,tag=dnt_ghasted_fireball,sort=nearest,limit=1]"
-        )
+        lines=[
+            line for line in text.splitlines()
+            if not line.strip().startswith("item replace entity @s saddle ")
+            and not line.strip().startswith("data remove entity @s ")
+        ]
+        text="\n".join(lines).rstrip()+"\n"
     if resource_id=="nova_structures:hydro_veil_heal":
         text="effect give @s minecraft:regeneration 1 6 true\n"
     return text.encode("utf-8")
@@ -479,6 +463,7 @@ def sanitize_dat_enchantment_tags(out: dict[str, bytes]) -> None:
     # swift_soar's source implementation is entirely scripted; after structure-
     # only import it has no effects and must not leak into treasure/trades.
     technical.add("nova_structures:swift_soar")
+    technical.add("nova_structures:ghasted")
 
     for name,payload in list(out.items()):
         if not name.startswith("data/minecraft/tags/enchantment/") or not name.endswith(".json"):
