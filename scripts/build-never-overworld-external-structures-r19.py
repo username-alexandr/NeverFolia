@@ -404,6 +404,41 @@ def tune_external_structure_set(data: dict) -> dict:
             placement["distance"]=max(8, int(round(distance*0.75)))
     return out
 
+def sanitize_dat_enchantment_tags(out: dict[str, bytes]) -> None:
+    """Keep D&T technical controller enchantments out of player acquisition tags.
+
+    Registry entries are retained because structure/trial-spawner NBT references
+    them. Only public minecraft enchantment tags are cleaned.
+    """
+    marker="data/nova_structures/tags/enchantment/non_survival_enchants.json"
+    technical=set()
+    if marker in out:
+        d=read_json(out[marker],marker)
+        for value in d.get("values",[]):
+            if isinstance(value,str): technical.add(value)
+            elif isinstance(value,dict) and isinstance(value.get("id"),str):
+                technical.add(value["id"])
+
+    # swift_soar's source implementation is entirely scripted; after structure-
+    # only import it has no effects and must not leak into treasure/trades.
+    technical.add("nova_structures:swift_soar")
+
+    for name,payload in list(out.items()):
+        if not name.startswith("data/minecraft/tags/enchantment/") or not name.endswith(".json"):
+            continue
+        d=read_json(payload,name)
+        values=d.get("values")
+        if not isinstance(values,list): continue
+        cleaned=[]
+        for value in values:
+            rid=value if isinstance(value,str) else value.get("id") if isinstance(value,dict) else None
+            if isinstance(rid,str) and rid in technical:
+                continue
+            cleaned.append(value)
+        if cleaned!=values:
+            d=copy.deepcopy(d);d["values"]=cleaned
+            out[name]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
+
 def dat_minecraft_compat(path: str) -> bool:
     # Dungeons & Taverns defines NEW dependency resources under minecraft:
     # namespace. They are not structure/structure_set/tag overrides and cannot
@@ -511,6 +546,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         )
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
+        sanitize_dat_enchantment_tags(out)
 
 
     if key=="witch":
