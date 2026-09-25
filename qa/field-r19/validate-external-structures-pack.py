@@ -49,6 +49,16 @@ def read_json(archive:zipfile.ZipFile,name:str)->dict:
     if not isinstance(value,dict):fail("JSON root must be an object: "+name)
     return value
 
+def run_function_refs(value):
+    if isinstance(value,dict):
+        if value.get("type")=="minecraft:run_function" and isinstance(value.get("function"),str):
+            yield value["function"]
+        for child in value.values():
+            yield from run_function_refs(child)
+    elif isinstance(value,list):
+        for child in value:
+            yield from run_function_refs(child)
+
 def expected_unused(spec_path:Path)->set[str]:
     data=json.loads(spec_path.read_text(encoding="utf-8"))
     raw=data.get("source_unused_structures",{})
@@ -80,6 +90,28 @@ def audit(pack:Path,spec_path:Path)->dict:
         if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
+
+        run_function_missing=[]
+        run_function_count=0
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            payload=read_json(archive,name)
+            for rid in run_function_refs(payload):
+                run_function_count+=1
+                if ":" not in rid:
+                    continue
+                ns,path=rid.split(":",1)
+                if ns=="minecraft":
+                    continue
+                candidates=(
+                    f"data/{ns}/function/{path}.mcfunction",
+                    f"data/{ns}/functions/{path}.mcfunction",
+                )
+                if not any(candidate in names for candidate in candidates):
+                    run_function_missing.append({"source":name,"function":rid})
+        if run_function_missing:
+            fail("run_function references missing imported functions: "+repr(run_function_missing[:20]))
 
         structures={}
         sets={}
@@ -164,6 +196,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "spawnable_external":len(external-expected),
                 "structure_sets":len(sets),
                 "source_unused":len(expected),
+                "run_function_refs":run_function_count,
             },
             "source_unused":sorted(expected),
             "representatives":reps,
