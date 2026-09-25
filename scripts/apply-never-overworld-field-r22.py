@@ -63,29 +63,73 @@ HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess 
 
 
 CACHE_METHODS = r'''    /**
-     * Build strict ocean-connected masks for the already-present 3x3 FEATURES
-     * cache. Each chunk starts from only its real/prospective Y128 ocean seeds.
-     * Connectivity is then propagated across actual traversable seam cells
-     * until stable. Distance to ocean, component size and seam geometry are
-     * never used as evidence.
+     * Compute each already-present radius-1 FEATURES chunk's ocean-connected
+     * cells from only real/prospective Y128 ocean seeds. These local masks are
+     * immutable inputs for the symmetric per-seam domains below.
      */
-    private static boolean[][] cacheOceanConnectedMasks(
+    private static boolean[][] localOceanConnectedMasks(
         final StaticCache2D<GenerationChunkHolder> cache,
         final ChunkAccess owner,
         final int minY,
         final int maxY
     ) {
         final boolean[][] masks = new boolean[9][];
-        final ChunkAccess[] chunks = new ChunkAccess[9];
         final ChunkPos cp = owner.getPos();
         for (int dz = -1; dz <= 1; ++dz) {
             for (int dx = -1; dx <= 1; ++dx) {
                 final int index = cacheMaskIndex(dx, dz);
                 final ChunkAccess chunk = cachedFeaturesChunk(cache, owner, cp.x() + dx, cp.z() + dz);
-                chunks[index] = chunk;
                 if (chunk != null) {
                     masks[index] = oceanConnectedFloodable(chunk, minY, maxY);
                 }
+            }
+        }
+        return masks;
+    }
+
+    /**
+     * Return the neighbour-side ocean mask for one owner<->neighbour seam.
+     *
+     * Both LIGHT tasks for the same seam must make the same decision. Their
+     * radius-1 caches overlap in exactly 2x3 chunks for an X seam or 3x2 for a
+     * Z seam. Restrict cross-chunk propagation to that common domain, while
+     * starting from the same per-chunk Y128 seed masks. The result is therefore
+     * scheduling-independent without any distance/proximity heuristic.
+     */
+    private static boolean[] pairNeighborOceanMask(
+        final StaticCache2D<GenerationChunkHolder> cache,
+        final ChunkAccess owner,
+        final int neighborChunkX,
+        final int neighborChunkZ,
+        final int minY,
+        final int maxY,
+        final boolean[][] localMasks
+    ) {
+        final ChunkPos cp = owner.getPos();
+        final int deltaX = neighborChunkX - cp.x();
+        final int deltaZ = neighborChunkZ - cp.z();
+        if (Math.abs(deltaX) + Math.abs(deltaZ) != 1) return null;
+
+        final boolean xAxis = deltaX != 0;
+        final int minChunkX = xAxis ? Math.min(cp.x(), neighborChunkX) : cp.x() - 1;
+        final int maxChunkX = xAxis ? Math.max(cp.x(), neighborChunkX) : cp.x() + 1;
+        final int minChunkZ = xAxis ? cp.z() - 1 : Math.min(cp.z(), neighborChunkZ);
+        final int maxChunkZ = xAxis ? cp.z() + 1 : Math.max(cp.z(), neighborChunkZ);
+        final int width = maxChunkX - minChunkX + 1;
+        final int height = maxChunkZ - minChunkZ + 1;
+        if (width * height != 6) return null;
+
+        final ChunkAccess[] chunks = new ChunkAccess[6];
+        final boolean[][] masks = new boolean[6][];
+        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+            for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+                final int index = (chunkZ - minChunkZ) * width + (chunkX - minChunkX);
+                final ChunkAccess chunk = cachedFeaturesChunk(cache, owner, chunkX, chunkZ);
+                if (chunk == null) return null;
+                final int localIndex = cacheMaskIndex(chunkX - cp.x(), chunkZ - cp.z());
+                if (localIndex < 0 || localMasks[localIndex] == null) return null;
+                chunks[index] = chunk;
+                masks[index] = localMasks[localIndex].clone();
             }
         }
 
@@ -94,34 +138,33 @@ CACHE_METHODS = r'''    /**
         boolean changed;
         do {
             changed = false;
-            for (int gz = 0; gz < 3; ++gz) {
-                for (int gx = 0; gx < 2; ++gx) {
-                    final int left = gz * 3 + gx;
-                    final int right = left + 1;
-                    if (chunks[left] != null && chunks[right] != null) {
-                        changed |= bridgeMasks(
-                            chunks[left], masks[left], 15,
-                            chunks[right], masks[right], 0,
-                            true, minY, maxY, queue
-                        );
-                    }
+            for (int z = 0; z < height; ++z) {
+                for (int x = 0; x + 1 < width; ++x) {
+                    final int first = z * width + x;
+                    final int second = first + 1;
+                    changed |= bridgeMasks(
+                        chunks[first], masks[first], 15,
+                        chunks[second], masks[second], 0,
+                        true, minY, maxY, queue
+                    );
                 }
             }
-            for (int gz = 0; gz < 2; ++gz) {
-                for (int gx = 0; gx < 3; ++gx) {
-                    final int north = gz * 3 + gx;
-                    final int south = north + 3;
-                    if (chunks[north] != null && chunks[south] != null) {
-                        changed |= bridgeMasks(
-                            chunks[north], masks[north], 15,
-                            chunks[south], masks[south], 0,
-                            false, minY, maxY, queue
-                        );
-                    }
+            for (int z = 0; z + 1 < height; ++z) {
+                for (int x = 0; x < width; ++x) {
+                    final int first = z * width + x;
+                    final int second = first + width;
+                    changed |= bridgeMasks(
+                        chunks[first], masks[first], 15,
+                        chunks[second], masks[second], 0,
+                        false, minY, maxY, queue
+                    );
                 }
             }
         } while (changed);
-        return masks;
+
+        final int neighborIndex =
+            (neighborChunkZ - minChunkZ) * width + (neighborChunkX - minChunkX);
+        return masks[neighborIndex];
     }
 
     private static boolean bridgeMasks(
@@ -258,21 +301,22 @@ def patch(text: str) -> str:
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
     # R22 must not infer ocean connectivity from distance, component size or a
-    # seam touch. Build strict masks over the existing radius-1 FEATURES cache
-    # and propagate connectivity only across real traversable seam cells.
+    # seam touch. Compute local Y128 seed masks once, then make each seam
+    # decision inside the 2x3/3x2 FEATURES-cache intersection shared by both
+    # adjacent LIGHT tasks.
     if "reconcileSeams(" in text:
-        if "cacheOceanConnectedMasks(" not in text:
-            require(CACHE_METHODS_ANCHOR in text, "R22 cache-mask insertion anchor missing")
+        if "pairNeighborOceanMask(" not in text:
+            require(CACHE_METHODS_ANCHOR in text, "R22 pair-mask insertion anchor missing")
             text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
 
         cache_anchor = "        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];\n"
-        cache_line = "        final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);\n"
+        cache_line = "        final boolean[][] localOceanMasks = localOceanConnectedMasks(cache, owner, minY, maxY);\n"
         if cache_line not in text:
-            require(text.count(cache_anchor) == 1, "R22 cache-mask reconcile anchor missing")
+            require(text.count(cache_anchor) == 1, "R22 local-mask reconcile anchor missing")
             text = text.replace(cache_anchor, cache_anchor + cache_line, 1)
 
         old_calls = ", minY, maxY, externalSeeds);"
-        new_calls = ", minY, maxY, externalSeeds, cacheOceanMasks);"
+        new_calls = ", minY, maxY, externalSeeds, localOceanMasks);"
         if new_calls not in text:
             require(text.count(old_calls) == 4, "R22 neighbour seed call count drifted")
             text = text.replace(old_calls, new_calls)
@@ -282,19 +326,17 @@ def patch(text: str) -> str:
     ) {"""
         new_signature = """        final int maxY,
         final boolean[] externalSeeds,
-        final boolean[][] cacheOceanMasks
+        final boolean[][] localOceanMasks
     ) {"""
         if new_signature not in text:
             require(text.count(old_signature) == 1, "R22 seedFromNeighbor signature anchor missing")
             text = text.replace(old_signature, new_signature, 1)
 
         old_mask = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
-        new_mask = """        final int maskIndex = cacheMaskIndex(
-            neighborChunkX - owner.getPos().x(),
-            neighborChunkZ - owner.getPos().z()
+        new_mask = """        final boolean[] neighborOceanWater = pairNeighborOceanMask(
+            cache, owner, neighborChunkX, neighborChunkZ, minY, maxY, localOceanMasks
         );
-        if (maskIndex < 0 || cacheOceanMasks[maskIndex] == null) return 0;
-        final boolean[] neighborOceanWater = cacheOceanMasks[maskIndex];
+        if (neighborOceanWater == null) return 0;
 """
         if new_mask not in text:
             require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
@@ -331,12 +373,13 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
-        "cacheOceanConnectedMasks",
+        "localOceanConnectedMasks",
+        "pairNeighborOceanMask",
         "bridgeMasks",
         "expandMaskFromSeed",
         "cachedFeaturesChunk",
-        "final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);",
-        "final boolean[] neighborOceanWater = cacheOceanMasks[maskIndex];",
+        "final boolean[][] localOceanMasks = localOceanConnectedMasks(cache, owner, minY, maxY);",
+        "final boolean[] neighborOceanWater = pairNeighborOceanMask(",
         "if (!neighborOceanWater[ne]) continue;",
     ):
         require(marker in text, "R22 strict-ocean marker missing: " + marker)
@@ -366,7 +409,7 @@ def verify(folia: Path) -> None:
     require("cache.contains(chunkX, chunkZ)" in text
             and "holder.getChunkIfPresent(ChunkStatus.FEATURES)" in text,
             "R22 cache traversal must use only already-present FEATURES chunks")
-    print("[FIELD-R22] strict 3x3 Y128 ocean-connectivity seam invariants OK")
+    print("[FIELD-R22] symmetric pair-domain Y128 ocean-connectivity invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -452,7 +495,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R22] installed: strict 3x3 Y128 ocean connectivity + obsolete R8/proximity cavern fallbacks retired")
+    print("[FIELD-R22] installed: symmetric pair-domain Y128 ocean connectivity + obsolete R8/proximity fallbacks retired")
 
 if __name__ == "__main__":
     main()
