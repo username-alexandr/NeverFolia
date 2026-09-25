@@ -260,44 +260,45 @@ def patch(text: str) -> str:
     # R22 must not infer ocean connectivity from distance, component size or a
     # seam touch. Build strict masks over the existing radius-1 FEATURES cache
     # and propagate connectivity only across real traversable seam cells.
-    if "cacheOceanConnectedMasks(" not in text:
-        require(CACHE_METHODS_ANCHOR in text, "R22 cache-mask insertion anchor missing")
-        text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
+    if "reconcileSeams(" in text:
+        if "cacheOceanConnectedMasks(" not in text:
+            require(CACHE_METHODS_ANCHOR in text, "R22 cache-mask insertion anchor missing")
+            text = text.replace(CACHE_METHODS_ANCHOR, CACHE_METHODS + CACHE_METHODS_ANCHOR, 1)
 
-    cache_anchor = "        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];\n"
-    cache_line = "        final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);\n"
-    if cache_line not in text:
-        require(text.count(cache_anchor) == 1, "R22 cache-mask reconcile anchor missing")
-        text = text.replace(cache_anchor, cache_anchor + cache_line, 1)
+        cache_anchor = "        final boolean[] externalSeeds = new boolean[(maxY - minY + 1) * 256];\n"
+        cache_line = "        final boolean[][] cacheOceanMasks = cacheOceanConnectedMasks(cache, owner, minY, maxY);\n"
+        if cache_line not in text:
+            require(text.count(cache_anchor) == 1, "R22 cache-mask reconcile anchor missing")
+            text = text.replace(cache_anchor, cache_anchor + cache_line, 1)
 
-    old_calls = ", minY, maxY, externalSeeds);"
-    new_calls = ", minY, maxY, externalSeeds, cacheOceanMasks);"
-    if new_calls not in text:
-        require(text.count(old_calls) == 4, "R22 neighbour seed call count drifted")
-        text = text.replace(old_calls, new_calls)
+        old_calls = ", minY, maxY, externalSeeds);"
+        new_calls = ", minY, maxY, externalSeeds, cacheOceanMasks);"
+        if new_calls not in text:
+            require(text.count(old_calls) == 4, "R22 neighbour seed call count drifted")
+            text = text.replace(old_calls, new_calls)
 
-    old_signature = """        final int maxY,
+        old_signature = """        final int maxY,
         final boolean[] externalSeeds
     ) {"""
-    new_signature = """        final int maxY,
+        new_signature = """        final int maxY,
         final boolean[] externalSeeds,
         final boolean[][] cacheOceanMasks
     ) {"""
-    if new_signature not in text:
-        require(text.count(old_signature) == 1, "R22 seedFromNeighbor signature anchor missing")
-        text = text.replace(old_signature, new_signature, 1)
+        if new_signature not in text:
+            require(text.count(old_signature) == 1, "R22 seedFromNeighbor signature anchor missing")
+            text = text.replace(old_signature, new_signature, 1)
 
-    old_mask = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
-    new_mask = """        final int maskIndex = cacheMaskIndex(
+        old_mask = "        final boolean[] neighborOceanWater = oceanConnectedFloodable(neighbor, minY, maxY);\n"
+        new_mask = """        final int maskIndex = cacheMaskIndex(
             neighborChunkX - owner.getPos().x(),
             neighborChunkZ - owner.getPos().z()
         );
         if (maskIndex < 0 || cacheOceanMasks[maskIndex] == null) return 0;
         final boolean[] neighborOceanWater = cacheOceanMasks[maskIndex];
 """
-    if new_mask not in text:
-        require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
-        text = text.replace(old_mask, new_mask, 1)
+        if new_mask not in text:
+            require(text.count(old_mask) == 1, "R22 local-neighbour mask anchor missing")
+            text = text.replace(old_mask, new_mask, 1)
     require("seedOceanProximityFallback(" not in text,
             "unsafe R22 proximity fallback already present in input")
     require("proximityConnectedFloodable(" not in text,
