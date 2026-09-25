@@ -25,6 +25,7 @@ RECONCILE_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
     "reconcileSeams(task.world, task.neverOverworldNeighbours, task.fromChunk);"
 )
+REWEATHER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.reweatherSubmergedSurface(task.world, task.fromChunk);"
 ECOLOGY13_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.cleanup(task.world, task.fromChunk);"
 ECOLOGY15_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
@@ -65,9 +66,12 @@ def patch_moonrise(text: str) -> str:
     if RECONCILE_CALL not in text:
         require(text.count(OWNER_CALL) == 1, "Moonrise owner flood call missing/duplicated")
         text = text.replace(OWNER_CALL, OWNER_CALL + "\n                " + RECONCILE_CALL, 1)
-    if ECOLOGY13_CALL not in text:
+    if REWEATHER_CALL not in text:
         require(text.count(RECONCILE_CALL) == 1, "Moonrise seam reconcile call missing/duplicated")
-        text = text.replace(RECONCILE_CALL, RECONCILE_CALL + "\n                " + ECOLOGY13_CALL, 1)
+        text = text.replace(RECONCILE_CALL, RECONCILE_CALL + "\n                " + REWEATHER_CALL, 1)
+    if ECOLOGY13_CALL not in text:
+        require(text.count(REWEATHER_CALL) == 1, "Moonrise post-seam weathering call missing/duplicated")
+        text = text.replace(REWEATHER_CALL, REWEATHER_CALL + "\n                " + ECOLOGY13_CALL, 1)
     if ECOLOGY15_CALL not in text:
         require(text.count(ECOLOGY13_CALL) == 1, "Moonrise R13 ecology call missing/duplicated")
         text = text.replace(ECOLOGY13_CALL, ECOLOGY13_CALL + "\n                " + ECOLOGY15_CALL, 1)
@@ -99,12 +103,15 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT must contain exactly one owner flood")
     require(moonrise.count(RECONCILE_CALL) == 1,
             "Moonrise LIGHT must contain exactly one seam reconciliation")
+    require(moonrise.count(REWEATHER_CALL) == 1,
+            "Moonrise LIGHT must run post-seam drowned-surface weathering exactly once")
     require(moonrise.count(ECOLOGY13_CALL) == 1 and moonrise.count(ECOLOGY15_CALL) == 1,
             "Moonrise LIGHT must run post-seam ecology cleanup exactly once")
     require(moonrise.find(OWNER_CALL) < moonrise.find(RECONCILE_CALL)
+            < moonrise.find(REWEATHER_CALL)
             < moonrise.find(ECOLOGY13_CALL) < moonrise.find(ECOLOGY15_CALL)
             < moonrise.find("StarLightEngine.getEmptySectionsForChunk"),
-            "Moonrise runtime order must be owner flood -> seam reconcile -> ecology -> Starlight")
+            "Moonrise runtime order must be owner flood -> seam reconcile -> weathering -> ecology -> Starlight")
     require(CACHE_FIELD in moonrise,
             "Moonrise LIGHT neighbour cache field missing")
     require("this.neverOverworldNeighbours = neighbours;" in moonrise,
