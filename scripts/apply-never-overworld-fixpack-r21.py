@@ -7,7 +7,6 @@ R19 external Overworld structures/island admission and R20 village hardening.
 from __future__ import annotations
 
 import argparse
-import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -90,26 +89,10 @@ def verify(folia: Path) -> None:
     print(f"[NeverOverworld R21] {PROFILE} final invariants OK")
 
 def apply(folia: Path) -> None:
-    # The production post-patch chain may already have materialized R20.
-    # Prefer verification over replaying the exact-SHA R13..R20 chain on top
-    # of a later R21/R22 state. If R20 is not present yet, install it normally.
-    r20 = [sys.executable, str(ROOT / "scripts/apply-never-overworld-fixpack-r20.py"), str(folia)]
-    checked = subprocess.run(r20 + ["--check-only"], cwd=ROOT, check=False)
-    if checked.returncode != 0:
-        # apply-neverfolia-post-patches may expose the R21 reweather entry point
-        # before the R15/R20 helper graph exists. That is a known partial state,
-        # not a valid R13 input. Remove only the exact R21-owned method block,
-        # then replay the guarded R13..R20 chain from its inspected state.
-        flood15 = folia / FLOOD15
-        owner_flood = folia / JAVA / "net/minecraft/world/level/chunk/NeverOverworldFlood.java"
-        if not flood15.exists() and owner_flood.is_file():
-            r21_stage = runpy.run_path(str(ROOT / "scripts/apply-never-overworld-field-r21.py"))
-            reweather_method = r21_stage["REWEATHER_METHOD"]
-            text = owner_flood.read_text(encoding="utf-8")
-            if reweather_method in text:
-                owner_flood.write_text(text.replace(reweather_method, "", 1), encoding="utf-8")
-        subprocess.run(r20, cwd=ROOT, check=True)
-
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/apply-never-overworld-fixpack-r20.py"), str(folia)],
+        cwd=ROOT, check=True
+    )
     subprocess.run(
         [sys.executable, str(ROOT / "scripts/apply-never-overworld-field-r21.py"), str(folia)],
         cwd=ROOT, check=True
