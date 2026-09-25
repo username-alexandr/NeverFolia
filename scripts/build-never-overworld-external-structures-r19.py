@@ -194,15 +194,19 @@ def is_land_surface(d: dict, tags: dict[str, list[str]]) -> bool:
     return d.get("step") == "surface_structures" and not explicit_ocean_biomes(d,tags)
 
 def adapt_land_surface(d: dict) -> dict:
-    """Anchor admitted source-surface structures to NeverOverworld terrain."""
+    """Anchor surface structures and give wet candidates a vanilla island fallback."""
     out=copy.deepcopy(d)
     source_height=absolute_start_height(out)
     out["project_start_to_heightmap"]="WORLD_SURFACE_WG"
-    if source_height == 63 or "start_height" not in out:
-        # D&T witch_villa is a source surface structure anchored to vanilla
-        # sea level Y63. WORLD_SURFACE_WG + zero offset preserves its surface
-        # intent in the Y128 NeverOverworld.
-        out["start_height"]={"absolute":0}
+    if source_height in (None,0,63):
+        # NeverOverworld sea surface is Y128. Y+1 keeps the first structure
+        # layer above the water plane while terrain_adaptation builds support.
+        out["start_height"]={"absolute":1}
+    if out.get("type") in ("minecraft:jigsaw","jigsaw"):
+        # beard_box participates in vanilla terrain density and therefore builds
+        # a real mound/foundation even when the candidate has no natural island.
+        out["terrain_adaptation"]="beard_box"
+        out["liquid_settings"]="ignore_waterlogging"
     return out
 
 def island_radius(d: dict) -> int:
@@ -589,6 +593,8 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
             "structure_count":len(all_land),
             "spawnable_structure_count":len(set(all_land)-all_source_unused),
             "radii":dict(sorted(all_land.items())),
+            "wet_candidate_fallback":"WORLD_SURFACE_WG + Y1 + beard_box synthetic island",
+            "liquid_settings":"ignore_waterlogging",
         },
         "source_unused_structures":sorted(all_source_unused),
         "untouched_policy":"Overworld ocean/underground structures keep source placement; Nether/End structures are excluded.",
