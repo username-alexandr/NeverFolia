@@ -225,6 +225,24 @@ def plan_candidates(server,target,*,origins=ORIGINS,limit=1):
         if len(rows)>=limit:break
     return rows
 
+def runtime_log_errors(out:Path):
+    markers=(
+        "Failed to load function nova_structures:",
+        "run_function effect failed",
+        "Couldn't parse data file 'nova_structures:",
+        "Missing tag: 'nova_structures:",
+        "Missing chunkholder when required",
+        "[ChunkTaskScheduler] Chunk system error",
+    )
+    rows=[]
+    for path in sorted(out.glob("external-structures-runtime-*.log")):
+        text=path.read_text(encoding="utf-8",errors="replace")
+        for line in text.splitlines():
+            if any(marker in line for marker in markers):
+                rows.append({"log":path.name,"line":line.strip()})
+                if len(rows)>=200:return rows
+    return rows
+
 def make_work(root,overworld,nether):
     work=root/".work"/"external-structures-runtime-qa"
     work.mkdir(parents=True,exist_ok=False)
@@ -378,13 +396,16 @@ def main_run(args):
         "policy":"unchanged source placement is validated by validate-external-structures-pack.py",
         "runtime_locate_skipped":True,
     }
+    runtime_errors=runtime_log_errors(out)
+    report["runtime_errors"]=runtime_errors
     report["checks"]={
         "surface_source_groups_found":groups_found,
         "surface_representatives_found":surface_found,
         "found_surface_footprints_dry_at_y128":surface_dry,
         "source_placement_delegated_to_complete_static_graph_qa":True,
+        "dnt_functions_and_chunk_runtime_clean":len(runtime_errors)==0,
     }
-    report["pass"]=surface_found and surface_dry
+    report["pass"]=surface_found and surface_dry and len(runtime_errors)==0
     target=out/"external-structures-runtime-qa.json"
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[External Runtime QA] "+json.dumps({
