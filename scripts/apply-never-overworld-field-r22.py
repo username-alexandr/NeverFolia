@@ -61,12 +61,12 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
 CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
-CARVER_HANDOFF_METHODS = """    private static final java.util.concurrent.ConcurrentHashMap<
+FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.ConcurrentHashMap<
         net.minecraft.server.level.ServerLevel,
         java.util.concurrent.ConcurrentHashMap<Long, BitSet>
-    > CARVER_BOUNDARY_SEEDS = new java.util.concurrent.ConcurrentHashMap<>();
+    > FEATURE_BOUNDARY_SEEDS = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public static void publishCarverBoundarySeeds(
+    public static void publishFeatureBoundarySeeds(
         final net.minecraft.server.level.ServerLevel level,
         final ChunkAccess source
     ) {
@@ -80,13 +80,13 @@ CARVER_HANDOFF_METHODS = """    private static final java.util.concurrent.Concur
 
         final boolean[] verified = oceanConnectedFloodable(source, minY, maxY);
         final ChunkPos cp = source.getPos();
-        publishCarverBoundary(level, source, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
-        publishCarverBoundary(level, source, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
-        publishCarverBoundary(level, source, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
-        publishCarverBoundary(level, source, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
     }
 
-    private static void publishCarverBoundary(
+    private static void publishFeatureBoundary(
         final net.minecraft.server.level.ServerLevel level,
         final ChunkAccess source,
         final int targetChunkX,
@@ -113,7 +113,7 @@ CARVER_HANDOFF_METHODS = """    private static final java.util.concurrent.Concur
 
         final long key = chunkKey(targetChunkX, targetChunkZ);
         final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds =
-            CARVER_BOUNDARY_SEEDS.computeIfAbsent(level, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+            FEATURE_BOUNDARY_SEEDS.computeIfAbsent(level, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
         worldSeeds.compute(key, (ignored, existing) -> {
             if (existing == null) return (BitSet)seeds.clone();
             existing.or(seeds);
@@ -125,15 +125,15 @@ CARVER_HANDOFF_METHODS = """    private static final java.util.concurrent.Concur
         return ((long)chunkX & 0xffffffffL) | (((long)chunkZ & 0xffffffffL) << 32);
     }
 
-    private static BitSet takeCarverBoundarySeeds(
+    private static BitSet takeFeatureBoundarySeeds(
         final net.minecraft.server.level.ServerLevel level,
         final ChunkAccess owner
     ) {
-        final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds = CARVER_BOUNDARY_SEEDS.get(level);
+        final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds = FEATURE_BOUNDARY_SEEDS.get(level);
         if (worldSeeds == null) return null;
         final ChunkPos ownerPos = owner.getPos();
         final BitSet ret = worldSeeds.remove(chunkKey(ownerPos.x(), ownerPos.z()));
-        if (worldSeeds.isEmpty()) CARVER_BOUNDARY_SEEDS.remove(level, worldSeeds);
+        if (worldSeeds.isEmpty()) FEATURE_BOUNDARY_SEEDS.remove(level, worldSeeds);
         return ret;
     }
 
@@ -275,13 +275,13 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
             }
         }
 
-        final BitSet carverSeeds = takeCarverBoundarySeeds(level, owner);
-        int carverSeedCount = 0;
-        if (carverSeeds != null) {
+        final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
+        int featureSeedCount = 0;
+        if (featureSeeds != null) {
             for (int y = minY; y <= maxY; ++y) {
                 for (int localZ = 0; localZ < 16; ++localZ) {
                     for (int localX = 0; localX < 16; ++localX) {
-                        if (!carverSeeds.get(encode(localX, y, localZ, minY))) continue;
+                        if (!featureSeeds.get(encode(localX, y, localZ, minY))) continue;
                         final int regionX = localX + CACHE_OWNER_OFFSET;
                         final int regionZ = localZ + CACHE_OWNER_OFFSET;
                         if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) continue;
@@ -289,16 +289,16 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
                         if (!connected.get(e)) {
                             connected.set(e);
                             queue[tail++] = e;
-                            ++carverSeedCount;
+                            ++featureSeedCount;
                         }
                     }
                 }
             }
         }
-        if (carverSeedCount > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+        if (featureSeedCount > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
-                "[NeverFolia][R23CarverSeeds] chunk=" + ownerPos.x() + "," + ownerPos.z()
-                + " count=" + carverSeedCount
+                "[NeverFolia][R23FeatureSeeds] chunk=" + ownerPos.x() + "," + ownerPos.z()
+                + " count=" + featureSeedCount
             );
         }
 
@@ -494,9 +494,9 @@ def patch(text: str) -> str:
     ):
         require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
 
-    if "public static void publishCarverBoundarySeeds(" not in text and "reconcileSeams(" in text:
-        require(CACHE_METHODS_ANCHOR in text, "R23 carver handoff insertion anchor missing")
-        text = text.replace(CACHE_METHODS_ANCHOR, CARVER_HANDOFF_METHODS + CACHE_METHODS_ANCHOR, 1)
+    if "public static void publishFeatureBoundarySeeds(" not in text and "reconcileSeams(" in text:
+        require(CACHE_METHODS_ANCHOR in text, "R23 feature handoff insertion anchor missing")
+        text = text.replace(CACHE_METHODS_ANCHOR, FEATURE_HANDOFF_METHODS + CACHE_METHODS_ANCHOR, 1)
 
     if "private static int floodCacheConnectedOwner(" not in text and "reconcileSeams(" in text:
         require(CACHE_METHODS_ANCHOR in text, "R23 cache helper insertion anchor missing")
@@ -530,11 +530,11 @@ def verify(folia: Path) -> None:
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
         "floodCacheConnectedOwner",
-        "R23CarverSeeds",
-        "takeCarverBoundarySeeds",
+        "R23FeatureSeeds",
+        "takeFeatureBoundarySeeds",
         "chunkKey(final int chunkX, final int chunkZ)",
-        "CARVER_BOUNDARY_SEEDS",
-                                "publishCarverBoundarySeeds",
+        "FEATURE_BOUNDARY_SEEDS",
+                                "publishFeatureBoundarySeeds",
         "new BitSet(capacity)",
         "CACHE_CHUNK_RADIUS = 1",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
@@ -626,9 +626,9 @@ class X {
         "SELF-TEST exact-cache helper body missing",
     )
     require(
-        "publishCarverBoundarySeeds" in reconcile_out
-        and "takeCarverBoundarySeeds" in reconcile_out,
-        "SELF-TEST carver-boundary handoff helper missing",
+        "publishFeatureBoundarySeeds" in reconcile_out
+        and "takeFeatureBoundarySeeds" in reconcile_out,
+        "SELF-TEST feature-boundary handoff helper missing",
     )
     require(
         "private static long chunkKey(final int chunkX, final int chunkZ)" in reconcile_out,
@@ -640,7 +640,7 @@ class X {
     )
     require(
         "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" in reconcile_out,
-        "SELF-TEST carver handoff reconcile state detection missing",
+        "SELF-TEST feature handoff reconcile state detection missing",
     )
     require(
         patch(reconcile_out) == reconcile_out,
@@ -687,7 +687,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R24] installed: CARVERS exact border handoff + native LIGHT reconciliation; proximity flood disabled")
+    print("[FIELD-R24] installed: FEATURES deep border handoff + native LIGHT reconciliation; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
