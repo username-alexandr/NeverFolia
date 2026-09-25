@@ -49,6 +49,7 @@ public final class NeverOverworldEcologyR13 {
             || state.is(Blocks.RED_MUSHROOM_BLOCK)
             || state.is(Blocks.MUSHROOM_STEM)
             || state.is(Blocks.PUMPKIN)
+            || state.is(Blocks.SWEET_BERRY_BUSH)
             || state.is(Blocks.BAMBOO)
             || state.is(Blocks.BAMBOO_SAPLING)
             || state.is(Blocks.MOSS_CARPET)
