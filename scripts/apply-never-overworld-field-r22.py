@@ -481,7 +481,11 @@ def patch(text: str) -> str:
 
     if OLD_RECONCILE in text:
         text = text.replace(OLD_RECONCILE, NEW_RECONCILE, 1)
-    elif "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text and "reconcileSeams(" in text:
+    elif (
+        "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" not in text
+        and "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text
+        and "reconcileSeams(" in text
+    ):
         require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
 
     if "public static void publishFeatureBoundarySeeds(" not in text and "reconcileSeams(" in text:
@@ -620,6 +624,10 @@ class X {
     require(
         "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in reconcile_out,
         "SELF-TEST reconcileSeams did not switch to exact-cache flood",
+    )
+    require(
+        "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" in reconcile_out,
+        "SELF-TEST handoff reconcile state detection missing",
     )
     require(
         patch(reconcile_out) == reconcile_out,
