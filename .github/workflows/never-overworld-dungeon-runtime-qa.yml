@@ -8,6 +8,10 @@ on:
       - 'fix/**'
       - 'release/**'
     paths:
+      - 'scripts/apply-never-overworld-flood-hook.py'
+      - 'native/neveroverworld/field-r13/**'
+      - 'native/neveroverworld/field-r15/**'
+      - 'qa/field-r24/**'
       - 'qa/field-r19/**'
       - 'scripts/build-never-overworld-external-structures-r19.py'
       - 'scripts/build-never-overworld-native-structures.py'
