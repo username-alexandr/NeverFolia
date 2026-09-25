@@ -61,7 +61,9 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
 CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
-FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.ConcurrentHashMap<
+FEATURE_HANDOFF_METHODS = """    private static final int PROSPECTIVE_HANDOFF_MIN_Y = 120;
+
+    private static final java.util.concurrent.ConcurrentHashMap<
         net.minecraft.server.level.ServerLevel,
         java.util.concurrent.ConcurrentHashMap<Long, BitSet>
     > FEATURE_BOUNDARY_SEEDS = new java.util.concurrent.ConcurrentHashMap<>();
@@ -80,14 +82,15 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
 
         final boolean[] verified = oceanConnectedFloodable(source, minY, maxY);
         final ChunkPos cp = source.getPos();
-        publishFeatureBoundary(level, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
-        publishFeatureBoundary(level, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
-        publishFeatureBoundary(level, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
-        publishFeatureBoundary(level, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
     }
 
     private static void publishFeatureBoundary(
         final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess source,
         final int targetChunkX,
         final int targetChunkZ,
         final boolean[] verified,
@@ -103,6 +106,14 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
                 final int sx = xAxis ? sourceFixed : transverse;
                 final int sz = xAxis ? transverse : sourceFixed;
                 if (!verified[encode(sx, y, sz, minY)]) continue;
+                if (y < PROSPECTIVE_HANDOFF_MIN_Y) {
+                    final BlockPos sourcePos = new BlockPos(
+                        source.getPos().getMinBlockX() + sx,
+                        y,
+                        source.getPos().getMinBlockZ() + sz
+                    );
+                    if (!source.getBlockState(sourcePos).is(Blocks.WATER)) continue;
+                }
                 final int tx = xAxis ? targetFixed : transverse;
                 final int tz = xAxis ? transverse : targetFixed;
                 seeds.set(encode(tx, y, tz, minY));
@@ -533,6 +544,9 @@ def verify(folia: Path) -> None:
         "takeFeatureBoundarySeeds",
         "chunkKey(final int chunkX, final int chunkZ)",
         "FEATURE_BOUNDARY_SEEDS",
+        "PROSPECTIVE_HANDOFF_MIN_Y = 120",
+        "if (y < PROSPECTIVE_HANDOFF_MIN_Y)",
+        "source.getBlockState(sourcePos).is(Blocks.WATER)",
         "publishFeatureBoundarySeeds",
         "new BitSet(capacity)",
         "CACHE_CHUNK_RADIUS = 1",
