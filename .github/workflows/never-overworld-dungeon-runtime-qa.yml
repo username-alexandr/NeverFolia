@@ -102,6 +102,41 @@ jobs:
           python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
           python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
 
+      - name: Export original D&T scripted runtime audit
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+          src=Path('.work/external-structures-r19/dat.zip')
+          out=Path('artifacts/dnt-scripted-runtime-audit.txt')
+          names=[]
+          with zipfile.ZipFile(src) as z:
+              for n in z.namelist():
+                  if not n.endswith('.mcfunction'): continue
+                  if '/function/' not in n and '/functions/' not in n: continue
+                  low=n.lower()
+                  if any(k in low for k in (
+                      '/jockey/','ghast_boss','ghasted','swift_soar',
+                      'spawn_cave_spider_minion','spawn_guardian_minion',
+                      'spawn_spider_minion','hydro_veil','gravity_particles'
+                  )):
+                      names.append(n)
+              with out.open('w',encoding='utf-8') as fh:
+                  for n in sorted(names):
+                      fh.write('===== '+n+' =====\n')
+                      fh.write(z.read(n).decode('utf-8','replace'))
+                      fh.write('\n\n')
+          print('exported',len(names),'D&T scripted runtime functions')
+          PY
+      - name: Upload D&T scripted runtime audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-DNT-SCRIPT-AUDIT-${{ github.sha }}
+          path: artifacts/dnt-scripted-runtime-audit.txt
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Upload exact server + datapacks bundle inputs
         uses: actions/upload-artifact@v4
         with:
