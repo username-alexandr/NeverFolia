@@ -2,9 +2,9 @@
 """FIELD-R21: Moonrise runtime cache-aware flood seam reconciliation.
 
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
-executes LIGHT through Moonrise ChunkLightTask. R21 therefore carries Moonrise's
-already-built neighbour StaticCache2D into ChunkLightTask and reconciles the
-owner chunk immediately after the existing owner flood. Because reconciliation
+executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at CARVERS, carries
+Moonrise's already-built native neighbour StaticCache2D into ChunkLightTask,
+and reconciles the owner chunk after the existing owner flood. Because reconciliation
 can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
 cleanup runs once more on the same owner chunk before Starlight reads section
 emptiness. No synchronous chunk loads or WorldGenLevel neighbour reads.
@@ -31,31 +31,10 @@ REWEATHER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.reweatherS
 ECOLOGY13_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR13.cleanup(task.world, task.fromChunk);"
 ECOLOGY15_CALL = "net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);"
 CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverworldNeighbours;"
-FEATURE_PUBLISH_CALL = (
+CARVER_PUBLISH_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
-    "publishFeatureBoundarySeeds(this.world, newChunk);"
+    "publishCarverBoundarySeeds(this.world, newChunk);"
 )
-
-LIGHT_RADIUS_OLD = """        final int neighbourReadRadius = Math.max(
-                0,
-                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
-        );
-"""
-LIGHT_RADIUS_NEW = """        final int vanillaNeighbourReadRadius = Math.max(
-                0,
-                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
-        );
-        // NeverFolia: keep Moonrise's native dependency radius unchanged.
-        // Only neighbours already required by LIGHT are strengthened to FEATURES.
-        final int neighbourReadRadius = vanillaNeighbourReadRadius;
-"""
-LIGHT_REQUIRED_OLD = """                final ChunkStatus requiredNeighbourStatus = ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
-"""
-LIGHT_REQUIRED_NEW = """                final ChunkStatus requiredNeighbourStatus =
-                        toStatus == ChunkStatus.LIGHT && radius > 0
-                                ? ChunkStatus.FEATURES
-                                : ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
-"""
 
 REWEATHER_METHOD_ANCHOR = "    private static void weatherSubmergedSurface(\n"
 REWEATHER_METHOD = """    /**
@@ -132,14 +111,14 @@ def patch_moonrise(text: str) -> str:
     return text
 
 def patch_generic(text: str) -> str:
-    if FEATURE_PUBLISH_CALL in text:
+    if CARVER_PUBLISH_CALL in text:
         return text
     anchor = "        this.complete(newChunk, null);\n"
     require(text.count(anchor) == 1,
             "Moonrise generic-status completion anchor missing/duplicated")
     injected = (
-        "        if (this.toStatus == ChunkStatus.FEATURES) {\n"
-        "            " + FEATURE_PUBLISH_CALL + "\n"
+        "        if (this.toStatus == ChunkStatus.CARVERS) {\n"
+        "            " + CARVER_PUBLISH_CALL + "\n"
         "        }\n\n"
         + anchor
     )
@@ -148,20 +127,10 @@ def patch_generic(text: str) -> str:
 def patch_scheduler(text: str) -> str:
     old_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
     new_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
-    if new_ctor not in text:
-        require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
-        text = text.replace(old_ctor, new_ctor, 1)
-
-    if LIGHT_RADIUS_NEW not in text:
-        require(text.count(LIGHT_RADIUS_OLD) == 1,
-                "Moonrise scheduler neighbourReadRadius anchor missing/drifted")
-        text = text.replace(LIGHT_RADIUS_OLD, LIGHT_RADIUS_NEW, 1)
-
-    if LIGHT_REQUIRED_NEW not in text:
-        require(text.count(LIGHT_REQUIRED_OLD) == 1,
-                "Moonrise scheduler required-neighbour anchor missing/drifted")
-        text = text.replace(LIGHT_REQUIRED_OLD, LIGHT_REQUIRED_NEW, 1)
-    return text
+    if new_ctor in text:
+        return text
+    require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
+    return text.replace(old_ctor, new_ctor, 1)
 
 def verify(folia: Path) -> None:
     tasks = (folia / TASKS).read_text(encoding="utf-8")
@@ -203,15 +172,16 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT neighbour cache assignment missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
-    require(LIGHT_RADIUS_NEW in scheduler,
-            "NeverFolia must preserve Moonrise native LIGHT radius")
-    require(LIGHT_REQUIRED_NEW in scheduler,
-            "NeverFolia LIGHT neighbours must be FEATURES before owner LIGHT")
-    require(FEATURE_PUBLISH_CALL in generic,
-            "Moonrise FEATURES handoff hook missing")
+    require("Math.max(2, vanillaNeighbourReadRadius)" not in scheduler
+            and "Math.max(3, vanillaNeighbourReadRadius)" not in scheduler,
+            "NeverFolia must not expand Moonrise LIGHT neighbour radius")
+    require("toStatus == ChunkStatus.LIGHT && radius > 0" not in scheduler,
+            "NeverFolia must not strengthen LIGHT neighbour statuses")
+    require(CARVER_PUBLISH_CALL in generic,
+            "Moonrise CARVERS handoff hook missing")
     require(
-        generic.find("if (this.toStatus == ChunkStatus.FEATURES)") < generic.find("this.complete(newChunk, null);"),
-        "FEATURES seam seed publication must run before status completion"
+        generic.find("if (this.toStatus == ChunkStatus.CARVERS)") < generic.find("this.complete(newChunk, null);"),
+        "CARVERS seam seed publication must run before status completion"
     )
 
     for marker in (
@@ -266,7 +236,7 @@ def apply(folia: Path) -> None:
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
     generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R21] installed: native LIGHT radius + FEATURES neighbours + seam handoff")
+    print("[FIELD-R21] installed: native LIGHT radius + native LIGHT cache + CARVERS seam handoff")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
