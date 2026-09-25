@@ -31,6 +31,9 @@ on:
       - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-field-r23.py'
+      - 'scripts/apply-never-overworld-fixpack-r23.py'
+      - 'qa/field-r23/**'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
       - 'qa/field-r14-r16/**'
@@ -85,9 +88,9 @@ jobs:
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/AbstractHugeMushroomFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/BambooFeature.java \
             .work/Folia/folia-server/src/minecraft/java/net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java | tee artifacts/r13-input-sha256.txt
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia
-          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia --check-only
+          python3 scripts/apply-never-overworld-fixpack-r23.py .work/Folia --check-only
           python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
       - name: Compile and run regressions
         run: |
@@ -114,6 +117,7 @@ jobs:
                 'qa/field-r19/ExternalStructurePolicyR19Smoke.java',
                 'qa/field-r20/FieldR20Smoke.java',
                 'qa/field-r22/FieldR22Smoke.java',
+                'qa/field-r23/FieldR23Smoke.java',
                 'qa/nevernether-r15/NeverNetherFieldCleanupR15Smoke.java',
                 'qa/nevernether-r16/NeverNetherFieldCleanupR16Smoke.java'
               ]
@@ -139,12 +143,13 @@ jobs:
                 r19External:'net.minecraft.world.level.chunk.ExternalStructurePolicyR19Smoke',
                 r20Native:'net.minecraft.world.level.chunk.FieldR20Smoke',
                 r22Native:'net.minecraft.world.level.chunk.FieldR22Smoke',
+                r23Native:'net.minecraft.world.level.chunk.FieldR23Smoke',
                 r16Old:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR15Smoke',
                 r16New:'net.minecraft.world.level.levelgen.placement.NeverNetherFieldCleanupR16Smoke'
               ].each{k,v->server.tasks.register(k,JavaExec){dependsOn compileQa;classpath=cp+server.files(qaDir);mainClass=v;jvmArgs '-ea'}}
           }
           GROOVY
-          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Village :folia-server:r18Native :folia-server:r19External :folia-server:r20Native :folia-server:r22Native :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
+          (cd .work/Folia && ./gradlew :folia-server:r13Policy :folia-server:r13Native :folia-server:r13Trees :folia-server:r13Ore :folia-server:r13Village :folia-server:r13Boundary :folia-server:r13Desert :folia-server:r13Sandstorm :folia-server:r13Ecology :folia-server:r14Flood :folia-server:r15FloodEco :folia-server:r16Village :folia-server:r18Native :folia-server:r19External :folia-server:r20Native :folia-server:r22Native :folia-server:r23Native :folia-server:r16Old :folia-server:r16New :folia-server:createPaperclipJar -I ../r13-r16.init.gradle --no-configuration-cache --stacktrace) 2>&1 | tee artifacts/build-smoke.log
           cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
           cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
       - name: Build matching Overworld, historical R15 Nether and candidate R16 Nether packs
@@ -198,7 +203,7 @@ jobs:
             'workflow_run':int(os.environ['GITHUB_RUN_ID']),
             'upstream_sha':'14b7fee5c866fca9a40ede4a58998fb928140f65',
             'jar_sha256':hashlib.sha256(Path('artifacts/server.jar').read_bytes()).hexdigest(),
-            'r22_fixpack':True,'nether_r16_installed':True,'production_ready':False
+            'r22_fixpack':True,'r23_strict_cave_flood':True,'nether_r16_installed':True,'production_ready':False
           }
           Path('artifacts/BUILD-PROFILE.json').write_text(json.dumps(p,indent=2)+'\n')
           PY
@@ -235,6 +240,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 qa/field-r20/probe-user-seed.py \
+            --jar artifacts/server.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --source-sha "$GITHUB_SHA"
+
+      - name: Reproduce user-reported FIELD-R23 cave flood seed
+        run: |
+          set -euo pipefail
+          python3 qa/field-r23/probe-user-cave-seed.py \
             --jar artifacts/server.jar \
             --overworld artifacts/NeverOverworld.zip \
             --nether artifacts/NeverNether.zip \
