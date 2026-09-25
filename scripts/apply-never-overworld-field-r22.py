@@ -483,7 +483,7 @@ def patch(text: str) -> str:
         text = text.replace(OLD_RECONCILE, NEW_RECONCILE, 1)
     elif (
         "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" not in text
-        and "floodCacheConnectedOwner(cache, owner, minY, maxY)" not in text
+        and "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" not in text
         and "reconcileSeams(" in text
     ):
         require(False, "R21 reconcileSeams body drifted before R23 exact-cache patch")
