@@ -29,7 +29,7 @@ OWNER_HELPER="""    private static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return y == FLOOD_LEVEL || (oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y < FLOOD_LEVEL);
+        return oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL;
     }
 
 """
@@ -46,7 +46,7 @@ R15_HELPER="""    static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return y == SCAN_MAX_Y || (oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y < SCAN_MAX_Y);
+        return oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y;
     }
 
 """
@@ -175,6 +175,13 @@ def verify(owner:str,r15:str)->None:
         fail("owner OCEAN_FLOOR_WG lookup missing")
     if "customOceanColumnOpen(" not in r15 or "OCEAN_FLOOR_WG" not in r15:
         fail("R15 ocean-column barrier missing")
+
+    if "return y == FLOOD_LEVEL" in owner or "return y == SCAN_MAX_Y" in r15:
+        fail("R35 must not treat every Y128 AIR column as ocean")
+    if "oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL" not in owner:
+        fail("owner Y128 write is not tied to a real ocean-floor column")
+    if "oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y" not in r15:
+        fail("R15 Y128 traversal is not tied to a real ocean-floor column")
 
     # No plain canonical writes may survive in the verified component path.
     forbidden="if(!state.is(Blocks.WATER)&&traversable(chunk,pos)){chunk.setBlockState(pos,water,0);++changed;}"
