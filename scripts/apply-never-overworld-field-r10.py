@@ -40,6 +40,59 @@ FULL_GUARD = SCOPE_ANCHOR + '''        // LIGHT may also execute while an alread
 
 '''
 
+PRIMARY_GATE_CONSTANTS = '''    private static final int DEEP_FLOW_MAX_Y = 96;
+    private static final int MIN_DEEP_APERTURE = 6;
+'''
+PRIMARY_GATE_CALL = '''            if (y <= DEEP_FLOW_MAX_Y
+                && !hydraulicOpenAir(chunk, localX, y, localZ, minX, minZ)) {
+                continue;
+            }
+'''
+PRIMARY_GATE_HELPER = '''    private static boolean hydraulicOpenAir(
+        final ChunkAccess chunk,
+        final int localX,
+        final int y,
+        final int localZ,
+        final int minX,
+        final int minZ
+    ) {
+        if (y > DEEP_FLOW_MAX_Y) {
+            return true;
+        }
+        final BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
+        int open = 0;
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                final int x = localX + dx;
+                final int z = localZ + dz;
+                if (x < 0 || x > 15 || z < 0 || z > 15) {
+                    continue;
+                }
+                probe.set(minX + x, y, minZ + z);
+                if (chunk.getBlockState(probe).isAir() && ++open >= MIN_DEEP_APERTURE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+'''
+
+def normalize_primary_gate(text: str) -> str:
+    markers = (
+        PRIMARY_GATE_CONSTANTS in text,
+        PRIMARY_GATE_CALL in text,
+        PRIMARY_GATE_HELPER in text,
+    )
+    if any(markers) and not all(markers):
+        raise ValueError('Partial R24 primary deep-flow gate found in NeverOverworldFlood')
+    if all(markers):
+        text = text.replace(PRIMARY_GATE_CONSTANTS, '', 1)
+        text = text.replace(PRIMARY_GATE_CALL, '', 1)
+        text = text.replace(PRIMARY_GATE_HELPER, '', 1)
+    return text
+
 
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
@@ -59,11 +112,11 @@ def patch_flood(text: str) -> str:
         if text.count(FULL_GUARD) != 1 or text.count(ORE_CALL) != 1 or text.count(CLEAN_CALL) != 1:
             raise ValueError('Partial/duplicate field-R10 Flood installation')
         inverted = text.replace(ORE_CALL, ORE_ANCHOR, 1).replace(CLEAN_CALL, CLEAN_ANCHOR, 1).replace(FULL_GUARD, SCOPE_ANCHOR, 1)
-        if sha(inverted) != OLD_FLOOD_SHA:
-            raise ValueError('Installed Flood does not invert to inspected R9 source')
+        if sha(normalize_primary_gate(inverted)) != OLD_FLOOD_SHA:
+            raise ValueError('Installed Flood does not invert to inspected R9 source + allowed R24 primary gate')
         return text
-    if sha(text) != OLD_FLOOD_SHA:
-        raise ValueError('NeverOverworldFlood differs from inspected R9 final source')
+    if sha(normalize_primary_gate(text)) != OLD_FLOOD_SHA:
+        raise ValueError('NeverOverworldFlood differs from inspected R9 final source + allowed R24 primary gate')
     if text.count(ORE_ANCHOR) != 1 or text.count(CLEAN_ANCHOR) != 1 or text.count(SCOPE_ANCHOR) != 1:
         raise ValueError('Field-R10 Flood anchors drifted')
     text = text.replace(SCOPE_ANCHOR, FULL_GUARD, 1).replace(ORE_ANCHOR, ORE_CALL, 1).replace(CLEAN_ANCHOR, CLEAN_CALL, 1)
