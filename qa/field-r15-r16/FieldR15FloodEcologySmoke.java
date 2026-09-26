@@ -111,9 +111,18 @@ public final class FieldR15FloodEcologySmoke {
             "lava-adjacent barrier must stop flood");
         check(lava.getBlockState(new BlockPos(3,127,8)).isAir(),"cell beside lava remains dry");
 
-        // Flooded cave plants: remove only when actually water-connected.
-        for(var b:new Block[]{Blocks.CAVE_VINES,Blocks.CAVE_VINES_PLANT,Blocks.AZALEA,
-                             Blocks.FLOWERING_AZALEA,Blocks.SMALL_DRIPLEAF,Blocks.BIG_DRIPLEAF}){
+        // Glow-berry vines are now hard height-gated: the user-reported
+        // flooded-cave screenshot requires them strictly above the Y128 ocean.
+        for(var b:new Block[]{Blocks.CAVE_VINES,Blocks.CAVE_VINES_PLANT}){
+            check(NeverOverworldEcologyR15.floodedCavePlant(b.defaultBlockState()),b+" classified as cave flora");
+            check(NeverOverworldEcologyR15.heightPlant(b.defaultBlockState()),b+" classified for ocean-height gating");
+            check(NeverOverworldEcologyR15.shouldRemove(b.defaultBlockState(),80,true),b+" removed in flooded cave");
+            check(NeverOverworldEcologyR15.shouldRemove(b.defaultBlockState(),80,false),b+" removed below ocean even in dry cave");
+            check(!NeverOverworldEcologyR15.shouldRemove(b.defaultBlockState(),129,false),b+" allowed above raised ocean");
+        }
+
+        // Other flooded cave plants remain allowed in genuinely dry caves.
+        for(var b:new Block[]{Blocks.AZALEA,Blocks.FLOWERING_AZALEA,Blocks.SMALL_DRIPLEAF,Blocks.BIG_DRIPLEAF}){
             check(NeverOverworldEcologyR15.floodedCavePlant(b.defaultBlockState()),b+" classified");
             check(NeverOverworldEcologyR15.shouldRemove(b.defaultBlockState(),80,true),b+" removed in flooded cave");
             check(!NeverOverworldEcologyR15.shouldRemove(b.defaultBlockState(),80,false),b+" preserved in dry cave");
