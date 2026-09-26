@@ -7,6 +7,7 @@ on:
       - 'qa/**'
       - 'worldgen-spec/**'
       - 'build.env'
+      - '.github/workflows/never-r37-qa.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +29,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Compile exact candidate and execute focused regressions
         run: bash qa/field-r37/run-ci.sh
+      - name: Preserve isolated diagnostic fixture and materialized sources
+        if: always()
+        run: |
+          if [ -f qa/field-r37/export-debug.py ]; then
+            python3 qa/field-r37/export-debug.py
+          fi
       - name: Upload candidate inputs and honest QA evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,3 +50,11 @@ jobs:
             artifacts/*.md
           retention-days: 14
           if-no-files-found: warn
+      - name: Upload developer diagnostics separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R37-DEBUG-${{ github.sha }}
+          path: artifacts/diagnostics.zip
+          retention-days: 3
+          if-no-files-found: ignore
