@@ -164,7 +164,7 @@ def audit(pack:Path,spec_path:Path)->dict:
             required_jockey=(
                 "summon minecraft:zombie_nautilus",
                 "ride @s mount @e[type=minecraft:zombie_nautilus",
-                "data modify entity @s Tags append value \"dnt_jockey_mounted\"",
+                "tag @s add dnt_jockey_mounted",
             )
             missing=[token for token in required_jockey if token not in jockey]
             if missing:
