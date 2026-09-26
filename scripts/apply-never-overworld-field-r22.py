@@ -264,7 +264,7 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
             }
         }
         if (rawFullWrite && changed > 0) {
-            ((LevelChunk) chunk).setUnsaved(true);
+            ((LevelChunk) chunk).markUnsaved();
         }
         return changed;
     }
@@ -930,7 +930,7 @@ def verify(folia: Path) -> None:
         "chunk instanceof LevelChunk",
         "chunk.getSection(chunk.getSectionIndex(y))",
         "section.setBlockState(x, y & 15, z, water, false)",
-        "((LevelChunk) chunk).setUnsaved(true)",
+        "((LevelChunk) chunk).markUnsaved()",
         "public static void onFullChunk(",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
