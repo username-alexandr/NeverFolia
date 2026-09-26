@@ -127,37 +127,82 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final int minY,
         final int maxY
     ) {
-        final int capacity = (maxY - minY + 1) * 256;
-        final boolean[] externalSeeds = new boolean[capacity];
         final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
-        int seeded = 0;
-        if (featureSeeds != null) {
-            final int baseX = owner.getPos().getMinBlockX();
-            final int baseZ = owner.getPos().getMinBlockZ();
-            final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-            for (int e = featureSeeds.nextSetBit(0); e >= 0 && e < capacity; e = featureSeeds.nextSetBit(e + 1)) {
-                final int x = e & 15;
-                final int z = (e >>> 4) & 15;
-                final int y = minY + (e >>> 8);
-                pos.set(baseX + x, y, baseZ + z);
-                if (!traversable(owner, pos)) continue;
-                if (!owner.getBlockState(pos).is(Blocks.WATER)) {
-                    owner.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0);
-                }
-                if (!externalSeeds[e]) {
-                    externalSeeds[e] = true;
-                    ++seeded;
-                }
-            }
+        if (featureSeeds == null || featureSeeds.isEmpty()) return 0;
+
+        final int capacity = (maxY - minY + 1) * 256;
+        final BitSet visited = new BitSet(capacity);
+        final int[] queue = new int[capacity];
+        int head = 0;
+        int tail = 0;
+        final int baseX = owner.getPos().getMinBlockX();
+        final int baseZ = owner.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int e = featureSeeds.nextSetBit(0); e >= 0 && e < capacity; e = featureSeeds.nextSetBit(e + 1)) {
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            pos.set(baseX + x, y, baseZ + z);
+            if (!traversable(owner, pos) || visited.get(e)) continue;
+            visited.set(e);
+            queue[tail++] = e;
         }
-        final int changed = floodVerifiedComponents(owner, externalSeeds, true);
-        if (seeded > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+        if (tail == 0) return 0;
+
+        int changed = 0;
+        final BlockState water = Blocks.WATER.defaultBlockState();
+        while (head < tail) {
+            final int e = queue[head++];
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            pos.set(baseX + x, y, baseZ + z);
+            if (!owner.getBlockState(pos).is(Blocks.WATER)) {
+                owner.setBlockState(pos, water, 0);
+                ++changed;
+            }
+
+            tail = enqueueOwner(owner, visited, queue, tail, x - 1, y, z, minY, maxY, baseX, baseZ, pos);
+            tail = enqueueOwner(owner, visited, queue, tail, x + 1, y, z, minY, maxY, baseX, baseZ, pos);
+            tail = enqueueOwner(owner, visited, queue, tail, x, y, z - 1, minY, maxY, baseX, baseZ, pos);
+            tail = enqueueOwner(owner, visited, queue, tail, x, y, z + 1, minY, maxY, baseX, baseZ, pos);
+            tail = enqueueOwner(owner, visited, queue, tail, x, y - 1, z, minY, maxY, baseX, baseZ, pos);
+            tail = enqueueOwner(owner, visited, queue, tail, x, y + 1, z, minY, maxY, baseX, baseZ, pos);
+        }
+
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
                 "[NeverFolia][R24FeatureHandoff] chunk=" + owner.getPos().x() + "," + owner.getPos().z()
-                + " seeds=" + seeded + " changed=" + changed
+                + " seeds=" + featureSeeds.cardinality() + " visited=" + visited.cardinality()
+                + " changed=" + changed
             );
         }
         return changed;
+    }
+
+    private static int enqueueOwner(
+        final ChunkAccess owner,
+        final BitSet visited,
+        final int[] queue,
+        final int tailIn,
+        final int x,
+        final int y,
+        final int z,
+        final int minY,
+        final int maxY,
+        final int baseX,
+        final int baseZ,
+        final BlockPos.MutableBlockPos pos
+    ) {
+        if (x < 0 || x >= 16 || z < 0 || z >= 16 || y < minY || y > maxY) return tailIn;
+        final int e = encode(x, y, z, minY);
+        if (visited.get(e)) return tailIn;
+        pos.set(baseX + x, y, baseZ + z);
+        if (!traversable(owner, pos)) return tailIn;
+        visited.set(e);
+        queue[tailIn] = e;
+        return tailIn + 1;
     }
 
     private static long chunkKey(final int chunkX, final int chunkZ) {
@@ -569,6 +614,8 @@ def verify(folia: Path) -> None:
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
         "floodFeatureHandoffOwner",
+        "enqueueOwner",
+        "visited.cardinality()",
         "floodCacheConnectedOwner",
         "R23FeatureSeeds",
         "takeFeatureBoundarySeeds",
@@ -603,6 +650,10 @@ def verify(folia: Path) -> None:
         "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in text,
         "R24 owner-only feature handoff reconciliation missing"
     )
+    require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
+            and "while (head < tail)" in text
+            and "enqueueOwner(owner, visited, queue" in text,
+            "R24 handoff must use direct owner BFS")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
@@ -677,6 +728,11 @@ class X {
     require(
         "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in reconcile_out,
         "SELF-TEST reconcileSeams did not switch to owner-only feature handoff",
+    )
+    require(
+        "private static int enqueueOwner(" in reconcile_out
+        and "visited.cardinality()" in reconcile_out,
+        "SELF-TEST direct owner handoff BFS missing",
     )
     require(
         "floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY)" in reconcile_out,
