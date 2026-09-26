@@ -2,7 +2,7 @@
 """FIELD-R21: Moonrise runtime cache-aware flood seam reconciliation.
 
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
-executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES, requires only the already-existing radius-1 LIGHT neighbours to reach FEATURES, and carries
+executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES, exposes exactly one radius-1 LIGHT ring at FEATURES, and carries
 Moonrise's native neighbour StaticCache2D into ChunkLightTask,
 and reconciles the owner chunk after the existing owner flood. Because reconciliation
 can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
@@ -35,6 +35,22 @@ FEATURE_PUBLISH_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
     "publishFeatureBoundarySeeds(this.world, newChunk);"
 )
+
+LIGHT_RADIUS_OLD = """        final int neighbourReadRadius = Math.max(
+                0,
+                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
+        );
+"""
+LIGHT_RADIUS_NEW = """        final int vanillaNeighbourReadRadius = Math.max(
+                0,
+                chunkStep.getAccumulatedRadiusOf(ChunkStatus.EMPTY)
+        );
+        // NeverFolia: expose exactly one immediate neighbour ring to LIGHT.
+        // Do not create radius-2/3 dependencies; those violate Moonrise holder expectations.
+        final int neighbourReadRadius = toStatus == ChunkStatus.LIGHT
+                ? Math.max(1, vanillaNeighbourReadRadius)
+                : vanillaNeighbourReadRadius;
+"""
 
 LIGHT_REQUIRED_OLD = """                final ChunkStatus requiredNeighbourStatus = ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
 """
@@ -139,6 +155,11 @@ def patch_scheduler(text: str) -> str:
         require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
         text = text.replace(old_ctor, new_ctor, 1)
 
+    if LIGHT_RADIUS_NEW not in text:
+        require(text.count(LIGHT_RADIUS_OLD) == 1,
+                "Moonrise scheduler neighbourReadRadius anchor missing/drifted")
+        text = text.replace(LIGHT_RADIUS_OLD, LIGHT_RADIUS_NEW, 1)
+
     if LIGHT_REQUIRED_NEW not in text:
         require(text.count(LIGHT_REQUIRED_OLD) == 1,
                 "Moonrise scheduler required-neighbour anchor missing/drifted")
@@ -185,9 +206,11 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT neighbour cache assignment missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
+    require(LIGHT_RADIUS_NEW in scheduler,
+            "NeverFolia LIGHT must expose exactly the immediate radius-1 ring")
     require("Math.max(2, vanillaNeighbourReadRadius)" not in scheduler
             and "Math.max(3, vanillaNeighbourReadRadius)" not in scheduler,
-            "NeverFolia must not expand Moonrise LIGHT neighbour radius")
+            "NeverFolia must never expand Moonrise LIGHT beyond radius 1")
     require(LIGHT_REQUIRED_NEW in scheduler,
             "NeverFolia LIGHT radius-1 neighbours must reach FEATURES before owner LIGHT")
     require("toStatus == ChunkStatus.LIGHT && radius > 1" not in scheduler
