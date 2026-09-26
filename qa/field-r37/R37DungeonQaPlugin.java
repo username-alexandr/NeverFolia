@@ -8,7 +8,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -17,14 +16,14 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.AABB;
 
 /** Isolated QA only. Never bundled as a production plugin. */
 public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
  private final List<String> checks=new ArrayList<>();
  private volatile ServerLevel testLevel;
+ private final List<String> observedSpawns=new ArrayList<>();
+ private final List<String> functionResults=new ArrayList<>();
  private boolean finished;
  private void check(boolean ok,String label){if(!ok)throw new AssertionError(label);checks.add(label);}
  @Override public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);}
@@ -36,9 +35,10 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   var e=((org.bukkit.craftbukkit.entity.CraftEntity)event.getEntity()).getHandle();
   if(!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(e))return;
   if(e.level()!=testLevel||e.getY()<395||e.getY()>405||e.getX()<2||e.getX()>14||e.getZ()<2||e.getZ()>14)return;
-  // Freeze only test summons, so asynchronous command execution cannot let them
-  // fall out of the observation box. Natural gameplay is not under test here.
-  if(event.getSpawnReason()==CreatureSpawnEvent.SpawnReason.COMMAND){e.setNoGravity(true);if(e instanceof Mob m)m.setNoAi(true);}
+  // Freeze only entities inside the isolated test fixture, regardless of the
+  // Bukkit spawn-reason adapter. Keep their original equipment and tags.
+  observedSpawns.add(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())+" tags="+e.entityTags()+" reason="+event.getSpawnReason());
+  e.setNoGravity(true);if(e instanceof Mob m)m.setNoAi(true);
  }
  private Entity spawn(ServerLevel level,String id){
   var type=BuiltInRegistries.ENTITY_TYPE.getOptional(Identifier.fromNamespaceAndPath("minecraft",id)).orElseThrow();
@@ -47,13 +47,16 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   if(!level.addFreshEntity(e))throw new AssertionError("spawn "+id);return e;
  }
  private CommandSourceStack source(ServerLevel level,Entity e){
-  return new CommandSourceStack(CommandSource.NULL,e.position(),Vec2.ZERO,level,PermissionSet.ALL_PERMISSIONS,"R37-QA",Component.literal("R37-QA"),level.getServer(),e);
+  // Follow the actual enchantment RunFunction source path. Keep failures visible.
+  return level.getServer().createCommandSourceStack().withEntity(e).withLevel(level)
+   .withPosition(e.position()).withRotation(e.getRotationVector())
+   .withPermission(PermissionSet.ALL_PERMISSIONS);
  }
  private void function(ServerLevel level,Entity e,String name){
   var manager=level.getServer().getFunctions();
   var id=Identifier.fromNamespaceAndPath("nova_structures",name);
   var f=manager.get(id).orElseThrow(()->new AssertionError("function not loaded: "+id));
-  manager.execute(f,source(level,e));
+  manager.execute(f,source(level,e).withCallback((success,value)->functionResults.add(name+": success="+success+" value="+value)));
  }
  private void start(ServerLevel level){
   testLevel=level;
@@ -76,6 +79,7 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
  private void finish(ServerLevel level){
   try{
    var mobs=level.getEntitiesOfClass(Mob.class,new AABB(2,395,2,14,405,14),e->true);
+   functionResults.add("live query="+mobs.stream().map(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())+" "+e.entityTags()).toList());
    for(String tag:new String[]{"dnt_cave_spider_minion","dnt_guardian_minion","dnt_spider_minion"})
     check(mobs.stream().anyMatch(e->e.entityTags().contains(tag)),"function really spawned "+tag);
    check(mobs.stream().anyMatch(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("minecraft:zombie_nautilus")),"jockey function really spawned zombie_nautilus");
@@ -88,6 +92,8 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   try{
    getDataFolder().mkdirs();var result=new com.google.gson.JsonObject();result.addProperty("pass",error==null);
    result.addProperty("scope","owning-region controller spawn test; not natural trial player activation or all dungeon bosses");
+   result.add("observed_spawns",new com.google.gson.Gson().toJsonTree(observedSpawns));
+   result.add("function_results",new com.google.gson.Gson().toJsonTree(functionResults));
    result.add("checks",new com.google.gson.Gson().toJsonTree(checks));if(error!=null)result.addProperty("error",error.toString());
    Files.writeString(getDataFolder().toPath().resolve("result.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(result));
   }catch(Exception e){e.printStackTrace();}

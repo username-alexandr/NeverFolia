@@ -1,0 +1,67 @@
+name: FIELD-R37 pinned candidate runtime diagnostics
+on:
+  push:
+    branches: ['wip/neveroverworld-r37-continuation']
+    paths: ['.github/workflows/never-r37-runtime.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R37-CANDIDATE-f9aac31d585053d843096e749e4f726118974a86
+          run-id: 36278716064
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify existing candidate, prepare patched runtime and diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum --check SHA256SUMS.txt)
+          test "$(cat candidate/SOURCE-COMMIT.txt)" = f9aac31d585053d843096e749e4f726118974a86
+          mkdir -p artifacts .work/r37-runtime
+          cp candidate/SOURCE-COMMIT.txt artifacts/SERVER-SOURCE.txt
+          git rev-parse HEAD > artifacts/QA-SOURCE.txt
+          (cd .work/r37-runtime && java -Dpaperclip.patchonly=true -jar ../../candidate/server.jar)
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,subprocess
+          root=Path('.work/r37-runtime')
+          jars=sorted(root.glob('versions/**/*.jar'))+sorted(root.glob('libraries/**/*.jar'))
+          if not jars: raise SystemExit('Patched runtime classpath missing')
+          cp=os.pathsep.join(str(p) for p in jars)
+          for name in ['net.minecraft.server.ServerFunctionManager','net.minecraft.server.commands.SummonCommand','net.minecraft.commands.CommandSourceStack']:
+              result=subprocess.run(['javap','-c','-p','-classpath',cp,name],capture_output=True,text=True)
+              Path('artifacts',name.rsplit('.',1)[-1]+'.txt').write_text(result.stdout+result.stderr)
+          subprocess.run(['javac','--release','25','-classpath',cp,'-d','.work/r37-runtime/qa-classes','qa/field-r37/R37DungeonQaPlugin.java'],check=True)
+          subprocess.run(['jar','--create','--file','artifacts/R37DungeonQa.jar','-C','.work/r37-runtime/qa-classes','.','-C','qa/field-r37','plugin.yml'],check=True)
+          PY
+      - name: Controllers, then independent seed-water test even on controller failure
+        shell: bash
+        run: |
+          set +e
+          python3 qa/field-r36/probe-water-square-seed.py --jar candidate/server.jar --overworld candidate/NeverOverworld.zip --nether candidate/NeverNether.zip --qa-plugin artifacts/R37DungeonQa.jar --source-sha f9aac31d585053d843096e749e4f726118974a86 --output artifacts/controllers
+          controllers=$?
+          python3 qa/field-r36/probe-water-square-seed.py --jar candidate/server.jar --overworld candidate/NeverOverworld.zip --nether candidate/NeverNether.zip --source-sha f9aac31d585053d843096e749e4f726118974a86 --output artifacts/water
+          water=$?
+          printf 'controllers_exit=%s\nwater_exit=%s\n' "$controllers" "$water" > artifacts/RESULTS.txt
+          test "$controllers" = 0 && test "$water" = 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R37-runtime-diagnostics-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: warn
