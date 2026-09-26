@@ -24,6 +24,8 @@ on:
       - 'scripts/prepare-never-nether-noise-r5.py'
       - 'third_party/OpenSimplex2/**'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-water-contract-r33.py'
+      - 'scripts/apply-never-overworld-no-synthetic-islands-r34.py'
       - 'worldgen-spec/never-overworld-external-structures-r19.json'
       - '.github/workflows/never-overworld-dungeon-runtime-qa.yml'
   workflow_dispatch:
