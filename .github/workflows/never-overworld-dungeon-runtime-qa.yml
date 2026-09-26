@@ -19,6 +19,7 @@ on:
       - 'scripts/weather-never-overworld-flooded-surface.py'
       - 'scripts/apply-never-overworld-field-r22.py'
       - 'scripts/apply-never-overworld-flood-hook.py'
+      - 'scripts/apply-never-overworld-field-r10.py'
       - 'scripts/prepare-never-nether-noise-r5.py'
       - 'third_party/OpenSimplex2/**'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
