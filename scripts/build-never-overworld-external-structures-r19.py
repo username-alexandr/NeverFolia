@@ -347,14 +347,11 @@ def dat_runtime_function_id(path: str) -> str | None:
 def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
     text=payload.decode("utf-8")
     if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
-        # The enchantment runs on the drowned carrying the technical saddle
-        # item. 26.2 does not accept the source's "execute summon ... run ride"
-        # chain. Spawn the vehicle first, mount the current drowned explicitly,
-        # then make the controller one-shot with an entity tag.
+        # R24: one-shot is enforced by the enchantment's inverted vehicle
+        # predicate. Keep the function itself to parser-safe 26.2 commands.
         text=(
-            "execute unless entity @s[tag=dnt_jockey_mounted] at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:[\"dnt_jockey_mount_tmp\"]}\n"
-            "execute unless entity @s[tag=dnt_jockey_mounted] at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n"
-            "data modify entity @s Tags append value \"dnt_jockey_mounted\"\n"
+            "execute at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:[\"dnt_jockey_mount_tmp\"]}\n"
+            "execute at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n"
         )
     if resource_id=="nova_structures:hydro_veil_heal":
         text="effect give @s minecraft:regeneration 1 6 true\n"
@@ -400,10 +397,28 @@ def strip_dat_run_function_effects(value):
         return None
     return out
 
-def sanitize_dat_enchantment(data: dict) -> dict:
+def sanitize_dat_enchantment(data: dict, resource_id: str | None = None) -> dict:
     out=strip_dat_run_function_effects(copy.deepcopy(data))
     if not isinstance(out,dict):
         fail("D&T enchantment sanitizer removed JSON root")
+    if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
+        effects=out.get("effects")
+        ticks=effects.get("minecraft:tick") if isinstance(effects,dict) else None
+        if isinstance(ticks,list):
+            for entry in ticks:
+                if not isinstance(entry,dict): continue
+                effect=entry.get("effect")
+                if not isinstance(effect,dict): continue
+                if effect.get("type") not in ("minecraft:run_function","run_function"): continue
+                if effect.get("function")!="nova_structures:jockey/make_drowned_into_jockey": continue
+                entry["requirements"]={
+                    "condition":"minecraft:inverted",
+                    "term":{
+                        "condition":"minecraft:entity_properties",
+                        "entity":"this",
+                        "predicate":{"vehicle":{}}
+                    }
+                }
     effects=out.get("effects")
     if isinstance(effects,dict):
         out["effects"]={
@@ -530,7 +545,8 @@ def filter_pack(key: str, files: dict[str, bytes]):
             out[n]=b
             continue
         if key=="dat" and "/enchantment/" in n and n.endswith(".json"):
-            d=sanitize_dat_enchantment(read_json(b,n))
+            rid=resource_id(n,"enchantment")
+            d=sanitize_dat_enchantment(read_json(b,n),rid)
             out[n]=(json.dumps(d,indent=2,ensure_ascii=False)+"\n").encode()
             continue
         if not should_copy_dependency(n): continue
