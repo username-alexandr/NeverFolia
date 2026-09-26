@@ -157,6 +157,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "@n[",
                 "item replace entity @s saddle",
                 "data remove entity @s equipment.saddle",
+                "tag @s add dnt_jockey_mounted",
             )
             bad=[token for token in forbidden_jockey if token in jockey]
             if bad:
@@ -164,7 +165,7 @@ def audit(pack:Path,spec_path:Path)->dict:
             required_jockey=(
                 "summon minecraft:zombie_nautilus",
                 "ride @s mount @e[type=minecraft:zombie_nautilus",
-                "tag @s add dnt_jockey_mounted",
+                "data modify entity @s Tags append value \"dnt_jockey_mounted\"",
             )
             missing=[token for token in required_jockey if token not in jockey]
             if missing:
