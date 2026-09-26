@@ -65,7 +65,13 @@ def inject_before_encode(text:str, helper:str)->str:
         pos=text.find(anchor)
         if pos>=0:
             return text[:pos]+helper+text[pos:]
-    fail("encode helper anchor missing")
+    # Owner flood implementations do not all carry an encode helper. In that
+    # case insert before the class closing brace instead of coupling R35 to an
+    # unrelated implementation detail.
+    pos=text.rfind("}")
+    if pos<0:
+        fail("class closing brace missing")
+    return text[:pos]+helper+text[pos:]
 
 def patch_owner(text:str)->str:
     text=inject_before_encode(text,OWNER_HELPER)
