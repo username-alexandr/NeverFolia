@@ -62,7 +62,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ${{ github.workflow }}-r22-fixpack-${{ github.ref }}-${{ github.sha }}
+  group: ${{ github.workflow }}-r22-fixpack-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   natural:
