@@ -24,6 +24,10 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class NeverOverworldFloodConnectivityR15 {
     static final int SCAN_MIN_Y = -64;
     static final int SCAN_MAX_Y = 128;
+    private static final ThreadLocal<BlockPos.MutableBlockPos> CELL_PROBE =
+        ThreadLocal.withInitial(BlockPos.MutableBlockPos::new);
+    private static final ThreadLocal<BlockPos.MutableBlockPos> LAVA_PROBE =
+        ThreadLocal.withInitial(BlockPos.MutableBlockPos::new);
 
     private NeverOverworldFloodConnectivityR15() {}
 
@@ -155,7 +159,8 @@ public final class NeverOverworldFloodConnectivityR15 {
         if (x < 0 || x > 15 || z < 0 || z > 15 || y < minY || y > maxY) return tailIn;
         final int e = encode(x, y, z, minY);
         if (connected[e]) return tailIn;
-        final BlockPos pos = new BlockPos(chunk.getPos().getMinBlockX() + x, y, chunk.getPos().getMinBlockZ() + z);
+        final BlockPos.MutableBlockPos pos = CELL_PROBE.get();
+        pos.set(chunk.getPos().getMinBlockX() + x, y, chunk.getPos().getMinBlockZ() + z);
         if (!traversable(chunk, pos)) return tailIn;
         connected[e] = true;
         queue[tailIn] = e;
@@ -282,7 +287,8 @@ public final class NeverOverworldFloodConnectivityR15 {
                                int x,int y,int z,int minY,int maxY){
         if(x<0||x>15||z<0||z>15||y<minY||y>maxY)return tail;
         int e=encode(x,y,z,minY);if(visited[e])return tail;visited[e]=true;
-        BlockPos pos=new BlockPos(chunk.getPos().getMinBlockX()+x,y,chunk.getPos().getMinBlockZ()+z);
+        BlockPos.MutableBlockPos pos=CELL_PROBE.get();
+        pos.set(chunk.getPos().getMinBlockX()+x,y,chunk.getPos().getMinBlockZ()+z);
         if(!traversable(chunk,pos))return tail;
         queue[tail++]=e;return tail;
     }
@@ -293,15 +299,24 @@ public final class NeverOverworldFloodConnectivityR15 {
     }
 
     static boolean hasAdjacentLava(ChunkAccess chunk,BlockPos pos){
-        int minX=chunk.getPos().getMinBlockX(),minZ=chunk.getPos().getMinBlockZ();
-        int[][] d={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
-        BlockPos.MutableBlockPos p=new BlockPos.MutableBlockPos();
-        for(int[] v:d){
-            int x=pos.getX()+v[0],y=pos.getY()+v[1],z=pos.getZ()+v[2];
-            if(x<minX||x>minX+15||z<minZ||z>minZ+15||y<chunk.getMinY()||y>=chunk.getMaxY())continue;
-            p.set(x,y,z);if(chunk.getBlockState(p).is(Blocks.LAVA))return true;
-        }
-        return false;
+        final int minX=chunk.getPos().getMinBlockX(),minZ=chunk.getPos().getMinBlockZ();
+        final int x=pos.getX(),y=pos.getY(),z=pos.getZ();
+        final BlockPos.MutableBlockPos p=LAVA_PROBE.get();
+        return lavaAt(chunk,p,x+1,y,z,minX,minZ)
+            || lavaAt(chunk,p,x-1,y,z,minX,minZ)
+            || lavaAt(chunk,p,x,y+1,z,minX,minZ)
+            || lavaAt(chunk,p,x,y-1,z,minX,minZ)
+            || lavaAt(chunk,p,x,y,z+1,minX,minZ)
+            || lavaAt(chunk,p,x,y,z-1,minX,minZ);
+    }
+
+    private static boolean lavaAt(
+        ChunkAccess chunk,BlockPos.MutableBlockPos p,
+        int x,int y,int z,int minX,int minZ
+    ){
+        if(x<minX||x>minX+15||z<minZ||z>minZ+15||y<chunk.getMinY()||y>=chunk.getMaxY())return false;
+        p.set(x,y,z);
+        return chunk.getBlockState(p).is(Blocks.LAVA);
     }
 
     static boolean horizontalSeamBelowOcean(int x,int y,int z){
