@@ -157,7 +157,18 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                     // OCEAN_FLOOR_WG is O(1) and avoids tens of thousands of
                     // expensive generator.getBaseHeight() noise evaluations
                     // while registering a large synthetic island.
-                    final int floorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
+                    int floorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
+                    if (floorY >= MIN_DRY_SURFACE_Y) {
+                        // A placed structure can raise OCEAN_FLOOR_WG. Recover
+                        // the natural submerged floor by scanning only the
+                        // owner column below the raised ocean plane.
+                        floorY = MIN_DRY_SURFACE_Y - 1;
+                        while (floorY > chunk.getMinY() + 1) {
+                            pos.set(baseX + lx, floorY, baseZ + lz);
+                            if (!islandReplaceable(chunk.getBlockState(pos))) break;
+                            --floorY;
+                        }
+                    }
                     final int fromY = Math.max(floorY + 1, chunk.getMinY() + 1);
                     if (fromY > fillTop) continue;
                     for (int y = fromY; y <= fillTop; ++y) {{
@@ -476,6 +487,7 @@ def verify(folia: Path) -> None:
         "piece.move(0, deltaY, 0)",
         "Blocks.GRASS_BLOCK.defaultBlockState()",
         "chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz)",
+        "floorY = MIN_DRY_SURFACE_Y - 1",
     ):
         if marker not in helper:
             fail("R24 synthetic-island marker missing: " + marker)
