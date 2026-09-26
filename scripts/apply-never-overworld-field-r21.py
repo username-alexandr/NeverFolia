@@ -2,9 +2,7 @@
 """FIELD-R21: Moonrise runtime cache-aware flood seam reconciliation.
 
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
-executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES, exposes exactly one radius-1 LIGHT ring at FEATURES, and carries
-Moonrise's native neighbour StaticCache2D into ChunkLightTask,
-and reconciles the owner chunk after the existing owner flood. Because reconciliation
+executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES and carries Moonrise's already-existing native neighbour StaticCache2D into ChunkLightTask without changing scheduler dependency radii or required neighbour statuses. The owner chunk is then reconciled after the existing owner flood. Because reconciliation
 can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
 cleanup runs once more on the same owner chunk before Starlight reads section
 emptiness. No synchronous chunk loads or WorldGenLevel neighbour reads.
@@ -169,16 +167,6 @@ def patch_scheduler(text: str) -> str:
     if new_ctor not in text:
         require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
         text = text.replace(old_ctor, new_ctor, 1)
-
-    if LIGHT_RADIUS_NEW not in text:
-        require(text.count(LIGHT_RADIUS_OLD) == 1,
-                "Moonrise scheduler neighbourReadRadius anchor missing/drifted")
-        text = text.replace(LIGHT_RADIUS_OLD, LIGHT_RADIUS_NEW, 1)
-
-    if LIGHT_REQUIRED_NEW not in text:
-        require(text.count(LIGHT_REQUIRED_OLD) == 1,
-                "Moonrise scheduler required-neighbour anchor missing/drifted")
-        text = text.replace(LIGHT_REQUIRED_OLD, LIGHT_REQUIRED_NEW, 1)
     return text
 
 def verify(folia: Path) -> None:
@@ -222,16 +210,14 @@ def verify(folia: Path) -> None:
             "Moonrise LIGHT neighbour cache assignment missing")
     require("new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority)" in scheduler,
             "Moonrise scheduler does not pass the existing neighbour cache to LIGHT")
-    require(LIGHT_RADIUS_NEW in scheduler,
-            "NeverFolia LIGHT must expose exactly the immediate radius-1 ring")
-    require("Math.max(2, vanillaNeighbourReadRadius)" not in scheduler
-            and "Math.max(3, vanillaNeighbourReadRadius)" not in scheduler,
-            "NeverFolia must never expand Moonrise LIGHT beyond radius 1")
-    require(LIGHT_REQUIRED_NEW in scheduler,
-            "NeverFolia LIGHT radius-1 neighbours must reach FEATURES before owner LIGHT")
-    require("toStatus == ChunkStatus.LIGHT && radius > 1" not in scheduler
-            and "toStatus == ChunkStatus.LIGHT && radius > 0" not in scheduler,
-            "NeverFolia must strengthen only the existing radius-1 LIGHT ring")
+    require(LIGHT_RADIUS_NEW not in scheduler,
+            "NeverFolia must not override Moonrise LIGHT neighbour radius")
+    require(LIGHT_REQUIRED_NEW not in scheduler,
+            "NeverFolia must not override Moonrise LIGHT neighbour required status")
+    require("final int neighbourReadRadius = Math.max(" in scheduler,
+            "Moonrise native neighbour radius calculation missing")
+    require("moonrise$getRequiredStatusAtRadius(radius)" in scheduler,
+            "Moonrise native neighbour status contract missing")
     require(FEATURE_PUBLISH_CALL in generic,
             "Moonrise FEATURES handoff hook missing")
     require(FULL_RECONCILE_CALL in full,
@@ -296,7 +282,7 @@ def apply(folia: Path) -> None:
     generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
     full.write_text(patch_full(full.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R21] installed: native LIGHT radius + native LIGHT cache + FEATURES seam handoff")
+    print("[FIELD-R21] installed: untouched Moonrise scheduler + native LIGHT cache + FEATURES/FULL seam handoff")
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
