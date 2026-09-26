@@ -205,6 +205,14 @@ def self_test()->None:
         if(!state.is(Blocks.WATER)&&traversable(chunk,pos)){chunk.setBlockState(pos,water,0);++changed;}
         if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
     }
+    int enqueue(ChunkAccess chunk,BlockPos.MutableBlockPos pos,int y,int tail){
+        if(!traversable(chunk,pos))return tail;
+        return tail+1;
+    }
+    int enqueueFloodable(ChunkAccess chunk,BlockPos.MutableBlockPos pos,int y,int tailIn){
+        if (!traversable(chunk, pos)) return tailIn;
+        return tailIn+1;
+    }
     private static int encode(int x,int y,int z,int minY){return 0;}
 }
 """
