@@ -19,6 +19,7 @@ BLOBS = {
     'LICENSE-OpenSimplex2-CC0.txt': '0e259d42c996742e9e3cba14c677129b2c1b6311',
 }
 CACHE = ROOT / '.work/nevernether-noise-r5'
+VENDOR = ROOT / 'third_party/OpenSimplex2'
 
 
 def verify(payload: bytes, sha: str) -> None:
@@ -34,19 +35,25 @@ def prepare(cache: Path = CACHE, offline: bool = False) -> dict[str, bytes]:
         if path.exists():
             payload = path.read_bytes()
         else:
-            if offline:
-                raise ValueError(f'Pinned noise input missing in offline cache: {path}')
-            url = f'https://api.github.com/repos/KdotJPG/OpenSimplex2/git/blobs/{sha}'
-            headers = {'User-Agent': 'NeverFolia-build', 'Accept': 'application/vnd.github+json'}
-            token = os.environ.get('GH_TOKEN')
-            if token:
-                headers['Authorization'] = 'Bearer ' + token
-            request = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                body = json.load(response)
-            if body.get('encoding') != 'base64':
-                raise ValueError('Expected base64 GitHub blob')
-            payload = base64.b64decode(body['content'])
+            vendored = VENDOR / name
+            if vendored.is_file():
+                payload = vendored.read_bytes()
+            else:
+                if offline:
+                    raise ValueError(
+                        f'Pinned noise input missing from cache and vendor tree: {path}, {vendored}'
+                    )
+                url = f'https://api.github.com/repos/KdotJPG/OpenSimplex2/git/blobs/{sha}'
+                headers = {'User-Agent': 'NeverFolia-build', 'Accept': 'application/vnd.github+json'}
+                token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+                if token:
+                    headers['Authorization'] = 'Bearer ' + token
+                request = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    body = json.load(response)
+                if body.get('encoding') != 'base64':
+                    raise ValueError('Expected base64 GitHub blob')
+                payload = base64.b64decode(body['content'])
         verify(payload, sha)
         staged[name] = payload
     cache.mkdir(parents=True, exist_ok=True)
