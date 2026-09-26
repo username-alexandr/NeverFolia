@@ -233,6 +233,7 @@ def runtime_log_errors(out:Path):
         "Missing tag: 'nova_structures:",
         "Missing chunkholder when required",
         "[ChunkTaskScheduler] Chunk system error",
+        "Empty or non-existent pool: betterwitchhuts:mobs",
     )
     rows=[]
     for path in sorted(out.glob("external-structures-runtime-*.log")):
