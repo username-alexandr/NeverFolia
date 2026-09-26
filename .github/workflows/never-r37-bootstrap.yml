@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Verify and apply exactly the reviewed R37 patch
+      - name: Verify and apply exactly the reviewed R37 source patch
         shell: bash
         run: |
           set -euo pipefail
@@ -44,13 +44,17 @@ jobs:
           paths={line.split(' b/',1)[1] for line in patch.decode().splitlines() if line.startswith('diff --git ')}
           if paths!=allowed:
               raise SystemExit('Unexpected source paths; no patch applied')
+          # GITHUB_TOKEN has contents:write but no workflows permission.
+          # Workflow changes are deliberately excluded, not escalated.
           p=Path('/tmp/neverfolia-r37.patch');p.write_bytes(patch)
-          subprocess.run(['git','apply','--check',str(p)],check=True)
-          subprocess.run(['git','apply',str(p)],check=True)
+          exclusion='--exclude=.github/workflows/never-r37-qa.yml'
+          subprocess.run(['git','apply','--check',exclusion,str(p)],check=True)
+          subprocess.run(['git','apply',exclusion,str(p)],check=True)
           subprocess.run(['git','diff','--check'],check=True)
-          subprocess.run(['git','add','--',*sorted(allowed)],check=True)
+          source_paths=sorted(p for p in allowed if not p.startswith('.github/'))
+          subprocess.run(['git','add','--',*source_paths],check=True)
           PY
-          git rm -- qa/field-r37-bootstrap/patch.0.b64 qa/field-r37-bootstrap/patch.1.b64 qa/field-r37-bootstrap/patch.2.b64 .github/workflows/never-r37-bootstrap.yml
+          git rm -- qa/field-r37-bootstrap/patch.0.b64 qa/field-r37-bootstrap/patch.1.b64 qa/field-r37-bootstrap/patch.2.b64
           git config user.name 'NeverFolia CI'
           git config user.email actions@github.com
           git commit -m 'fix(worldgen): R37 bounded ocean columns, complete NBT sanitation and dungeon runtime'
