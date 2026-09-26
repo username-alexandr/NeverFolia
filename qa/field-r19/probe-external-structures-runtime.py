@@ -244,6 +244,52 @@ def runtime_log_errors(out:Path):
                 if len(rows)>=200:return rows
     return rows
 
+def wait_marker(server,marker,timeout=15):
+    start=len(server.text())
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        segment=server.text()[start:]
+        if marker in segment:
+            return True
+        require(server.p.poll() is None,"server exited during D&T runtime smoke")
+        time.sleep(.2)
+    return False
+
+def dnt_runtime_smoke(server):
+    """Execute representative imported D&T controllers and prove entities spawn."""
+    # Jockey controller: executor intentionally dies after replacing itself.
+    server.send('summon minecraft:armor_stand 0 220 0 {Tags:["nf_dnt_jockey_executor"],Invisible:1b}')
+    server.send('execute as @e[type=minecraft:armor_stand,tag=nf_dnt_jockey_executor,limit=1] at @s run function nova_structures:jockey/spawn_zautilus_jockey')
+    marker1="NEVERFOLIA_DNT_ZAUTILUS_OK"
+    server.send(
+        'execute positioned 0 220 0 if entity @e[type=minecraft:zombie_nautilus,distance=..8,limit=1] '
+        'run say '+marker1
+    )
+    require(wait_marker(server,marker1),
+            "D&T zautilus jockey controller did not spawn zombie_nautilus")
+
+    # Boss/minion controller: also proves technical enchant registry references
+    # in summoned equipment are accepted by the live datapack registry.
+    server.send('summon minecraft:armor_stand 16 220 0 {Tags:["nf_dnt_minion_executor"],Invisible:1b}')
+    server.send('execute as @e[type=minecraft:armor_stand,tag=nf_dnt_minion_executor,limit=1] at @s run function nova_structures:spawn_cave_spider_minion')
+    marker2="NEVERFOLIA_DNT_MINION_OK"
+    server.send(
+        'execute positioned 16 220 0 if entity @e[type=minecraft:cave_spider,tag=dnt_cave_spider_minion,distance=..8,limit=1] '
+        'run say '+marker2
+    )
+    require(wait_marker(server,marker2),
+            "D&T cave-spider minion controller did not spawn tagged minion")
+
+    # Cleanup only test entities in this disposable QA world.
+    server.send('kill @e[tag=nf_dnt_jockey_executor]')
+    server.send('kill @e[tag=nf_dnt_minion_executor]')
+    server.send('kill @e[type=minecraft:zombie_nautilus,x=-8,y=212,z=-8,dx=16,dy=16,dz=16]')
+    server.send('kill @e[type=minecraft:cave_spider,tag=dnt_cave_spider_minion,x=8,y=212,z=-8,dx=16,dy=16,dz=16]')
+    return {
+        "zautilus_jockey_spawned":True,
+        "cave_spider_minion_spawned":True,
+    }
+
 def make_work(root,overworld,nether):
     work=root/".work"/"external-structures-runtime-qa"
     work.mkdir(parents=True,exist_ok=False)
@@ -274,6 +320,7 @@ def main_run(args):
     normal=False
     try:
         server.wait(r"Done \(",timeout=300);server.disable_random_ticks()
+        report["dnt_runtime_smoke"]=dnt_runtime_smoke(server)
         # Runtime generation is required for the behavior NeverFolia changes:
         # surface-land structures moved onto dry islands. Ocean/underground
         # structures deliberately retain source placement and are verified by
@@ -405,8 +452,12 @@ def main_run(args):
         "found_surface_footprints_dry_at_y128":surface_dry,
         "source_placement_delegated_to_complete_static_graph_qa":True,
         "dnt_functions_and_chunk_runtime_clean":len(runtime_errors)==0,
+        "dnt_runtime_controllers_spawn_entities":all(report.get("dnt_runtime_smoke",{}).values()),
     }
-    report["pass"]=surface_found and surface_dry and len(runtime_errors)==0
+    report["pass"]=(
+        surface_found and surface_dry and len(runtime_errors)==0
+        and all(report.get("dnt_runtime_smoke",{}).values())
+    )
     target=out/"external-structures-runtime-qa.json"
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print("[External Runtime QA] "+json.dumps({
@@ -445,6 +496,7 @@ def self_test():
     require(all(SURFACE_GROUPS.values()),"SELF-TEST each source group needs candidates")
     require(len(set(SURFACE_IDS))==len(SURFACE_IDS),"SELF-TEST duplicate runtime candidates")
     require(locate_optional.__defaults__==(10,),"SELF-TEST locate timeout must stay bounded to 10s")
+    require(callable(dnt_runtime_smoke),"SELF-TEST D&T runtime smoke helper missing")
     print("[NeverFolia][External Runtime QA] SELF-TEST OK")
 
 def main():
