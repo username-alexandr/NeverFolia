@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, copy, gzip, hashlib, io, json, re, struct, urllib.request, zipfile
+import argparse, copy, gzip, hashlib, io, json, re, struct, urllib.request, zipfile, zlib
 from pathlib import Path
 
 TARGET_FORMAT = 107
@@ -227,13 +227,17 @@ def _nbt_write_payload(buf:io.BytesIO,t:int,value)->None:
         return
     fail("cannot write NBT tag type "+str(t))
 
-def _nbt_encode(compressed:bool,root_name:str,root:dict)->bytes:
+def _nbt_encode(compression:str,root_name:str,root:dict)->bytes:
     buf=io.BytesIO()
     buf.write(b"\\x0a")
     buf.write(_nbt_string_bytes(root_name))
     _nbt_write_payload(buf,10,root)
     raw=buf.getvalue()
-    return gzip.compress(raw,compresslevel=9,mtime=0) if compressed else raw
+    if compression=="gzip":
+        return gzip.compress(raw,compresslevel=9,mtime=0)
+    if compression=="zlib":
+        return zlib.compress(raw,level=9)
+    return raw
 
 def _compound_string(comp:dict,key:str)->str|None:
     value=comp.get(key)
@@ -269,11 +273,14 @@ def sanitize_dat_structure_nbt(payload:bytes, where:str="<unknown>")->bytes:
     # rewriting. Preserve opaque payloads unless they actually carry the
     # foreign PortingLib registry keys we are trying to remove.
     try:
-        compressed,root_name,root=_nbt_parse(payload)
+        compression,root_name,root=_nbt_parse(payload)
     except SystemExit:
         raw=payload
         if payload[:2]==b"\x1f\x8b":
             try: raw=gzip.decompress(payload)
+            except Exception: raw=payload
+        elif len(payload)>=2 and payload[0]==0x78:
+            try: raw=zlib.decompress(payload)
             except Exception: raw=payload
         if b"porting_lib:" in raw:
             fail("unsupported D&T NBT containing PortingLib registry key: "+where)
@@ -297,7 +304,7 @@ def sanitize_dat_structure_nbt(payload:bytes, where:str="<unknown>")->bytes:
                 kept.append(entry)
             root["entities"]=(9,(10,kept))
 
-    encoded=_nbt_encode(compressed,root_name,root)
+    encoded=_nbt_encode(compression,root_name,root)
     if b"porting_lib:" in (gzip.decompress(encoded) if encoded[:2]==b"\\x1f\\x8b" else encoded):
         fail("PortingLib registry key survived D&T NBT sanitizer")
     return encoded
