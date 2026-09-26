@@ -1,0 +1,30 @@
+name: NeverWorldgen R37 source export
+on:
+  push:
+    branches: ['diag/r37-water-dungeons-continuation']
+    paths: ['.github/workflows/never-r37-source-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 8b52c3f30df55452a06d4ceece2ad84add52ee61
+          persist-credentials: false
+      - name: Export tracked source only
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git archive --format=tar.gz --output=artifacts/NeverFolia-source-8b52c3f.tar.gz HEAD
+          git rev-parse HEAD > artifacts/SOURCE-COMMIT.txt
+          sha256sum artifacts/*.tar.gz > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-source-8b52c3f
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
