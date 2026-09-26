@@ -954,8 +954,15 @@ def verify(folia: Path) -> None:
     )
     require(EXTERNAL_SEED_NEW in text,
             "R24 verified FEATURES seed must prove ocean connectivity without pre-writing WATER")
-    require(APPLY_NEW in text,
-            "R24 FEATURES handoff must be inspected by canonical R15 scan")
+    r33_apply = APPLY_NEW.replace(
+        "Math.max(SCAN_MIN_Y, chunk.getMinY() + 1)",
+        "Math.max(CUSTOM_FLOOD_MIN_Y, chunk.getMinY() + 1)"
+    )
+    require(APPLY_NEW in text or r33_apply in text,
+            "R24/R33 FEATURES handoff must be inspected by canonical R15 scan")
+    if "CUSTOM_FLOOD_MIN_Y = 96" in text:
+        require("Math.max(CUSTOM_FLOOD_MIN_Y, chunk.getMinY() + 1)" in text,
+                "R33 canonical R15 scan regressed to the deep SCAN_MIN_Y range")
     require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level.getLevel(), chunk);" in text,
             "R25 early R15 scan must peek FEATURES handoff")
     require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level, owner);" in text,
