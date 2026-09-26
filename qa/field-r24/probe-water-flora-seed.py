@@ -91,6 +91,47 @@ def deep_water_wall_audit(volume,chunks):
         "minimum_flagged_run":16,
     }
 
+def remote_void_ore_audit(volume,center=(-23109,40,-59094),radius=12,half_height=12):
+    """Detect the user's remote terrain-loss pattern with ores left floating.
+
+    A tiny amount of exposed ore can occur naturally. The reported failure,
+    however, leaves many ore blocks with no solid neighbour at all. Count those
+    in a bounded cube so giant legitimate caves do not fail merely for being air.
+    """
+    cx,cy,cz=center
+    sides=((1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1))
+    ores=0
+    floating=[]
+    for x in range(cx-radius,cx+radius+1):
+        for z in range(cz-radius,cz+radius+1):
+            for y in range(cy-half_height,cy+half_height+1):
+                name=state_name(volume.at(x,y,z))
+                if not isinstance(name,str) or not (
+                    name.endswith("_ore") or name=="minecraft:ancient_debris"
+                ):
+                    continue
+                ores+=1
+                isolated=True
+                for dx,dy,dz in sides:
+                    near=state_name(volume.at(x+dx,y+dy,z+dz))
+                    if near not in AIR and near not in (None,"minecraft:water"):
+                        isolated=False
+                        break
+                if isolated and len(floating)<100:
+                    floating.append([x,y,z,name])
+    # Allow at most one pathological-looking block in this bounded sample to
+    # avoid turning a rare one-block cave remnant into a false release failure.
+    return {
+        "center":list(center),
+        "radius":radius,
+        "half_height":half_height,
+        "ore_blocks":ores,
+        "fully_isolated_ore_blocks":len(floating),
+        "examples":floating,
+        "threshold":1,
+        "pass":len(floating)<=1,
+    }
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--jar",type=Path,required=True)
@@ -159,6 +200,7 @@ def main():
         if len(berries)>=200:break
 
     water_walls=deep_water_wall_audit(volume,chunks)
+    remote_void=remote_void_ore_audit(volume)
 
     text=log.read_text(encoding="utf-8",errors="replace")
     chunk_errors=[
@@ -179,11 +221,13 @@ def main():
         "failed_dry_samples":failed_dry,
         "sweet_berry_bush_at_or_below_ocean":berries,
         "deep_water_wall_audit":water_walls,
+        "remote_void_ore_audit":remote_void,
         "chunk_system_errors":chunk_errors[:100],
         "checks":{
             "reported_deep_cave_samples_not_water":len(failed_dry)==0,
             "sweet_berry_bush_only_above_ocean":len(berries)==0,
             "no_isolated_deep_water_walls":water_walls["pass"],
+            "no_mass_floating_ore_after_terrain_loss":remote_void["pass"],
             "no_chunk_system_failure":len(chunk_errors)==0,
         },
     }
@@ -195,6 +239,7 @@ def main():
         "berries_below_ocean":len(berries),
         "deep_water_columns":water_walls["suspicious_deep_water_columns"],
         "max_deep_water_run":water_walls["max_deep_vertical_water_run"],
+        "floating_ores":remote_void["fully_isolated_ore_blocks"],
         "chunk_errors":len(chunk_errors)
     },ensure_ascii=False,sort_keys=True),flush=True)
     require(report["pass"],"user-seed water/flora regression failed; see "+str(target))
