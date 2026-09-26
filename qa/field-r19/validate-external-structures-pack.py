@@ -158,6 +158,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "item replace entity @s saddle",
                 "data remove entity @s equipment.saddle",
                 "tag @s add dnt_jockey_mounted",
+                "data modify entity @s Tags",
             )
             bad=[token for token in forbidden_jockey if token in jockey]
             if bad:
@@ -165,11 +166,36 @@ def audit(pack:Path,spec_path:Path)->dict:
             required_jockey=(
                 "summon minecraft:zombie_nautilus",
                 "ride @s mount @e[type=minecraft:zombie_nautilus",
-                "data modify entity @s Tags append value \"dnt_jockey_mounted\"",
             )
             missing=[token for token in required_jockey if token not in jockey]
             if missing:
                 fail("D&T drowned-jockey controller migration incomplete: "+repr(missing))
+            if len([line for line in jockey.splitlines() if line.strip()]) != 2:
+                fail("D&T drowned-jockey controller must contain exactly summon + ride")
+
+            enchant_path="data/nova_structures/enchantment/jockey/make_drowned_into_jockey.json"
+            if enchant_path not in names:
+                fail("D&T drowned-jockey controller enchantment missing")
+            enchant=read_json(archive,enchant_path)
+            ticks=enchant.get("effects",{}).get("minecraft:tick",[])
+            controller_entries=[
+                entry for entry in ticks
+                if isinstance(entry,dict)
+                and isinstance(entry.get("effect"),dict)
+                and entry["effect"].get("function")=="nova_structures:jockey/make_drowned_into_jockey"
+            ]
+            if len(controller_entries)!=1:
+                fail("D&T drowned-jockey tick controller count differs")
+            expected_requirement={
+                "condition":"minecraft:inverted",
+                "term":{
+                    "condition":"minecraft:entity_properties",
+                    "entity":"this",
+                    "predicate":{"vehicle":{}},
+                },
+            }
+            if controller_entries[0].get("requirements")!=expected_requirement:
+                fail("D&T drowned-jockey one-shot vehicle predicate missing")
 
         imported_external_functions=sorted(
             name for name in names
