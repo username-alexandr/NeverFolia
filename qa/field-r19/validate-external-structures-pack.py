@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import re
 import tempfile
 import zipfile
+import zlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -73,6 +75,16 @@ def read_json(archive:zipfile.ZipFile,name:str)->dict:
     if not isinstance(value,dict):fail("JSON root must be an object: "+name)
     return value
 
+def raw_nbt_payload(payload:bytes,name:str)->bytes:
+    if payload[:2]==b"\x1f\x8b":
+        try:return gzip.decompress(payload)
+        except Exception as exc:fail(f"invalid gzip NBT {name}: {exc}")
+    if len(payload)>=2 and payload[0]==0x78:
+        try:return zlib.decompress(payload)
+        except zlib.error:
+            pass
+    return payload
+
 def collect_run_function_refs(value)->set[str]:
     refs=set()
     def walk(node):
@@ -128,6 +140,25 @@ def audit(pack:Path,spec_path:Path)->dict:
         if radii!=expected_radii:fail("manifest/runtime island radius table drifted from checked-in spec")
         if admission.get("structure_count")!=len(radii):fail("manifest island structure_count mismatch")
         island=set(radii)
+
+        # Final archive must contain only vanilla-compatible D&T StructureTemplate
+        # NBT. These checks are deliberately independent from the builder.
+        dnt_nbt_checked=0
+        for name in sorted(names):
+            if not (name.startswith("data/nova_structures/") and name.endswith(".nbt")):
+                continue
+            raw=raw_nbt_payload(archive.read(name),name)
+            dnt_nbt_checked+=1
+            if b"porting_lib:" in raw:
+                fail("D&T NBT contains PortingLib registry key: "+name)
+            for forbidden in (
+                b"minecraft:item_frame",
+                b"minecraft:glow_item_frame",
+                b"minecraft:painting",
+                b"minecraft:leash_knot",
+            ):
+                if forbidden in raw:
+                    fail("D&T NBT contains block-attached entity: "+name+" -> "+forbidden.decode())
 
         run_function_refs=set()
         for name in names:
@@ -226,6 +257,13 @@ def audit(pack:Path,spec_path:Path)->dict:
         require(isinstance(witch_mob_elements,list) and len(witch_mob_elements)>0,
                 "Better Witch Huts standalone mob compatibility pool is empty")
 
+        pale_pool="data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json"
+        require(pale_pool in names,"D&T pale residence compatibility pool missing")
+        pale_data=read_json(archive,pale_pool)
+        pale_elements=pale_data.get("elements")
+        require(isinstance(pale_elements,list) and len(pale_elements)>0,
+                "D&T pale residence compatibility pool is empty")
+
         structures={}
         sets={}
         for name in names:
@@ -311,6 +349,7 @@ def audit(pack:Path,spec_path:Path)->dict:
                 "source_unused":len(expected),
                 "run_function_refs":len(run_function_refs),
                 "imported_external_functions":len(imported_external_functions),
+                "dnt_nbt_checked":dnt_nbt_checked,
             },
             "source_unused":sorted(expected),
             "representatives":reps,
