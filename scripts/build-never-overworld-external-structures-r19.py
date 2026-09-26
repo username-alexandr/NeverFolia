@@ -314,6 +314,25 @@ def sanitize_repurposed_structure(data: dict, radius: int, structure_id: str) ->
         d["biomes"]=RS_BIOMES[structure_id]
     return d
 
+def ensure_betterwitchhuts_mob_pool(out: dict[str, bytes]) -> None:
+    """Provide the base-pack mob jigsaw target expected by hut templates.
+
+    Better Witch Huts v5 leaves jigsaw blocks targeting betterwitchhuts:mobs,
+    while actual witch/cat population is controlled by structure
+    spawn_overrides. In the standalone NeverOverworld import the base mod pool
+    is absent, which produces runtime spam. A non-empty empty_pool_element
+    resolves the jigsaw target without duplicating or suppressing spawn_overrides.
+    """
+    path="data/betterwitchhuts/worldgen/template_pool/mobs.json"
+    data={
+        "fallback":"minecraft:empty",
+        "elements":[{
+            "element":{"element_type":"minecraft:empty_pool_element"},
+            "weight":1
+        }]
+    }
+    out[path]=(json.dumps(data,indent=2,ensure_ascii=False)+"\n").encode()
+
 def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
     for n,b in list(files.items()):
         m=re.match(r"data/([^/]+)/rs_pool_additions/(.+)\.json$", n)
@@ -590,7 +609,19 @@ def filter_pack(key: str, files: dict[str, bytes]):
             continue
         out[n]=b
 
+    if key=="witch":
+        ensure_betterwitchhuts_mob_pool(out)
+
     # Final compatibility guards for the vanilla-only Folia runtime.
+    if key=="witch":
+        mob_pool="data/betterwitchhuts/worldgen/template_pool/mobs.json"
+        if mob_pool not in out:
+            fail("Better Witch Huts standalone mob compatibility pool missing")
+        mob_data=read_json(out[mob_pool],mob_pool)
+        mob_elements=mob_data.get("elements")
+        if not isinstance(mob_elements,list) or not mob_elements:
+            fail("Better Witch Huts mob compatibility pool must be non-empty")
+
     if key in {"witch","monuments"}:
         for n in out:
             if "/tags/worldgen/biome/" in n and n.startswith("data/repurposed_structures/"):
