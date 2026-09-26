@@ -189,17 +189,17 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                     // expensive generator.getBaseHeight() noise evaluations
                     // while registering a large synthetic island.
                     int floorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
-                    if (floorY >= MIN_DRY_SURFACE_Y) {
+                    if (floorY >= MIN_DRY_SURFACE_Y) {{
                         // A placed structure can raise OCEAN_FLOOR_WG. Recover
                         // the natural submerged floor by scanning only the
                         // owner column below the raised ocean plane.
                         floorY = MIN_DRY_SURFACE_Y - 1;
-                        while (floorY > chunk.getMinY() + 1) {
+                        while (floorY > chunk.getMinY() + 1) {{
                             pos.set(baseX + lx, floorY, baseZ + lz);
                             if (!islandReplaceable(chunk.getBlockState(pos))) break;
                             --floorY;
-                        }
-                    }
+                        }}
+                    }}
                     final int fromY = Math.max(floorY + 1, chunk.getMinY() + 1);
                     if (fromY > fillTop) continue;
                     for (int y = fromY; y <= fillTop; ++y) {{
