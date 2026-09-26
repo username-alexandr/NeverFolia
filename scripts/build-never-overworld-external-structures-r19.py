@@ -183,7 +183,7 @@ def _nbt_parse(data:bytes):
     # NBT. D&T uses both gzip and zlib payloads across revisions.
     compression="raw"
     raw=data
-    if data[:2]==b"\\x1f\\x8b":
+    if data[:2]==b"\x1f\x8b":
         compression="gzip"
         raw=gzip.decompress(data)
     elif len(data)>=2 and data[0]==0x78:
@@ -226,7 +226,7 @@ def _nbt_write_payload(buf:io.BytesIO,t:int,value)->None:
             buf.write(struct.pack(">B",child))
             buf.write(_nbt_string_bytes(name))
             _nbt_write_payload(buf,child,item)
-        buf.write(b"\\x00")
+        buf.write(b"\x00")
         return
     if t==11:
         buf.write(struct.pack(">i",len(value)))
@@ -240,7 +240,7 @@ def _nbt_write_payload(buf:io.BytesIO,t:int,value)->None:
 
 def _nbt_encode(compression:str,root_name:str,root:dict)->bytes:
     buf=io.BytesIO()
-    buf.write(b"\\x0a")
+    buf.write(b"\x0a")
     buf.write(_nbt_string_bytes(root_name))
     _nbt_write_payload(buf,10,root)
     raw=buf.getvalue()
@@ -894,7 +894,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
         ensure_dat_compat_pools(out)
         for n,payload in out.items():
             if n.endswith(".nbt") and n.startswith("data/nova_structures/"):
-                raw=gzip.decompress(payload) if payload[:2]==b"\\x1f\\x8b" else payload
+                raw=gzip.decompress(payload) if payload[:2]==b"\x1f\x8b" else payload
                 if b"porting_lib:" in raw:
                     fail("D&T NBT still contains PortingLib registry key: "+n)
         imported_runtime={
