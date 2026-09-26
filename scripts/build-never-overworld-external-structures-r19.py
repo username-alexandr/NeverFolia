@@ -263,8 +263,21 @@ def _sanitize_nbt_tag(t:int,value,parent_key:str|None=None):
         return (9,(child,[_sanitize_nbt_tag(child,item,parent_key)[1] for item in items]))
     return (t,value)
 
-def sanitize_dat_structure_nbt(payload:bytes)->bytes:
-    compressed,root_name,root=_nbt_parse(payload)
+def sanitize_dat_structure_nbt(payload:bytes, where:str="<unknown>")->bytes:
+    # Some D&T resources use .nbt as an opaque payload rather than a vanilla
+    # StructureTemplate root compound. Only structured entity templates need
+    # rewriting. Preserve opaque payloads unless they actually carry the
+    # foreign PortingLib registry keys we are trying to remove.
+    try:
+        compressed,root_name,root=_nbt_parse(payload)
+    except SystemExit:
+        raw=payload
+        if payload[:2]==b"\x1f\x8b":
+            try: raw=gzip.decompress(payload)
+            except Exception: raw=payload
+        if b"porting_lib:" in raw:
+            fail("unsupported D&T NBT containing PortingLib registry key: "+where)
+        return payload
     root=_sanitize_nbt_tag(10,root)[1]
 
     entities=root.get("entities")
@@ -754,7 +767,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
     out={}
     for n,b in files.items():
         if key=="dat" and n.endswith(".nbt"):
-            out[n]=sanitize_dat_structure_nbt(b)
+            out[n]=sanitize_dat_structure_nbt(b,n)
             continue
         if key=="dat" and n.endswith(".mcfunction"):
             rid=dat_runtime_function_id(n)
