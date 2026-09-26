@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, copy, hashlib, io, json, re, urllib.request, zipfile
+import argparse, copy, gzip, hashlib, io, json, re, struct, urllib.request, zipfile
 from pathlib import Path
 
 TARGET_FORMAT = 107
@@ -104,6 +104,204 @@ def flatten_zip(payload: bytes) -> dict[str, bytes]:
                 if n.startswith(prefix + "data/") and not n.endswith("/"):
                     out[n[len(prefix):]] = z.read(n)
     return out
+
+
+# --- D&T/Nova structure-template compatibility ------------------------------
+# The source datapack carries Fabric/PortingLib entity attributes in some
+# structure NBT. Vanilla Folia cannot resolve those registry keys and discards
+# the entity payload. Keep vanilla entities/custom tags/equipment, but strip
+# only foreign attributes. Hanging decoration entities are cosmetic and are
+# removed because copied templates can attach them to blocks outside the final
+# transformed piece, producing invalid-position spam.
+
+_NBT_HANGING_ENTITY_IDS = frozenset({
+    "minecraft:item_frame",
+    "minecraft:glow_item_frame",
+    "minecraft:painting",
+    "minecraft:leash_knot",
+})
+_DNT_COMPAT_EMPTY_POOLS = (
+    "nova_structures:pale_residence/decor_inside",
+)
+
+class _NBTReader:
+    def __init__(self, data: bytes):
+        self.data=data
+        self.pos=0
+
+    def take(self,n:int)->bytes:
+        if n<0 or self.pos+n>len(self.data):
+            fail("truncated D&T structure NBT")
+        out=self.data[self.pos:self.pos+n]
+        self.pos+=n
+        return out
+
+    def unpack(self,fmt:str):
+        return struct.unpack(">"+fmt,self.take(struct.calcsize(">"+fmt)))[0]
+
+    def string(self)->str:
+        n=self.unpack("H")
+        return self.take(n).decode("utf-8")
+
+def _nbt_payload(r:_NBTReader,t:int):
+    if t==0: return None
+    if t==1: return r.unpack("b")
+    if t==2: return r.unpack("h")
+    if t==3: return r.unpack("i")
+    if t==4: return r.unpack("q")
+    if t==5: return r.unpack("f")
+    if t==6: return r.unpack("d")
+    if t==7:
+        n=r.unpack("i")
+        if n<0: fail("negative NBT byte-array length")
+        return r.take(n)
+    if t==8: return r.string()
+    if t==9:
+        child=r.unpack("B")
+        n=r.unpack("i")
+        if n<0: fail("negative NBT list length")
+        return (child,[_nbt_payload(r,child) for _ in range(n)])
+    if t==10:
+        out={}
+        while True:
+            child=r.unpack("B")
+            if child==0: return out
+            name=r.string()
+            out[name]=(child,_nbt_payload(r,child))
+    if t==11:
+        n=r.unpack("i")
+        if n<0: fail("negative NBT int-array length")
+        return [r.unpack("i") for _ in range(n)]
+    if t==12:
+        n=r.unpack("i")
+        if n<0: fail("negative NBT long-array length")
+        return [r.unpack("q") for _ in range(n)]
+    fail("unknown NBT tag type "+str(t))
+
+def _nbt_parse(data:bytes):
+    compressed=data[:2]==b"\\x1f\\x8b"
+    raw=gzip.decompress(data) if compressed else data
+    r=_NBTReader(raw)
+    root_type=r.unpack("B")
+    if root_type!=10: fail("D&T structure NBT root is not TAG_Compound")
+    root_name=r.string()
+    root=_nbt_payload(r,10)
+    if r.pos!=len(raw): fail("trailing bytes in D&T structure NBT")
+    return compressed,root_name,root
+
+def _nbt_string_bytes(value:str)->bytes:
+    raw=value.encode("utf-8")
+    if len(raw)>65535: fail("NBT string too long")
+    return struct.pack(">H",len(raw))+raw
+
+def _nbt_write_payload(buf:io.BytesIO,t:int,value)->None:
+    if t==1: buf.write(struct.pack(">b",value)); return
+    if t==2: buf.write(struct.pack(">h",value)); return
+    if t==3: buf.write(struct.pack(">i",value)); return
+    if t==4: buf.write(struct.pack(">q",value)); return
+    if t==5: buf.write(struct.pack(">f",value)); return
+    if t==6: buf.write(struct.pack(">d",value)); return
+    if t==7:
+        buf.write(struct.pack(">i",len(value)));buf.write(value);return
+    if t==8:
+        buf.write(_nbt_string_bytes(value));return
+    if t==9:
+        child,items=value
+        buf.write(struct.pack(">Bi",child,len(items)))
+        for item in items: _nbt_write_payload(buf,child,item)
+        return
+    if t==10:
+        for name,(child,item) in value.items():
+            buf.write(struct.pack(">B",child))
+            buf.write(_nbt_string_bytes(name))
+            _nbt_write_payload(buf,child,item)
+        buf.write(b"\\x00")
+        return
+    if t==11:
+        buf.write(struct.pack(">i",len(value)))
+        for item in value: buf.write(struct.pack(">i",item))
+        return
+    if t==12:
+        buf.write(struct.pack(">i",len(value)))
+        for item in value: buf.write(struct.pack(">q",item))
+        return
+    fail("cannot write NBT tag type "+str(t))
+
+def _nbt_encode(compressed:bool,root_name:str,root:dict)->bytes:
+    buf=io.BytesIO()
+    buf.write(b"\\x0a")
+    buf.write(_nbt_string_bytes(root_name))
+    _nbt_write_payload(buf,10,root)
+    raw=buf.getvalue()
+    return gzip.compress(raw,compresslevel=9,mtime=0) if compressed else raw
+
+def _compound_string(comp:dict,key:str)->str|None:
+    value=comp.get(key)
+    if isinstance(value,tuple) and len(value)==2 and value[0]==8 and isinstance(value[1],str):
+        return value[1]
+    return None
+
+def _sanitize_nbt_tag(t:int,value,parent_key:str|None=None):
+    if t==10:
+        out={}
+        for key,(child,item) in value.items():
+            if key.lower()=="attributes" and child==9:
+                list_type,items=item
+                if list_type==10:
+                    cleaned=[]
+                    for entry in items:
+                        rid=_compound_string(entry,"id") if isinstance(entry,dict) else None
+                        if isinstance(rid,str) and rid.startswith("porting_lib:"):
+                            continue
+                        cleaned.append(_sanitize_nbt_tag(10,entry,key)[1])
+                    out[key]=(9,(10,cleaned))
+                    continue
+            out[key]=_sanitize_nbt_tag(child,item,key)
+        return (10,out)
+    if t==9:
+        child,items=value
+        return (9,(child,[_sanitize_nbt_tag(child,item,parent_key)[1] for item in items]))
+    return (t,value)
+
+def sanitize_dat_structure_nbt(payload:bytes)->bytes:
+    compressed,root_name,root=_nbt_parse(payload)
+    root=_sanitize_nbt_tag(10,root)[1]
+
+    entities=root.get("entities")
+    if isinstance(entities,tuple) and entities[0]==9:
+        child,items=entities[1]
+        if child==10:
+            kept=[]
+            for entry in items:
+                if not isinstance(entry,dict):
+                    kept.append(entry);continue
+                nbt=entry.get("nbt")
+                entity_id=None
+                if isinstance(nbt,tuple) and nbt[0]==10:
+                    entity_id=_compound_string(nbt[1],"id")
+                if entity_id in _NBT_HANGING_ENTITY_IDS:
+                    continue
+                kept.append(entry)
+            root["entities"]=(9,(10,kept))
+
+    encoded=_nbt_encode(compressed,root_name,root)
+    if b"porting_lib:" in (gzip.decompress(encoded) if encoded[:2]==b"\\x1f\\x8b" else encoded):
+        fail("PortingLib registry key survived D&T NBT sanitizer")
+    return encoded
+
+def ensure_dat_compat_pools(out:dict[str,bytes])->None:
+    for rid in _DNT_COMPAT_EMPTY_POOLS:
+        ns,path=rid.split(":",1)
+        name=f"data/{ns}/worldgen/template_pool/{path}.json"
+        if name in out:
+            continue
+        out[name]=(json.dumps({
+            "fallback":"minecraft:empty",
+            "elements":[{
+                "element":{"element_type":"minecraft:empty_pool_element"},
+                "weight":1,
+            }],
+        },indent=2,ensure_ascii=False)+"\\n").encode()
 
 def resource_id(path: str, family: str) -> str | None:
     m = re.match(r"data/([^/]+)/" + re.escape(family) + r"/(.+)\.json$", path)
@@ -555,6 +753,9 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
+        if key=="dat" and n.endswith(".nbt"):
+            out[n]=sanitize_dat_structure_nbt(b)
+            continue
         if key=="dat" and n.endswith(".mcfunction"):
             rid=dat_runtime_function_id(n)
             if rid in DNT_SAFE_RUNTIME_FUNCTIONS:
@@ -644,6 +845,12 @@ def filter_pack(key: str, files: dict[str, bytes]):
         for n in required:
             if n not in out: fail("Dungeons & Taverns Overworld dependency missing: "+n)
         sanitize_dat_enchantment_tags(out)
+        ensure_dat_compat_pools(out)
+        for n,payload in out.items():
+            if n.endswith(".nbt") and n.startswith("data/nova_structures/"):
+                raw=gzip.decompress(payload) if payload[:2]==b"\\x1f\\x8b" else payload
+                if b"porting_lib:" in raw:
+                    fail("D&T NBT still contains PortingLib registry key: "+n)
         imported_runtime={
             rid for n in out
             if (rid:=dat_runtime_function_id(n))
