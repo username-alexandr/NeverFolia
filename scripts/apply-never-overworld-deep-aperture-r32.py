@@ -15,7 +15,7 @@ CONSTANT_ANCHOR="    private static final int FLOOD_LEVEL = 128;\n"
 CONSTANTS="""    private static final int DEEP_FLOW_MAX_Y = 96;
     private static final int MIN_DEEP_APERTURE = 6;
 """
-METHOD_ANCHOR="    private static int fillVerifiedMask(\n"
+METHOD_ANCHOR="    private static int fillVerifiedMask("
 POS_ANCHOR="                    pos.set(baseX + x, y, baseZ + z);\n"
 GATE="""                    if (y <= DEEP_FLOW_MAX_Y
                         && !hydraulicOpenAir(chunk, x, y, z, baseX, baseZ)) {
