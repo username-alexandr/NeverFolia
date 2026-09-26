@@ -2,8 +2,8 @@
 """FIELD-R21: Moonrise runtime cache-aware flood seam reconciliation.
 
 Runs after FIELD-R20. Folia 26.2 bypasses vanilla ChunkStatusTasks.light() and
-executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES, carries
-Moonrise's already-built native neighbour StaticCache2D into ChunkLightTask,
+executes LIGHT through Moonrise ChunkLightTask. R21 publishes exact carved-ocean boundary connectivity at FEATURES, requires only the already-existing radius-1 LIGHT neighbours to reach FEATURES, and carries
+Moonrise's native neighbour StaticCache2D into ChunkLightTask,
 and reconciles the owner chunk after the existing owner flood. Because reconciliation
 can create new water after the earlier FEATURES ecology passes, R13/R15 ecology
 cleanup runs once more on the same owner chunk before Starlight reads section
@@ -35,6 +35,14 @@ FEATURE_PUBLISH_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
     "publishFeatureBoundarySeeds(this.world, newChunk);"
 )
+
+LIGHT_REQUIRED_OLD = """                final ChunkStatus requiredNeighbourStatus = ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
+"""
+LIGHT_REQUIRED_NEW = """                final ChunkStatus requiredNeighbourStatus =
+                        toStatus == ChunkStatus.LIGHT && radius == 1
+                                ? ChunkStatus.FEATURES
+                                : ((ChunkSystemChunkStep)(Object)chunkStep).moonrise$getRequiredStatusAtRadius(radius);
+"""
 
 REWEATHER_METHOD_ANCHOR = "    private static void weatherSubmergedSurface(\n"
 REWEATHER_METHOD = """    /**
@@ -127,10 +135,15 @@ def patch_generic(text: str) -> str:
 def patch_scheduler(text: str) -> str:
     old_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
     new_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
-    if new_ctor in text:
-        return text
-    require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
-    return text.replace(old_ctor, new_ctor, 1)
+    if new_ctor not in text:
+        require(text.count(old_ctor) == 1, "Moonrise scheduler LIGHT constructor anchor missing")
+        text = text.replace(old_ctor, new_ctor, 1)
+
+    if LIGHT_REQUIRED_NEW not in text:
+        require(text.count(LIGHT_REQUIRED_OLD) == 1,
+                "Moonrise scheduler required-neighbour anchor missing/drifted")
+        text = text.replace(LIGHT_REQUIRED_OLD, LIGHT_REQUIRED_NEW, 1)
+    return text
 
 def verify(folia: Path) -> None:
     tasks = (folia / TASKS).read_text(encoding="utf-8")
@@ -175,8 +188,11 @@ def verify(folia: Path) -> None:
     require("Math.max(2, vanillaNeighbourReadRadius)" not in scheduler
             and "Math.max(3, vanillaNeighbourReadRadius)" not in scheduler,
             "NeverFolia must not expand Moonrise LIGHT neighbour radius")
-    require("toStatus == ChunkStatus.LIGHT && radius > 0" not in scheduler,
-            "NeverFolia must not strengthen LIGHT neighbour statuses")
+    require(LIGHT_REQUIRED_NEW in scheduler,
+            "NeverFolia LIGHT radius-1 neighbours must reach FEATURES before owner LIGHT")
+    require("toStatus == ChunkStatus.LIGHT && radius > 1" not in scheduler
+            and "toStatus == ChunkStatus.LIGHT && radius > 0" not in scheduler,
+            "NeverFolia must strengthen only the existing radius-1 LIGHT ring")
     require(FEATURE_PUBLISH_CALL in generic,
             "Moonrise FEATURES handoff hook missing")
     require(
