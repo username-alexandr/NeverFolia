@@ -98,7 +98,7 @@ def verify_text(text:str)->None:
 def self_test()->None:
     fixture="""class NeverOverworldFlood {
     private static final int FLOOD_LEVEL = 128;
-    void fillVerifiedMask(ChunkAccess chunk, BlockPos.MutableBlockPos pos, BlockState water, int y, int x, int z, int baseX, int baseZ, boolean rawFullWrite) {
+    private static int fillVerifiedMask(ChunkAccess chunk, BlockPos.MutableBlockPos pos, BlockState water, int y, int x, int z, int baseX, int baseZ, boolean rawFullWrite) {
                     pos.set(baseX + x, y, baseZ + z);
                     if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
 
@@ -108,6 +108,7 @@ def self_test()->None:
                     } else {
                         chunk.setBlockState(pos, water, 0);
                     }
+        return 0;
     }
     private static int encode(final int localX, final int y, final int localZ, final int minY) {
         return 0;
