@@ -36,6 +36,11 @@ DNT_SAFE_RUNTIME_FUNCTIONS={
     "nova_structures:ghasted",
     "nova_structures:gravity_particles",
     "nova_structures:hydro_veil_heal",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghast_boss_summon_child",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
 }
 REPRESENTATIVES={
     "surface_land":[
@@ -145,20 +150,23 @@ def audit(pack:Path,spec_path:Path)->dict:
         # NBT. These checks are deliberately independent from the builder.
         dnt_nbt_checked=0
         for name in sorted(names):
-            if not (name.startswith("data/nova_structures/") and name.endswith(".nbt")):
+            if not (name.startswith("data/") and name.endswith(".nbt")):
                 continue
             raw=raw_nbt_payload(archive.read(name),name)
             dnt_nbt_checked+=1
             if b"porting_lib:" in raw:
                 fail("D&T NBT contains PortingLib registry key: "+name)
-            for forbidden in (
-                b"minecraft:item_frame",
-                b"minecraft:glow_item_frame",
-                b"minecraft:painting",
-                b"minecraft:leash_knot",
-            ):
-                if forbidden in raw:
-                    fail("D&T NBT contains block-attached entity: "+name+" -> "+forbidden.decode())
+        if manifest.get("required_engine_patch") != "FIELD-R37":
+            fail("missing R37 attachment/foreign-NBT engine contract")
+        witch = read_json(archive, "data/betterwitchhuts/worldgen/template_pool/mobs.json")
+        expected_mobs = {"betterwitchhuts:neverfolia_mobs/witch", "betterwitchhuts:neverfolia_mobs/cat"}
+        if {e.get("element", {}).get("location") for e in witch.get("elements", [])} != expected_mobs:
+            fail("witch mob pool must resolve real entity templates, not an empty placeholder")
+        for location in expected_mobs:
+            namespace, path = location.split(":", 1)
+            template = f"data/{namespace}/structure/{path}.nbt"
+            if template not in names:
+                fail("missing witch/cat entity template: " + template)
 
         run_function_refs=set()
         for name in names:
@@ -372,6 +380,7 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
     radii=dict(policy)
     manifest={
         "profile":PROFILE,"minecraft_namespace_overrides_imported":False,
+        "required_engine_patch":"FIELD-R37",
         "source_unused_structures":sorted(unused),
         "island_admission":{
             "min_surface_y":129,"structure_count":134,
@@ -380,6 +389,37 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
     }
     with zipfile.ZipFile(path,"w",zipfile.ZIP_DEFLATED) as z:
         z.writestr(MANIFEST,json.dumps(manifest))
+        # Validator fixtures only, not a runnable datapack. Exercise the complete
+        # function graph, rather than bypassing it for a structures-only fixture.
+        for rid in DNT_SAFE_RUNTIME_FUNCTIONS:
+            ns, name = rid.split(":", 1)
+            text = "# validator fixture\n"
+            if name == "jockey/make_drowned_into_jockey":
+                text = (
+                    'execute at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:["dnt_jockey_mount_tmp"]}\n'
+                    'execute at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n'
+                )
+            z.writestr(f"data/{ns}/function/{name}.mcfunction", text)
+        z.writestr("data/nova_structures/enchantment/jockey/make_drowned_into_jockey.json", json.dumps({
+            "effects":{"minecraft:tick":[{
+                "effect":{"type":"minecraft:run_function","function":"nova_structures:jockey/make_drowned_into_jockey"},
+                "requirements":{"condition":"minecraft:inverted","term":{"condition":"minecraft:entity_properties","entity":"this","predicate":{"vehicle":{}}}}
+            }]}
+        }))
+        z.writestr("r37-qa-function-graph.json",json.dumps({"refs":[
+            {"type":"minecraft:run_function","function":rid} for rid in sorted(DNT_SAFE_RUNTIME_FUNCTIONS)
+        ]}))
+        z.writestr("data/betterwitchhuts/worldgen/template_pool/mobs.json", json.dumps({
+            "fallback":"minecraft:empty","elements":[{"weight":1,"element":{
+                "element_type":"minecraft:single_pool_element","location":"betterwitchhuts:neverfolia_mobs/"+mob,
+                "projection":"rigid","processors":"minecraft:empty"
+            }} for mob in ("witch","cat")]
+        }))
+        for mob in ("witch","cat"):
+            z.writestr("data/betterwitchhuts/structure/neverfolia_mobs/"+mob+".nbt",b"\x0a\x00\x00\x00")
+        z.writestr("data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json",json.dumps({
+            "fallback":"minecraft:empty","elements":[{"weight":1,"element":{"element_type":"minecraft:empty_pool_element"}}]
+        }))
         for sid in island:
             ns,name=sid.split(":",1)
             z.writestr(f"data/{ns}/worldgen/structure/{name}.json",json.dumps({

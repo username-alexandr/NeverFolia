@@ -78,6 +78,7 @@ def main():
     p.add_argument("--nether",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--source-sha",required=True)
+    p.add_argument("--qa-plugin",type=Path)
     a=p.parse_args()
 
     root=Path(__file__).resolve().parents[2]
@@ -93,6 +94,9 @@ def main():
     packs=work/"world/datapacks";packs.mkdir(parents=True)
     shutil.copyfile(a.overworld,packs/"NeverOverworld.zip")
     shutil.copyfile(a.nether,packs/"NeverNether.zip")
+    if a.qa_plugin:
+        (work/"plugins").mkdir()
+        shutil.copyfile(a.qa_plugin,work/"plugins/R37DungeonQa.jar")
     (work/"eula.txt").write_text("eula=true\n",encoding="utf-8")
     (work/"server.properties").write_text(
         f"level-name=world\nlevel-seed={SEED}\n"
@@ -108,6 +112,12 @@ def main():
     normal=False
     try:
         server.wait(r"Done \(",timeout=300)
+        if a.qa_plugin:
+            server.wait(r"R37 DUNGEON QA (?:PASS|FAIL)",timeout=120)
+            evidence=work/"plugins/R37DungeonQa/result.json"
+            require(evidence.is_file(),"live controller QA evidence missing")
+            shutil.copyfile(evidence,out/"r37-live-controller-qa.json")
+            require(json.loads(evidence.read_text()).get("pass") is True,"live controller QA failed")
         server.disable_random_ticks()
         server.load_dimension(chunks,"minecraft:overworld",dwell=6,serial_generation=False)
         code=server.stop();require(code==0,"server stop failed")
@@ -123,7 +133,7 @@ def main():
     failed_dry=[]
     for x,y,z in DRY_SAMPLES:
         state=state_name(volume.at(x,y,z))
-        row={"pos":[x,y,z],"state":state,"dry":state!="minecraft:water"}
+        row={"pos":[x,y,z],"state":state,"dry":state in {"minecraft:air", "minecraft:cave_air", "minecraft:void_air"}}
         dry_rows.append(row)
         if not row["dry"]:failed_dry.append(row)
 
@@ -146,7 +156,8 @@ def main():
     }
     report={
         "schema":1,
-        "profile":"FIELD-R36-WATER-SQUARE-SEED-1",
+        "profile":"FIELD-R36-WATER-SQUARE-SEED-2",
+        "sample_limitation":"Camera coordinates, not a vanilla aquifer reference; missing/solid cells fail.",
         "source_sha":a.source_sha,
         "seed":SEED,
         "jar_sha256":sha(a.jar),

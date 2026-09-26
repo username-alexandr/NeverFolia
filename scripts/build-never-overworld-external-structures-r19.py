@@ -49,6 +49,11 @@ DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
     "nova_structures:ghasted",
     "nova_structures:gravity_particles",
     "nova_structures:hydro_veil_heal",
+    "nova_structures:ghast_boss_fireball_possess",
+    "nova_structures:ghast_boss_summon_child",
+    "nova_structures:ghasted_fireball_1",
+    "nova_structures:ghasted_fireball_2",
+    "nova_structures:ghasted_fireball_3",
 })
 
 SURFACE_PROJECTIONS = {"WORLD_SURFACE_WG", "WORLD_SURFACE", "MOTION_BLOCKING_NO_LEAVES"}
@@ -265,7 +270,7 @@ def _sanitize_nbt_tag(t:int,value,parent_key:str|None=None):
                 if list_type==10:
                     cleaned=[]
                     for entry in items:
-                        rid=_compound_string(entry,"id") if isinstance(entry,dict) else None
+                        rid=(_compound_string(entry,"id") or _compound_string(entry,"Name")) if isinstance(entry,dict) else None
                         if isinstance(rid,str) and rid.startswith("porting_lib:"):
                             continue
                         cleaned.append(_sanitize_nbt_tag(10,entry,key)[1])
@@ -278,60 +283,27 @@ def _sanitize_nbt_tag(t:int,value,parent_key:str|None=None):
         return (9,(child,[_sanitize_nbt_tag(child,item,parent_key)[1] for item in items]))
     return (t,value)
 
-def sanitize_dat_structure_nbt(payload:bytes, where:str="<unknown>")->bytes:
-    # Some D&T resources use .nbt as an opaque payload rather than a vanilla
-    # StructureTemplate root compound. Only structured entity templates need
-    # rewriting. Preserve opaque payloads unless they actually carry the
-    # foreign PortingLib registry keys we are trying to remove.
-    try:
-        compression,root_name,root=_nbt_parse(payload)
-    except SystemExit:
-        raw=payload
-        if payload[:2]==b"\x1f\x8b":
-            try: raw=gzip.decompress(payload)
-            except Exception: raw=payload
-        elif len(payload)>=2 and payload[0]==0x78:
-            try: raw=zlib.decompress(payload)
-            except Exception: raw=payload
-        if b"porting_lib:" in raw:
-            fail("unsupported D&T NBT containing PortingLib registry key: "+where)
+def sanitize_dat_structure_nbt(payload: bytes, where: str = "<unknown>") -> bytes:
+    """R37: remove foreign attributes in ALL packs, preserving other NBT.
+
+    Frame/painting block_pos is relocated by the matching R37 engine before
+    entity decoding. Deleting every decoration is no longer a compatibility fix.
+    Unchanged templates are returned byte-for-byte, including compression.
+    """
+    raw = payload
+    if payload[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(payload)
+    elif len(payload) >= 2 and payload[0] == 0x78:
+        try: raw = zlib.decompress(payload)
+        except zlib.error: pass
+    if b"porting_lib:" not in raw:
         return payload
-    root=_sanitize_nbt_tag(10,root)[1]
-
-    entities=root.get("entities")
-    if isinstance(entities,tuple) and entities[0]==9:
-        child,items=entities[1]
-        if child==10:
-            kept=[]
-            for entry in items:
-                if not isinstance(entry,dict):
-                    kept.append(entry);continue
-                nbt=entry.get("nbt")
-                entity_id=None
-                if isinstance(nbt,tuple) and nbt[0]==10:
-                    entity_id=_compound_string(nbt[1],"id")
-                if entity_id in _NBT_HANGING_ENTITY_IDS:
-                    continue
-                kept.append(entry)
-            root["entities"]=(9,(10,kept))
-
-    encoded=_nbt_encode(compression,root_name,root)
-    if compression=="gzip":
-        raw_encoded=gzip.decompress(encoded)
-    elif compression=="zlib":
-        raw_encoded=zlib.decompress(encoded)
-    else:
-        raw_encoded=encoded
-    if b"porting_lib:" in raw_encoded:
-        fail("PortingLib registry key survived D&T NBT sanitizer: "+where)
-    for forbidden in (
-        b"minecraft:item_frame",
-        b"minecraft:glow_item_frame",
-        b"minecraft:painting",
-        b"minecraft:leash_knot",
-    ):
-        if forbidden in raw_encoded:
-            fail("block-attached entity survived D&T NBT sanitizer: "+where+" -> "+forbidden.decode())
+    compression, root_name, root = _nbt_parse(payload)
+    cleaned = _sanitize_nbt_tag(10, root)[1]
+    encoded = _nbt_encode(compression, root_name, cleaned)
+    check = gzip.decompress(encoded) if compression == "gzip" else zlib.decompress(encoded) if compression == "zlib" else encoded
+    if b"porting_lib:" in check:
+        fail("unsupported PortingLib dependency outside entity attributes: " + where)
     return encoded
 
 def ensure_dat_compat_pools(out:dict[str,bytes])->None:
@@ -559,23 +531,49 @@ def sanitize_repurposed_structure(data: dict, radius: int, structure_id: str) ->
     return d
 
 def ensure_betterwitchhuts_mob_pool(out: dict[str, bytes]) -> None:
-    """Provide the base-pack mob jigsaw target expected by hut templates.
+    """R37: real witch/cat entity pieces for the source hut's two connectors.
 
-    Better Witch Huts v5 leaves jigsaw blocks targeting betterwitchhuts:mobs,
-    while actual witch/cat population is controlled by structure
-    spawn_overrides. In the standalone NeverOverworld import the base mod pool
-    is absent, which produces runtime spam. A non-empty empty_pool_element
-    resolves the jigsaw target without duplicating or suppressing spawn_overrides.
+    Source huts have up_north/up_west mob markers and target names :witch/:cat.
+    The child connector points down; normal jigsaw rotation aligns its top axis.
+    Only the two small child templates are new; all 18 huts stay byte-identical.
+    spawn_overrides remains the source's natural respawn policy, separate from
+    these one-time initial structure occupants.
     """
-    path="data/betterwitchhuts/worldgen/template_pool/mobs.json"
-    data={
-        "fallback":"minecraft:empty",
-        "elements":[{
-            "element":{"element_type":"minecraft:empty_pool_element"},
-            "weight":1
-        }]
-    }
-    out[path]=(json.dumps(data,indent=2,ensure_ascii=False)+"\n").encode()
+    elements = []
+    for mob in ("witch", "cat"):
+        location = "betterwitchhuts:neverfolia_mobs/" + mob
+        root = {
+            "DataVersion": (3, 2975),  # exact original hut template version
+            "size": (9, (3, [1, 2, 1])),
+            "palette": (9, (10, [{
+                "Name": (8, "minecraft:jigsaw"),
+                "Properties": (10, {"orientation": (8, "down_north")}),
+            }])),
+            "blocks": (9, (10, [{
+                "pos": (9, (3, [0, 0, 0])), "state": (3, 0),
+                "nbt": (10, {
+                    "id": (8, "minecraft:jigsaw"),
+                    "name": (8, "betterwitchhuts:" + mob),
+                    "target": (8, "minecraft:empty"),
+                    "pool": (8, "minecraft:empty"),
+                    "joint": (8, "aligned"),
+                    "final_state": (8, "minecraft:air"),
+                }),
+            }])),
+            "entities": (9, (10, [{
+                "pos": (9, (6, [0.5, 0.0, 0.5])),
+                "blockPos": (9, (3, [0, 0, 0])),
+                "nbt": (10, {"id": (8, "minecraft:" + mob), "PersistenceRequired": (1, 1)}),
+            }])),
+        }
+        out["data/betterwitchhuts/structure/neverfolia_mobs/" + mob + ".nbt"] = _nbt_encode("gzip", "", root)
+        elements.append({"weight": 1, "element": {
+            "element_type": "minecraft:single_pool_element", "location": location,
+            "processors": "minecraft:empty", "projection": "rigid",
+        }})
+    out["data/betterwitchhuts/worldgen/template_pool/mobs.json"] = (
+        json.dumps({"fallback": "minecraft:empty", "elements": elements}, indent=2) + "\n"
+    ).encode()
 
 def merge_rs_pool_additions(files: dict[str, bytes]) -> None:
     for n,b in list(files.items()):
@@ -616,8 +614,24 @@ def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
             "execute at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:[\"dnt_jockey_mount_tmp\"]}\n"
             "execute at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n"
         )
-    if resource_id=="nova_structures:hydro_veil_heal":
-        text="effect give @s minecraft:regeneration 1 6 true\n"
+    r37_native_functions = {
+        "hydro_veil_heal", "ghast_boss_fireball_possess", "ghast_boss_summon_child",
+        "ghasted_fireball_1", "ghasted_fireball_2", "ghasted_fireball_3",
+    }
+    name = resource_id.removeprefix("nova_structures:")
+    if name in r37_native_functions:
+        # Reuse the already implemented finite, owning-entity Nether bridge.
+        # Reject source drift instead of adapting arbitrary external commands.
+        import importlib.util
+        bridge_path = Path(__file__).with_name("nevernether_dnt_r6.py")
+        module_spec = importlib.util.spec_from_file_location("neveroverworld_r37_dnt", bridge_path)
+        bridge = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(bridge)
+        profile = json.loads(bridge.PROFILE.read_text())
+        path = "data/nova_structures/function/" + name + ".mcfunction"
+        if hashlib.sha256(payload).hexdigest() != profile["contract_hashes"].get(path):
+            fail("R37 D&T native function checksum mismatch: " + path)
+        text = bridge.transform_function(name, text)
     return text.encode("utf-8")
 
 def strip_dat_run_function_effects(value):
@@ -664,6 +678,10 @@ def sanitize_dat_enchantment(data: dict, resource_id: str | None = None) -> dict
     out=strip_dat_run_function_effects(copy.deepcopy(data))
     if not isinstance(out,dict):
         fail("D&T enchantment sanitizer removed JSON root")
+    if resource_id == "nova_structures:boss_nether":
+        import runpy
+        bridge = runpy.run_path(str(Path(__file__).with_name("nevernether_dnt_r6.py")))
+        out = bridge["local_minion_limit"](out)
     if resource_id=="nova_structures:jockey/make_drowned_into_jockey":
         effects=out.get("effects")
         ticks=effects.get("minecraft:tick") if isinstance(effects,dict) else None
@@ -686,7 +704,7 @@ def sanitize_dat_enchantment(data: dict, resource_id: str | None = None) -> dict
     if isinstance(effects,dict):
         out["effects"]={
             key:value for key,value in effects.items()
-            if value not in (None, [], {})
+            if value not in (None, [])
         }
         if not out["effects"]:
             out.pop("effects",None)
@@ -799,7 +817,7 @@ def filter_pack(key: str, files: dict[str, bytes]):
 
     out={}
     for n,b in files.items():
-        if key=="dat" and n.endswith(".nbt"):
+        if n.endswith(".nbt") and (key == "dat" or should_copy_dependency(n)):
             out[n]=sanitize_dat_structure_nbt(b,n)
             continue
         if key=="dat" and n.endswith(".mcfunction"):
@@ -970,7 +988,7 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
     # copies must not be able to reintroduce unsanitized D&T templates or
     # malformed compatibility pools after filter_pack() has already run.
     for n,payload in list(merged.items()):
-        if n.startswith("data/nova_structures/") and n.endswith(".nbt"):
+        if n.startswith("data/") and n.endswith(".nbt"):
             merged[n]=sanitize_dat_structure_nbt(payload,n)
     ensure_dat_compat_pools(merged)
     ensure_betterwitchhuts_mob_pool(merged)
@@ -1000,6 +1018,15 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
         "schema":1,
         "profile":"NeverOverworld-External-Structures-R19",
         "target_pack_format":TARGET_FORMAT,
+        "required_engine_patch": "FIELD-R37",
+        "runtime_functions": sorted(DNT_SAFE_RUNTIME_FUNCTIONS),
+        "compatibility_notes": {
+            "foreign_attributes": "PortingLib attributes removed from all imported namespaces",
+            "attached_entities": "preserved; R37 engine relocates block_pos before decoding",
+            "witch_mobs": "two real jigsaw entity pieces; source natural spawn_overrides preserved",
+            "pale_residence_decor_inside": "optional empty fallback: absent in pinned D&T source",
+            "synthetic_islands": False,
+        },
         "sources":summary,
         "island_admission":{
             "min_surface_y":129,
