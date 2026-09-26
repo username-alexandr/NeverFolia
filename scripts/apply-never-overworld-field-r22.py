@@ -297,19 +297,53 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
 
         final boolean[] verified = oceanConnectedFloodableWithExternal(target, minY, maxY, seeds);
         final int changed = fillVerifiedMask(level, target, verified, minY, maxY);
-        if (changed <= 0) return;
 
-        NeverOverworldFlood.reweatherSubmergedSurface(level, target);
-        NeverOverworldEcologyR13.cleanup(level, target);
-        NeverOverworldEcologyR15.cleanup(level, target);
+        if (changed > 0) {
+            NeverOverworldFlood.reweatherSubmergedSurface(level, target);
+            NeverOverworldEcologyR13.cleanup(level, target);
+            NeverOverworldEcologyR15.cleanup(level, target);
+        }
 
-        // Propagate only when this owner actually gained verified WATER.
-        // This makes the process monotonic and prevents proof ping-pong.
+        // Proof propagation is monotonic even when every verified cell was
+        // already WATER: publishFeatureBoundary only schedules neighbours when
+        // their stored BitSet actually gains new bits.
         publishVerifiedBoundaries(level, target, verified, minY, maxY);
 
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
                 "[NeverFolia][R26LateSeam] chunk=" + chunkX + "," + chunkZ
+                + " seeds=" + seeds.cardinality() + " changed=" + changed
+            );
+        }
+    }
+
+    public static void onFullChunk(
+        final net.minecraft.server.level.ServerLevel level,
+        final net.minecraft.world.level.chunk.LevelChunk chunk
+    ) {
+        if (level == null || chunk == null
+            || !level.dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return;
+
+        final int minY = Math.max(SCAN_MIN_Y, chunk.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, chunk.getMaxY() - 1);
+        if (minY > maxY) return;
+
+        final BitSet seeds = takeFeatureBoundarySeeds(level, chunk);
+        if (seeds == null || seeds.isEmpty()) return;
+
+        final boolean[] verified = oceanConnectedFloodableWithExternal(chunk, minY, maxY, seeds);
+        final int changed = fillVerifiedMask(level, chunk, verified, minY, maxY);
+        if (changed > 0) {
+            NeverOverworldFlood.reweatherSubmergedSurface(level, chunk);
+            NeverOverworldEcologyR13.cleanup(level, chunk);
+            NeverOverworldEcologyR15.cleanup(level, chunk);
+        }
+        publishVerifiedBoundaries(level, chunk, verified, minY, maxY);
+
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R27FullSeam] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
                 + " seeds=" + seeds.cardinality() + " changed=" + changed
             );
         }
@@ -861,6 +895,8 @@ def verify(folia: Path) -> None:
         "queueChunkTask",
         "getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)",
         "R26LateSeam",
+        "R27FullSeam",
+        "public static void onFullChunk(",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
         "return floodVerifiedComponents(chunk, externalSeeds, true);",
@@ -910,8 +946,11 @@ def verify(folia: Path) -> None:
             "R26 FEATURES publication must compose inbound proof before republishing")
     require("queueChunkTask(" in text and "applyLateFeatureCorrection" in text,
             "R26 late seam correction must hop to the target owning region")
-    require("if (changed <= 0) return;" in text,
-            "R26 late propagation must remain monotonic and stop proof ping-pong")
+    require("publishVerifiedBoundaries(level, target, verified, minY, maxY);" in text,
+            "R27 late correction must propagate new proof even when cells are already WATER")
+    require("public static void onFullChunk(" in text
+            and "R27FullSeam" in text,
+            "R27 FULL handoff hook missing")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
             "R24 FEATURES peek must clone shared handoff state")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
