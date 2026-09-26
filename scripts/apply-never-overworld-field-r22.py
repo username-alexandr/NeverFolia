@@ -264,7 +264,7 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
             }
         }
         if (rawFullWrite && changed > 0) {
-            chunk.setUnsaved(true);
+            ((LevelChunk) chunk).setUnsaved(true);
         }
         return changed;
     }
