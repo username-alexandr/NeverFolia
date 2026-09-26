@@ -179,15 +179,26 @@ def _nbt_payload(r:_NBTReader,t:int):
     fail("unknown NBT tag type "+str(t))
 
 def _nbt_parse(data:bytes):
-    compressed=data[:2]==b"\\x1f\\x8b"
-    raw=gzip.decompress(data) if compressed else data
+    # Preserve the source compression family when rewriting StructureTemplate
+    # NBT. D&T uses both gzip and zlib payloads across revisions.
+    compression="raw"
+    raw=data
+    if data[:2]==b"\\x1f\\x8b":
+        compression="gzip"
+        raw=gzip.decompress(data)
+    elif len(data)>=2 and data[0]==0x78:
+        try:
+            raw=zlib.decompress(data)
+            compression="zlib"
+        except zlib.error:
+            raw=data
     r=_NBTReader(raw)
     root_type=r.unpack("B")
     if root_type!=10: fail("D&T structure NBT root is not TAG_Compound")
     root_name=r.string()
     root=_nbt_payload(r,10)
     if r.pos!=len(raw): fail("trailing bytes in D&T structure NBT")
-    return compressed,root_name,root
+    return compression,root_name,root
 
 def _nbt_string_bytes(value:str)->bytes:
     raw=value.encode("utf-8")
@@ -305,8 +316,22 @@ def sanitize_dat_structure_nbt(payload:bytes, where:str="<unknown>")->bytes:
             root["entities"]=(9,(10,kept))
 
     encoded=_nbt_encode(compression,root_name,root)
-    if b"porting_lib:" in (gzip.decompress(encoded) if encoded[:2]==b"\\x1f\\x8b" else encoded):
-        fail("PortingLib registry key survived D&T NBT sanitizer")
+    if compression=="gzip":
+        raw_encoded=gzip.decompress(encoded)
+    elif compression=="zlib":
+        raw_encoded=zlib.decompress(encoded)
+    else:
+        raw_encoded=encoded
+    if b"porting_lib:" in raw_encoded:
+        fail("PortingLib registry key survived D&T NBT sanitizer: "+where)
+    for forbidden in (
+        b"minecraft:item_frame",
+        b"minecraft:glow_item_frame",
+        b"minecraft:painting",
+        b"minecraft:leash_knot",
+    ):
+        if forbidden in raw_encoded:
+            fail("block-attached entity survived D&T NBT sanitizer: "+where+" -> "+forbidden.decode())
     return encoded
 
 def ensure_dat_compat_pools(out:dict[str,bytes])->None:
@@ -940,6 +965,21 @@ def build(base: Path, output: Path, payloads: dict[str,bytes]):
             "files":len(filtered),
             "sha256":sha(payload),
         }
+
+    # Final post-merge compatibility pass. Source overlays and dependency
+    # copies must not be able to reintroduce unsanitized D&T templates or
+    # malformed compatibility pools after filter_pack() has already run.
+    for n,payload in list(merged.items()):
+        if n.startswith("data/nova_structures/") and n.endswith(".nbt"):
+            merged[n]=sanitize_dat_structure_nbt(payload,n)
+    ensure_dat_compat_pools(merged)
+    ensure_betterwitchhuts_mob_pool(merged)
+    for n,payload in merged.items():
+        if n.endswith(".json") and (
+            n.startswith("data/nova_structures/")
+            or n.startswith("data/betterwitchhuts/")
+        ):
+            read_json(payload,n)
 
     expected_radii=policy_radii()
     detected=set(all_land)
