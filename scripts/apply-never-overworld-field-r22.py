@@ -121,6 +121,45 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         });
     }
 
+    private static int floodFeatureHandoffOwner(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess owner,
+        final int minY,
+        final int maxY
+    ) {
+        final int capacity = (maxY - minY + 1) * 256;
+        final boolean[] externalSeeds = new boolean[capacity];
+        final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
+        int seeded = 0;
+        if (featureSeeds != null) {
+            final int baseX = owner.getPos().getMinBlockX();
+            final int baseZ = owner.getPos().getMinBlockZ();
+            final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+            for (int e = featureSeeds.nextSetBit(0); e >= 0 && e < capacity; e = featureSeeds.nextSetBit(e + 1)) {
+                final int x = e & 15;
+                final int z = (e >>> 4) & 15;
+                final int y = minY + (e >>> 8);
+                pos.set(baseX + x, y, baseZ + z);
+                if (!traversable(owner, pos)) continue;
+                if (!owner.getBlockState(pos).is(Blocks.WATER)) {
+                    owner.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0);
+                }
+                if (!externalSeeds[e]) {
+                    externalSeeds[e] = true;
+                    ++seeded;
+                }
+            }
+        }
+        final int changed = floodVerifiedComponents(owner, externalSeeds, true);
+        if (seeded > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R24FeatureHandoff] chunk=" + owner.getPos().x() + "," + owner.getPos().z()
+                + " seeds=" + seeded + " changed=" + changed
+            );
+        }
+        return changed;
+    }
+
     private static long chunkKey(final int chunkX, final int chunkZ) {
         return ((long)chunkX & 0xffffffffL) | (((long)chunkZ & 0xffffffffL) << 32);
     }
@@ -182,13 +221,13 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
         // R23: solve the hydraulic connectivity over the complete scheduler cache
         // native LIGHT cache in one deterministic pass. This is scheduling
         // independent and does not infer flooding from mere ocean proximity.
-        final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);
+        final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             final ChunkPos cp = owner.getPos();
             System.out.println(
                 "[NeverFolia][R22Seam] chunk=" + cp.x() + "," + cp.z()
                 + " seeds=0,0,0,0 total=0 changed=" + changed
-                + " cacheExact=true"
+                + " featureHandoff=true"
             );
         }
         return changed;
@@ -529,6 +568,7 @@ def verify(folia: Path) -> None:
         "if (!traversable(chunk, pos)) continue;",
         "getChunkIfPresent(ChunkStatus.FEATURES)",
         "reconcileSeams",
+        "floodFeatureHandoffOwner",
         "floodCacheConnectedOwner",
         "R23FeatureSeeds",
         "takeFeatureBoundarySeeds",
@@ -542,7 +582,7 @@ def verify(folia: Path) -> None:
         "enqueueCache",
         "traversableCache",
         "lavaAtCache",
-        "cacheExact=true",
+        "featureHandoff=true",
     ):
         require(marker in text, "R22 marker missing: " + marker)
     for forbidden in (
@@ -560,14 +600,14 @@ def verify(folia: Path) -> None:
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
-        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in text,
-        "R23 exact native-radius cache connectivity pass missing"
+        "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in text,
+        "R24 owner-only feature handoff reconciliation missing"
     )
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R23] exact cache-bounded ocean-connectivity seam invariants OK")
+    print("[FIELD-R24] owner-only feature-handoff ocean-connectivity invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -635,11 +675,11 @@ class X {
         "SELF-TEST stable chunk key helper missing",
     )
     require(
-        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in reconcile_out,
-        "SELF-TEST reconcileSeams did not switch to exact-cache flood",
+        "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in reconcile_out,
+        "SELF-TEST reconcileSeams did not switch to owner-only feature handoff",
     )
     require(
-        "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" in reconcile_out,
+        "floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY)" in reconcile_out,
         "SELF-TEST feature handoff reconcile state detection missing",
     )
     require(
@@ -687,7 +727,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R24] installed: FEATURES deep border handoff + native LIGHT reconciliation; proximity flood disabled")
+    print("[FIELD-R24] installed: FEATURES deep border handoff + owner-only LIGHT reconciliation; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
