@@ -59,6 +59,10 @@ REPRESENTATIVES={
 def fail(message:str)->None:
     raise ValueError("[NeverFolia][External Structures QA] "+message)
 
+def require(ok:bool,message:str)->None:
+    if not ok:
+        fail(message)
+
 def resource_id(path:str,family:str)->str|None:
     m=re.fullmatch(r"data/([^/]+)/"+re.escape(family)+r"/(.+)\.json",path)
     return f"{m.group(1)}:{m.group(2)}" if m else None
