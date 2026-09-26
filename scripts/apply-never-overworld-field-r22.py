@@ -315,13 +315,16 @@ NEW_RECONCILE = """    public static int reconcileSeams(final WorldGenLevel leve
         // R23: solve the hydraulic connectivity over the complete scheduler cache
         // native LIGHT cache in one deterministic pass. This is scheduling
         // independent and does not infer flooding from mere ocean proximity.
-        final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);
+        // Final authoritative pass: use the complete native 3x3 LIGHT cache
+        // plus any FEATURES handoff that arrived after the earlier R15 scan.
+        // This is owner-only and never synchronously loads a neighbour.
+        final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             final ChunkPos cp = owner.getPos();
             System.out.println(
                 "[NeverFolia][R22Seam] chunk=" + cp.x() + "," + cp.z()
                 + " seeds=0,0,0,0 total=0 changed=" + changed
-                + " featureHandoff=true"
+                + " cacheExact=true featureHandoff=true"
             );
         }
         return changed;
@@ -706,8 +709,8 @@ def verify(folia: Path) -> None:
     require("if (seeded == 0) return 0;" not in text,
             "R22 must not skip owner-local ocean components when neighbours add no seed")
     require(
-        "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in text,
-        "R24 owner-only feature handoff reconciliation missing"
+        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in text,
+        "R24 final exact native-cache reconciliation missing"
     )
     require(EXTERNAL_SEED_NEW in text,
             "R24 verified FEATURES seed must prove ocean connectivity without pre-writing WATER")
@@ -805,8 +808,8 @@ class X {
         "SELF-TEST stable chunk key helper missing",
     )
     require(
-        "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in reconcile_out,
-        "SELF-TEST reconcileSeams did not switch to owner-only feature handoff",
+        "final int changed = floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY);" in reconcile_out,
+        "SELF-TEST reconcileSeams did not switch to final exact cache pass",
     )
     require(
         "private static int enqueueOwner(" in reconcile_out
@@ -814,8 +817,8 @@ class X {
         "SELF-TEST direct owner handoff BFS missing",
     )
     require(
-        "floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY)" in reconcile_out,
-        "SELF-TEST feature handoff reconcile state detection missing",
+        "floodCacheConnectedOwner(level.getLevel(), cache, owner, minY, maxY)" in reconcile_out,
+        "SELF-TEST exact cache reconcile state detection missing",
     )
     require(
         patch(reconcile_out) == reconcile_out,
@@ -862,7 +865,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R24] installed: FEATURES deep border handoff + owner-only LIGHT reconciliation; proximity flood disabled")
+    print("[FIELD-R24] installed: FEATURES handoff + final exact 3x3 LIGHT reconciliation; proximity flood disabled")
 
 if __name__ == "__main__":
     main()
