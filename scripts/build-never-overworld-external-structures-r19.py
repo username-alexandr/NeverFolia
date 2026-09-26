@@ -313,8 +313,9 @@ def ensure_dat_compat_pools(out:dict[str,bytes])->None:
     for rid in _DNT_COMPAT_EMPTY_POOLS:
         ns,path=rid.split(":",1)
         name=f"data/{ns}/worldgen/template_pool/{path}.json"
-        if name in out:
-            continue
+        # Always replace this known-bad/missing source pool with a canonical
+        # compatibility pool. Some D&T revisions ship a malformed resource at
+        # the same path, so presence alone is not sufficient.
         out[name]=(json.dumps({
             "fallback":"minecraft:empty",
             "elements":[{
