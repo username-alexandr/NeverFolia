@@ -9,9 +9,9 @@ import argparse
 from pathlib import Path
 
 JAVA=Path("folia-server/src/minecraft/java")
-FLOOD=JAVA/"net/minecraft/world/level/chunk/NeverOverworldFlood.java"
+FLOOD=JAVA/"net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java"
 
-CONSTANT_ANCHOR="    private static final int FLOOD_LEVEL = 128;\n"
+CONSTANT_ANCHOR="    static final int SCAN_MAX_Y = 128;\n"
 CONSTANTS="""    private static final int DEEP_FLOW_MAX_Y = 96;
     private static final int MIN_DEEP_APERTURE = 6;
 """
@@ -22,7 +22,7 @@ GATE="""                    if (y <= DEEP_FLOW_MAX_Y
                         continue;
                     }
 """
-HELPER_ANCHOR="    private static int encode(final int localX, final int y, final int localZ, final int minY) {\n"
+HELPER_ANCHOR="    private static int encode("
 HELPER="""    private static boolean hydraulicOpenAir(
         final ChunkAccess chunk,
         final int localX,
@@ -75,11 +75,17 @@ def patch(text:str)->str:
     if method.count(POS_ANCHOR)!=1:
         fail(f"fillVerifiedMask pos anchor count={method.count(POS_ANCHOR)}")
     method_new=method.replace(POS_ANCHOR, POS_ANCHOR+GATE, 1)
-    if text.count(HELPER_ANCHOR)!=1:
-        fail("encode anchor missing/duplicated")
     text=text[:start]+method_new+text[end:]
+    if text.count(CONSTANT_ANCHOR)!=1:
+        fail("SCAN_MAX_Y anchor missing/duplicated")
     text=text.replace(CONSTANT_ANCHOR,CONSTANT_ANCHOR+CONSTANTS,1)
-    text=text.replace(HELPER_ANCHOR,HELPER+HELPER_ANCHOR,1)
+
+    helper_pos=text.find(HELPER_ANCHOR)
+    if helper_pos<0:
+        fail("encode method anchor missing")
+    if text.find(HELPER_ANCHOR,helper_pos+1)>=0:
+        fail("encode method anchor duplicated")
+    text=text[:helper_pos]+HELPER+text[helper_pos:]
     return text
 
 def verify_text(text:str)->None:
@@ -96,8 +102,8 @@ def verify_text(text:str)->None:
         fail(f"deep-aperture gate count={text.count(GATE)}")
 
 def self_test()->None:
-    fixture="""class NeverOverworldFlood {
-    private static final int FLOOD_LEVEL = 128;
+    fixture="""class NeverOverworldFloodConnectivityR15 {
+    static final int SCAN_MAX_Y = 128;
     private static int fillVerifiedMask(ChunkAccess chunk, BlockPos.MutableBlockPos pos, BlockState water, int y, int x, int z, int baseX, int baseZ, boolean rawFullWrite) {
                     pos.set(baseX + x, y, baseZ + z);
                     if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
@@ -110,9 +116,7 @@ def self_test()->None:
                     }
         return 0;
     }
-    private static int encode(final int localX, final int y, final int localZ, final int minY) {
-        return 0;
-    }
+    private static int encode(int x,int y,int z,int minY){return 0;}
 }
 """
     out=patch(fixture)
@@ -131,7 +135,7 @@ def main()->None:
     if a.folia is None:
         p.error("folia worktree is required")
     path=a.folia.resolve()/FLOOD
-    if not path.is_file(): fail("NeverOverworldFlood missing")
+    if not path.is_file(): fail("NeverOverworldFloodConnectivityR15 missing")
     text=path.read_text(encoding="utf-8")
     if a.check_only:
         verify_text(text)
