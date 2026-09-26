@@ -362,8 +362,10 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         // already sufficient proof that a synthetic island is required, so do
         // not spend thousands of extra noise-height queries across every piece.
         boolean needsIsland = base < MIN_DRY_SURFACE_Y;
+        int minPieceY = Integer.MAX_VALUE;
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
+            minPieceY = Math.min(minPieceY, box.minY());
             final long width = (long)box.maxX() - box.minX() + 1L;
             final long depth = (long)box.maxZ() - box.minZ() + 1L;
             if (width <= 0L || depth <= 0L || width > MAX_PIECE_SPAN || depth > MAX_PIECE_SPAN) {{
@@ -381,8 +383,13 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
             }}
         }}
         if (!needsIsland) return true;
-        final int targetTop = Math.max(MIN_DRY_SURFACE_Y, base);
-        final int deltaY = Math.max(0, MIN_DRY_SURFACE_Y - base);
+        if (minPieceY == Integer.MAX_VALUE) return false;
+        // Lift the complete generated start from its lowest actual piece, not
+        // from candidate-centre terrain. Multi-piece Jigsaws (farmsteads,
+        // taverns, towers) can otherwise leave a basement/wing below Y=129
+        // even when the origin itself is already at the raised shoreline.
+        final int deltaY = Math.max(0, MIN_DRY_SURFACE_Y - minPieceY);
+        final int targetTop = Math.max(MIN_DRY_SURFACE_Y, base + deltaY);
         if (deltaY > 0) {{
             for (final StructurePiece piece : start.getPieces()) {{
                 piece.move(0, deltaY, 0);
@@ -556,6 +563,8 @@ def verify(folia: Path) -> None:
         "final int drop = ring <= 4 ? 0 : (ring - 1) / 4;",
         "private record IslandSlice(int[] fillTopY, int[] dryMinY, int[] dryMaxY)",
         "mins[index] = Math.min(mins[index], box.minY())",
+        "minPieceY = Math.min(minPieceY, box.minY())",
+        "final int deltaY = Math.max(0, MIN_DRY_SURFACE_Y - minPieceY);",
         "maxs[index] = Math.max(maxs[index], box.maxY())",
         "if (!current.is(Blocks.WATER)) continue;",
         "chunk.setBlockState(pos, Blocks.AIR.defaultBlockState(), 0);",
