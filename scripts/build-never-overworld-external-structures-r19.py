@@ -322,7 +322,7 @@ def ensure_dat_compat_pools(out:dict[str,bytes])->None:
                 "element":{"element_type":"minecraft:empty_pool_element"},
                 "weight":1,
             }],
-        },indent=2,ensure_ascii=False)+"\\n").encode()
+        },indent=2,ensure_ascii=False)+"\n").encode()
 
 def resource_id(path: str, family: str) -> str | None:
     m = re.match(r"data/([^/]+)/" + re.escape(family) + r"/(.+)\.json$", path)
