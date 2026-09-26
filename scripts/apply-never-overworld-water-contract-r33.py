@@ -46,10 +46,19 @@ def patch_owner(text: str) -> str:
         "            }\n"
         + write
     )
-    if guarded not in text:
-        if text.count(write) != 1:
-            fail(f"owner water write anchor count={text.count(write)}")
-        text = text.replace(write, guarded, 1)
+    # The final owner helper has two custom flood write paths after the
+    # historical transforms. Gate every unguarded write; do not assume one
+    # exact source anchor.
+    while write in text:
+        pos = text.find(write)
+        prefix = text[max(0, pos - 160):pos]
+        if "if (y < CUSTOM_FLOOD_MIN_Y)" in prefix:
+            # This occurrence is already guarded; skip past it by temporarily
+            # marking only the write line and restore after the loop.
+            text = text[:pos] + "            /* R33_GUARDED_WATER_WRITE */\n" + text[pos + len(write):]
+            continue
+        text = text[:pos] + guarded + text[pos + len(write):]
+    text = text.replace("            /* R33_GUARDED_WATER_WRITE */\n", write)
 
     return text
 
