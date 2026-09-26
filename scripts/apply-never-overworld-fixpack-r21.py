@@ -52,7 +52,8 @@ def verify(folia: Path) -> None:
             "R21 component scan seam parameters missing")
     require(
         "if (!traversable(chunk, pos)) return tailIn;" in flood
-        or "if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;" in flood,
+        or "if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;" in flood
+        or "if (!traversable(chunk, pos) || (!chunk.getBlockState(pos).is(Blocks.WATER) && !customOceanColumnOpen(chunk, pos, y))) return tailIn;" in flood,
         "R21 neighbour ocean connectivity must traverse only eligible floodable volume"
     )
     require("getChunk(" not in flood and "level.getBlockState(" not in flood,
