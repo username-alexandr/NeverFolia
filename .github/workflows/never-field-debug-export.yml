@@ -1,0 +1,32 @@
+name: NeverWorldgen debug source export
+on:
+  push:
+    branches: ['fix/neveroverworld-r23-cave-enchants']
+    paths: ['.github/workflows/never-field-debug-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: a0d252b9a6dc9548be7248282219c282112a9b52
+          persist-credentials: false
+      - name: Export tracked source tree without Git credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          test "$(git rev-parse HEAD)" = a0d252b9a6dc9548be7248282219c282112a9b52
+          git archive --format=tar.gz --output=artifacts/source-a0d252b.tar.gz HEAD
+          sha256sum artifacts/source-a0d252b.tar.gz > artifacts/SHA256SUMS.txt
+          printf '%s\n' "$(git rev-parse HEAD)" > artifacts/SOURCE-SHA.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeverWorldgen-source-a0d252b
+          path: artifacts/
+          retention-days: 3
+          if-no-files-found: error
