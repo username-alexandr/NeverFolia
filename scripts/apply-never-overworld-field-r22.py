@@ -128,12 +128,9 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final int maxY = Math.min(SCAN_MAX_Y, source.getMaxY() - 1);
         if (minY > maxY) return;
 
-        final boolean[] verified = oceanConnectedFloodable(source, minY, maxY);
-        final ChunkPos cp = source.getPos();
-        publishFeatureBoundary(level, source, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
-        publishFeatureBoundary(level, source, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
-        publishFeatureBoundary(level, source, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
-        publishFeatureBoundary(level, source, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
+        final BitSet inbound = peekFeatureBoundarySeeds(level, source);
+        final boolean[] verified = oceanConnectedFloodableWithExternal(source, minY, maxY, inbound);
+        publishVerifiedBoundaries(level, source, verified, minY, maxY);
     }
 
     private static void publishFeatureBoundary(
@@ -164,11 +161,158 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final long key = chunkKey(targetChunkX, targetChunkZ);
         final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds =
             FEATURE_BOUNDARY_SEEDS.computeIfAbsent(level, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        final boolean[] expanded = new boolean[] { false };
         worldSeeds.compute(key, (ignored, existing) -> {
-            if (existing == null) return (BitSet)seeds.clone();
-            existing.or(seeds);
+            if (existing == null) {
+                expanded[0] = true;
+                return (BitSet)seeds.clone();
+            }
+            final BitSet delta = (BitSet)seeds.clone();
+            delta.andNot(existing);
+            if (!delta.isEmpty()) {
+                existing.or(seeds);
+                expanded[0] = true;
+            }
             return existing;
         });
+        if (expanded[0]) {
+            scheduleLateFeatureCorrection(level, targetChunkX, targetChunkZ);
+        }
+    }
+
+    private static boolean[] oceanConnectedFloodableWithExternal(
+        final ChunkAccess chunk,
+        final int minY,
+        final int maxY,
+        final BitSet featureSeeds
+    ) {
+        final boolean[] connected = oceanConnectedFloodable(chunk, minY, maxY);
+        if (featureSeeds == null || featureSeeds.isEmpty()) return connected;
+
+        final int capacity = (maxY - minY + 1) * 256;
+        final int[] queue = new int[capacity];
+        int head = 0;
+        int tail = 0;
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int e = featureSeeds.nextSetBit(0);
+             e >= 0 && e < capacity;
+             e = featureSeeds.nextSetBit(e + 1)) {
+            if (connected[e]) continue;
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            pos.set(baseX + x, y, baseZ + z);
+            if (!traversable(chunk, pos)) continue;
+            connected[e] = true;
+            queue[tail++] = e;
+        }
+
+        while (head < tail) {
+            final int e = queue[head++];
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x - 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x + 1, y, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z - 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y, z + 1, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y - 1, z, minY, maxY);
+            tail = enqueueFloodable(chunk, connected, queue, tail, x, y + 1, z, minY, maxY);
+        }
+        return connected;
+    }
+
+    private static int fillVerifiedMask(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess chunk,
+        final boolean[] verified,
+        final int minY,
+        final int maxY
+    ) {
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        final BlockState water = Blocks.WATER.defaultBlockState();
+        int changed = 0;
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = 0; z < 16; ++z) {
+                for (int x = 0; x < 16; ++x) {
+                    final int e = encode(x, y, z, minY);
+                    if (!verified[e]) continue;
+                    pos.set(baseX + x, y, baseZ + z);
+                    if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
+                    chunk.setBlockState(pos, water, 0);
+                    level.getChunkSource().getLightEngine().checkBlock(pos);
+                    ++changed;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static void publishVerifiedBoundaries(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess source,
+        final boolean[] verified,
+        final int minY,
+        final int maxY
+    ) {
+        final ChunkPos cp = source.getPos();
+        publishFeatureBoundary(level, source, cp.x() - 1, cp.z(), verified, 0, 15, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x() + 1, cp.z(), verified, 15, 0, true, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() - 1, verified, 0, 15, false, minY, maxY);
+        publishFeatureBoundary(level, source, cp.x(), cp.z() + 1, verified, 15, 0, false, minY, maxY);
+    }
+
+    private static void scheduleLateFeatureCorrection(
+        final net.minecraft.server.level.ServerLevel level,
+        final int chunkX,
+        final int chunkZ
+    ) {
+        // Never synchronously load a target only for flood repair.
+        if (level.getChunkSource().getChunkAtImmediately(chunkX, chunkZ) == null) return;
+        io.papermc.paper.threadedregions.RegionizedServer.getInstance().taskQueue.queueChunkTask(
+            level, chunkX, chunkZ,
+            () -> applyLateFeatureCorrection(level, chunkX, chunkZ)
+        );
+    }
+
+    private static void applyLateFeatureCorrection(
+        final net.minecraft.server.level.ServerLevel level,
+        final int chunkX,
+        final int chunkZ
+    ) {
+        final ChunkAccess target = level.getChunkSource().getChunkAtImmediately(chunkX, chunkZ);
+        if (target == null || !target.getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)) return;
+
+        final int minY = Math.max(SCAN_MIN_Y, target.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, target.getMaxY() - 1);
+        if (minY > maxY) return;
+
+        final BitSet seeds = takeFeatureBoundarySeeds(level, target);
+        if (seeds == null || seeds.isEmpty()) return;
+
+        final boolean[] verified = oceanConnectedFloodableWithExternal(target, minY, maxY, seeds);
+        final int changed = fillVerifiedMask(level, target, verified, minY, maxY);
+        if (changed <= 0) return;
+
+        NeverOverworldFlood.reweatherSubmergedSurface(level, target);
+        NeverOverworldEcologyR13.cleanup(level, target);
+        NeverOverworldEcologyR15.cleanup(level, target);
+
+        // Propagate only when this owner actually gained verified WATER.
+        // This makes the process monotonic and prevents proof ping-pong.
+        publishVerifiedBoundaries(level, target, verified, minY, maxY);
+
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R26LateSeam] chunk=" + chunkX + "," + chunkZ
+                + " seeds=" + seeds.cardinality() + " changed=" + changed
+            );
+        }
     }
 
     private static int floodFeatureHandoffOwner(
@@ -712,6 +856,11 @@ def verify(folia: Path) -> None:
         "takeFeatureBoundarySeeds",
         "chunkKey(final int chunkX, final int chunkZ)",
         "FEATURE_BOUNDARY_SEEDS",
+        "oceanConnectedFloodableWithExternal",
+        "scheduleLateFeatureCorrection",
+        "queueChunkTask",
+        "getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)",
+        "R26LateSeam",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
         "return floodVerifiedComponents(chunk, externalSeeds, true);",
@@ -757,6 +906,12 @@ def verify(folia: Path) -> None:
             "R25 final LIGHT must compose transitive proof from neighbour handoffs")
     require("takeFeatureBoundarySeeds(level.getLevel(), chunk)" not in text,
             "R25 early R15 scan must never consume FEATURES handoff")
+    require("final BitSet inbound = peekFeatureBoundarySeeds(level, source);" in text,
+            "R26 FEATURES publication must compose inbound proof before republishing")
+    require("queueChunkTask(" in text and "applyLateFeatureCorrection" in text,
+            "R26 late seam correction must hop to the target owning region")
+    require("if (changed <= 0) return;" in text,
+            "R26 late propagation must remain monotonic and stop proof ping-pong")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
             "R24 FEATURES peek must clone shared handoff state")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
