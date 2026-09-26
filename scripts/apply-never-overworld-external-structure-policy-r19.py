@@ -73,7 +73,7 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>>
     > SYNTHETIC_ISLANDS = new java.util.concurrent.ConcurrentHashMap<>();
 
-    private record IslandSlice(int[] baseY, int[] fillTopY) {{}}
+    private record IslandSlice(int[] fillTopY) {{}}
 
     private static long chunkKey(final int chunkX, final int chunkZ) {{
         return ((long)chunkX << 32) ^ (chunkZ & 0xffffffffL);
@@ -84,9 +84,6 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
     }}
 
     private static void registerSyntheticIsland(
-        final ChunkGenerator generator,
-        final RandomState randomState,
-        final ChunkAccess heightAccessor,
         final ChunkPos origin,
         final ResourceKey<Level> dimension,
         final int radius,
@@ -104,7 +101,6 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
 
         for (int cz = minChunkZ; cz <= maxChunkZ; ++cz) {{
             for (int cx = minChunkX; cx <= maxChunkX; ++cx) {{
-                final int[] baseY = new int[256];
                 final int[] fillTopY = new int[256];
                 java.util.Arrays.fill(fillTopY, Integer.MIN_VALUE);
                 boolean any = false;
@@ -116,9 +112,6 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                         final long dz = (long)z - centerZ;
                         if (dx * dx + dz * dz > (long)radius * radius) continue;
                         final int index = (lz << 4) | lx;
-                        baseY[index] = generator.getBaseHeight(
-                            x, z, Heightmap.Types.WORLD_SURFACE_WG, heightAccessor, randomState
-                        );
                         int fillTop = topY;
                         for (final StructurePiece piece : start.getPieces()) {{
                             final BoundingBox box = piece.getBoundingBox();
@@ -135,7 +128,7 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                 byChunk.compute(key, (ignored, list) -> {{
                     final java.util.List<IslandSlice> out =
                         list == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(list);
-                    out.add(new IslandSlice(baseY, fillTopY));
+                    out.add(new IslandSlice(fillTopY));
                     return java.util.List.copyOf(out);
                 }});
             }}
@@ -160,7 +153,12 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                     final int index = (lz << 4) | lx;
                     final int fillTop = slice.fillTopY()[index];
                     if (fillTop == Integer.MIN_VALUE) continue;
-                    final int fromY = Math.max(slice.baseY()[index] + 1, chunk.getMinY() + 1);
+                    // FEATURES owns a complete local heightmap here. Reading
+                    // OCEAN_FLOOR_WG is O(1) and avoids tens of thousands of
+                    // expensive generator.getBaseHeight() noise evaluations
+                    // while registering a large synthetic island.
+                    final int floorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
+                    final int fromY = Math.max(floorY + 1, chunk.getMinY() + 1);
                     if (fromY > fillTop) continue;
                     for (int y = fromY; y <= fillTop; ++y) {{
                         pos.set(baseX + lx, y, baseZ + lz);
@@ -280,7 +278,16 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         if (radius <= 0) return true;
         if (start == null || !start.isValid()) return false;
 
-        boolean needsIsland = false;
+        final int centerX = chunkPos.getMiddleBlockX();
+        final int centerZ = chunkPos.getMiddleBlockZ();
+        final int base = generator.getBaseHeight(
+            centerX, centerZ, Heightmap.Types.WORLD_SURFACE_WG, heightAccessor, randomState
+        );
+
+        // Most NeverOverworld candidates are ocean. A submerged centre is
+        // already sufficient proof that a synthetic island is required, so do
+        // not spend thousands of extra noise-height queries across every piece.
+        boolean needsIsland = base < MIN_DRY_SURFACE_Y;
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
             final long width = (long)box.maxX() - box.minX() + 1L;
@@ -300,12 +307,6 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
             }}
         }}
         if (!needsIsland) return true;
-
-        final int centerX = chunkPos.getMiddleBlockX();
-        final int centerZ = chunkPos.getMiddleBlockZ();
-        final int base = generator.getBaseHeight(
-            centerX, centerZ, Heightmap.Types.WORLD_SURFACE_WG, heightAccessor, randomState
-        );
         final int targetTop = Math.max(MIN_DRY_SURFACE_Y, base);
         final int deltaY = Math.max(0, MIN_DRY_SURFACE_Y - base);
         if (deltaY > 0) {{
@@ -314,8 +315,7 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
             }}
         }}
         registerSyntheticIsland(
-            generator, randomState, heightAccessor, chunkPos, dimension,
-            Math.max(radius, 24), targetTop, start
+            chunkPos, dimension, Math.max(radius, 24), targetTop, start
         );
         return true;
     }}
@@ -475,6 +475,7 @@ def verify(folia: Path) -> None:
         "applySyntheticIslands(",
         "piece.move(0, deltaY, 0)",
         "Blocks.GRASS_BLOCK.defaultBlockState()",
+        "chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz)",
     ):
         if marker not in helper:
             fail("R24 synthetic-island marker missing: " + marker)
@@ -494,6 +495,8 @@ def verify(folia: Path) -> None:
         fail("R19 policy must not synchronously load/read neighbour chunk state through level")
     if "chunk.getBlockState(pos)" not in helper:
         fail("R24 island materializer must inspect only its owning chunk before replacement")
+    if "baseY" in helper:
+        fail("R24 island materializer must not precompute expensive per-column base heights")
     print("[NeverFolia][External Structure Policy R19] final invariants OK")
 
 def self_test() -> None:
