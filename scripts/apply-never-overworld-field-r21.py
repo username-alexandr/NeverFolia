@@ -236,8 +236,11 @@ def verify(folia: Path) -> None:
         "allowSeams",
     ):
         require(marker in flood, "R21 flood helper marker missing: " + marker)
-    require("if (!traversable(chunk, pos)) return tailIn;" in flood,
-            "R21 neighbour connectivity must traverse floodable volume")
+    require(
+        "if (!traversable(chunk, pos)) return tailIn;" in flood
+        or "if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;" in flood,
+        "R21 neighbour connectivity must traverse only eligible floodable volume"
+    )
     require("scan(chunk,visited,queue,x,y,z,minY,maxY,externalSeeds,allowSeams)" in flood,
             "R21 component scan must receive external seam seeds")
     require("boolean[] externalSeeds,boolean allowSeams" in flood,
