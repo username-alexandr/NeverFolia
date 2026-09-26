@@ -21,6 +21,7 @@ FLOOD15 = JAVA / "net/minecraft/world/level/chunk/NeverOverworldFloodConnectivit
 MOONRISE = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLightTask.java"
 SCHEDULER = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java"
 GENERIC = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java"
+FULLTASK = JAVA / "ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkFullTask.java"
 
 OWNER_CALL = "net.minecraft.world.level.chunk.NeverOverworldFlood.apply(task.world, task.fromChunk);"
 RECONCILE_CALL = (
@@ -34,6 +35,11 @@ CACHE_FIELD = "    private final StaticCache2D<GenerationChunkHolder> neverOverw
 FEATURE_PUBLISH_CALL = (
     "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
     "publishFeatureBoundarySeeds(this.world, newChunk);"
+)
+
+FULL_RECONCILE_CALL = (
+    "net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15."
+    "onFullChunk(this.world, chunk);"
 )
 
 LIGHT_RADIUS_OLD = """        final int neighbourReadRadius = Math.max(
@@ -148,6 +154,15 @@ def patch_generic(text: str) -> str:
     )
     return text.replace(anchor, injected, 1)
 
+def patch_full(text: str) -> str:
+    if FULL_RECONCILE_CALL in text:
+        return text
+    anchor = "                platformHooks.chunkFullStatusComplete(chunk, (ProtoChunk)this.fromChunk);\n"
+    require(text.count(anchor) == 1,
+            "Moonrise ChunkFullTask completion anchor missing/duplicated")
+    injected = anchor + "                " + FULL_RECONCILE_CALL + "\n"
+    return text.replace(anchor, injected, 1)
+
 def patch_scheduler(text: str) -> str:
     old_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, initialPriority);"
     new_ctor = "return new ChunkLightTask(this, this.world, chunkX, chunkZ, chunk, neighbours, initialPriority);"
@@ -173,6 +188,7 @@ def verify(folia: Path) -> None:
     moonrise = (folia / MOONRISE).read_text(encoding="utf-8")
     scheduler = (folia / SCHEDULER).read_text(encoding="utf-8")
     generic = (folia / GENERIC).read_text(encoding="utf-8")
+    full = (folia / FULLTASK).read_text(encoding="utf-8")
 
     # Vanilla ChunkStatusTasks.light is bypassed by Moonrise on Folia. Keeping a
     # second owner-flood/reconcile there is misleading and can never be the
@@ -218,6 +234,8 @@ def verify(folia: Path) -> None:
             "NeverFolia must strengthen only the existing radius-1 LIGHT ring")
     require(FEATURE_PUBLISH_CALL in generic,
             "Moonrise FEATURES handoff hook missing")
+    require(FULL_RECONCILE_CALL in full,
+            "Moonrise FULL handoff hook missing")
     require(
         generic.find("if (this.toStatus == ChunkStatus.FEATURES)") < generic.find("this.complete(newChunk, null);"),
         "FEATURES seam seed publication must run before status completion"
@@ -248,11 +266,13 @@ def apply(folia: Path) -> None:
     moonrise = folia / MOONRISE
     scheduler = folia / SCHEDULER
     generic = folia / GENERIC
+    full = folia / FULLTASK
     tasks = folia / TASKS
     require(owner_flood.is_file(), "NeverOverworldFlood missing")
     require(moonrise.is_file(), "Moonrise ChunkLightTask missing")
     require(scheduler.is_file(), "Moonrise ChunkTaskScheduler missing")
     require(generic.is_file(), "Moonrise ChunkUpgradeGenericStatusTask missing")
+    require(full.is_file(), "Moonrise ChunkFullTask missing")
     require(tasks.is_file(), "ChunkStatusTasks missing")
 
     # Remove the dead R21 canonical hook if an earlier R21 attempt materialized it.
@@ -274,6 +294,7 @@ def apply(folia: Path) -> None:
     moonrise.write_text(patch_moonrise(moonrise.read_text(encoding="utf-8")), encoding="utf-8")
     scheduler.write_text(patch_scheduler(scheduler.read_text(encoding="utf-8")), encoding="utf-8")
     generic.write_text(patch_generic(generic.read_text(encoding="utf-8")), encoding="utf-8")
+    full.write_text(patch_full(full.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
     print("[FIELD-R21] installed: native LIGHT radius + native LIGHT cache + FEATURES seam handoff")
 
