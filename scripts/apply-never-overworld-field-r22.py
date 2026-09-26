@@ -730,9 +730,11 @@ def verify(folia: Path) -> None:
     require(APPLY_NEW in text,
             "R24 FEATURES handoff must be inspected by canonical R15 scan")
     require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level.getLevel(), chunk);" in text,
-            "R24 early R15 scan must peek FEATURES handoff")
-    require(text.count("takeFeatureBoundarySeeds(level, owner)") >= 1,
-            "R24 final LIGHT reconciliation must consume FEATURES handoff")
+            "R25 early R15 scan must peek FEATURES handoff")
+    require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text,
+            "R25 final LIGHT reconciliation must consume FEATURES handoff")
+    require("takeFeatureBoundarySeeds(level.getLevel(), chunk)" not in text,
+            "R25 early R15 scan must never consume FEATURES handoff")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
             "R24 FEATURES peek must clone shared handoff state")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
@@ -797,6 +799,8 @@ class X {
             "SELF-TEST early R15 scan must peek feature handoff")
     require("takeFeatureBoundarySeeds(level.getLevel(), chunk)" not in out,
             "SELF-TEST early R15 scan must not consume feature handoff")
+    require(out.count("peekFeatureBoundarySeeds(level.getLevel(), chunk)") == 1,
+            "SELF-TEST early R15 feature handoff peek duplicated")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
     for forbidden in (
