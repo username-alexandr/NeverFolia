@@ -50,8 +50,11 @@ def verify(folia: Path) -> None:
             "R21 component scan must receive external seam seeds")
     require("boolean[] externalSeeds,boolean allowSeams" in flood,
             "R21 component scan seam parameters missing")
-    require("if (!traversable(chunk, pos)) return tailIn;" in flood,
-            "R21 neighbour ocean connectivity must traverse floodable volume")
+    require(
+        "if (!traversable(chunk, pos)) return tailIn;" in flood
+        or "if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;" in flood,
+        "R21 neighbour ocean connectivity must traverse only eligible floodable volume"
+    )
     require("getChunk(" not in flood and "level.getBlockState(" not in flood,
             "R21 flood helper must not synchronously load/read neighbours through level")
 
