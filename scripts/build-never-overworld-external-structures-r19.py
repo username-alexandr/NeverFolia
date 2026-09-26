@@ -440,7 +440,7 @@ def tune_external_structure_set(data: dict) -> dict:
         spacing=placement.get("spacing")
         separation=placement.get("separation")
         if isinstance(spacing,int) and spacing>1:
-            tuned=max(12, int(round(spacing*0.65)))
+            tuned=max(10, int(round(spacing*0.50)))
             if isinstance(separation,int):
                 tuned=max(tuned, 3)
                 new_sep=min(separation, max(2, tuned//3))
