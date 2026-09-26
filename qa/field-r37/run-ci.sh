@@ -7,8 +7,6 @@ SOURCE_SHA="$(git rev-parse HEAD)"
 printf '%s\n' "$SOURCE_SHA" > artifacts/SOURCE-COMMIT.txt
 python3 qa/field-r19/validate-external-structures-pack.py --self-test
 
-set -euo pipefail
-mkdir -p artifacts
 git config --global user.email actions@github.com
 git config --global user.name 'NeverFolia CI'
 python3 scripts/prepare-never-nether-r13-upstream.py
@@ -28,10 +26,8 @@ python3 scripts/apply-never-nether-experiment-r16.py .work/Folia --check-only
 (cd .work/Folia && ./gradlew :folia-server:createPaperclipJar --no-configuration-cache --stacktrace)
 cp .work/Folia/folia-server/build/libs/folia-paperclip-*.jar artifacts/server.jar
 cp .work/Folia/folia-server/build/libs/folia-bundler-*.jar artifacts/pack-input-bundler.jar || true
-
 python3 qa/field-r37/test-materialized.py .work/Folia --output artifacts/r37-java-unit.json
 
-set -euo pipefail
 if [ ! -f artifacts/pack-input-bundler.jar ]; then
   python3 - <<'PY'
 import shutil,zipfile
@@ -52,7 +48,7 @@ fi
 python3 scripts/build-never-overworld-core-pack.py --server-jar artifacts/pack-input-bundler.jar --output artifacts/NeverOverworld.zip
 python3 scripts/build-never-overworld-native-structures.py --input artifacts/NeverOverworld.zip
 python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
-python3 scripts/build-never-overworld-external-structures-r19.py             --input artifacts/NeverOverworld.zip             --output artifacts/NeverOverworld-R19.zip
+python3 scripts/build-never-overworld-external-structures-r19.py --input artifacts/NeverOverworld.zip --output artifacts/NeverOverworld-R19.zip
 mv artifacts/NeverOverworld-R19.zip artifacts/NeverOverworld.zip
 python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
 python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
@@ -66,15 +62,8 @@ python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zi
 python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
 
 python3 qa/field-r37/test-imports.py --sources .work/external-structures-r19 --output artifacts
-
-set -euo pipefail
-python3 qa/field-r19/audit-witch-source-nbt.py \
-  --source .work/external-structures-r19/witch.zip \
-  --merged artifacts/NeverOverworld.zip \
-  --output artifacts/witch-source-nbt-qa.json
-
-set -euo pipefail
-python3 qa/field-r19/validate-external-structures-pack.py             --pack artifacts/NeverOverworld.zip             --spec worldgen-spec/never-overworld-external-structures-r19.json             --output artifacts/external-structures-pack-qa.json
+python3 qa/field-r19/audit-witch-source-nbt.py --source .work/external-structures-r19/witch.zip --merged artifacts/NeverOverworld.zip --output artifacts/witch-source-nbt-qa.json
+python3 qa/field-r19/validate-external-structures-pack.py --pack artifacts/NeverOverworld.zip --spec worldgen-spec/never-overworld-external-structures-r19.json --output artifacts/external-structures-pack-qa.json
 
 cat > .work/r37-qa.init.gradle <<'GRADLE'
 gradle.projectsEvaluated {
@@ -93,10 +82,17 @@ GRADLE
 jar --create --file artifacts/R37DungeonQa.jar -C .work/Folia/build/r37-qa-classes . -C qa/field-r37 plugin.yml
 cp docs/FIELD-R37.md artifacts/READ-FIRST.md
 (cd artifacts && sha256sum server.jar NeverOverworld.zip NeverNether.zip > SHA256SUMS.txt)
-# Candidate inputs stay available if a later test fails. They are NOT promoted
-# to a release by being uploaded.
+# Candidate inputs stay available if a later test fails. No automatic release.
 touch artifacts/CANDIDATE-NOT-A-RELEASE.txt
+set +e
 python3 qa/field-r36/probe-water-square-seed.py \
     --jar artifacts/server.jar --overworld artifacts/NeverOverworld.zip \
     --nether artifacts/NeverNether.zip --qa-plugin artifacts/R37DungeonQa.jar \
     --source-sha "$SOURCE_SHA" --output artifacts
+result=$?
+if [ "$result" -ne 0 ] && [ ! -f artifacts/field-r36-water-square-seed.json ]; then
+    python3 qa/field-r36/probe-water-square-seed.py \
+        --jar artifacts/server.jar --overworld artifacts/NeverOverworld.zip \
+        --nether artifacts/NeverNether.zip --source-sha "$SOURCE_SHA" --output artifacts
+fi
+exit "$result"

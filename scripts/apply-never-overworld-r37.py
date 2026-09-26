@@ -12,6 +12,7 @@ from pathlib import Path
 JAVA = Path('folia-server/src/minecraft/java')
 OWNER = JAVA/'net/minecraft/world/level/chunk/NeverOverworldFlood.java'
 CACHE = JAVA/'net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.java'
+NOISE = JAVA/'net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java'
 TEMPLATE = JAVA/'net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.java'
 
 COLUMN_METHOD = '''    private static void floodSurfaceConnectedVolume(
@@ -44,6 +45,28 @@ COLUMN_METHOD = '''    private static void floodSurfaceConnectedVolume(
             }
         }
     }'''
+
+TRACE_METHOD = '''    public static void traceNativeWaterR37(final String phase, final ChunkAccess chunk) {
+        // Read-only, opt-in regression evidence at the reported coordinates.
+        // No random draws, neighbour access, block writes or persistent state.
+        if (!Boolean.getBoolean("neverfolia.debugFloodSeams")
+            || chunk.getMinY() != EXPECTED_MIN_Y || chunk.getHeight() != EXPECTED_HEIGHT) return;
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final int[][] samples;
+        if (baseX == 0 && baseZ == 0) samples = new int[][]{{14,52,11},{8,52,14}};
+        else if (baseX == -64 && baseZ == 48) samples = new int[][]{{-53,23,50}};
+        else return;
+        for (final int[] sample : samples) {
+            final BlockPos pos = new BlockPos(sample[0], sample[1], sample[2]);
+            final BlockState state = chunk.getBlockState(pos);
+            final String name = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            LOGGER.info("[R37-WATER-ORIGIN] phase={} pos={},{},{} state={} floor={}",
+                phase, sample[0], sample[1], sample[2], name,
+                chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, sample[0] & 15, sample[2] & 15));
+        }
+    }
+'''
 
 ATTACHMENT_FIX = '''                // R37_ATTACHMENT: saved entity block_pos is in the author's
                 // world, unlike entityInfo.blockPos, which is template-local.
@@ -87,7 +110,30 @@ def method_bounds(text: str, signature: str) -> tuple[int, int]:
 
 def patch_owner(text: str) -> str:
     a, b = method_bounds(text, '    private static void floodSurfaceConnectedVolume(')
-    return text[:a] + COLUMN_METHOD + text[b:]
+    text = text[:a] + COLUMN_METHOD + text[b:]
+    if 'R37_NATIVE_WATER_TRACE' not in text:
+        anchors = {
+            '        // ORE-LIGHT-R12: prune only the complete neighbour-decorated substrate.':
+                '        traceNativeWaterR37("PRE_LIGHT", chunk); // R37_NATIVE_WATER_TRACE\n',
+            '        restoreFloodShorelineFlora(level, chunk, shorelineFlora);':
+                '        traceNativeWaterR37("POST_OWNER", chunk);\n',
+            '        chunk.neverOverworldDryMineMaskR12 = null;':
+                '        traceNativeWaterR37("POST_LIGHT", chunk);\n',
+        }
+        for anchor, before in anchors.items():
+            require(text.count(anchor) == 1, 'native trace anchor drift: ' + anchor)
+            text = text.replace(anchor, before + anchor, 1)
+        text = text.rstrip()[:-1] + '\n' + TRACE_METHOD + '}\n'
+    require(TRACE_METHOD in text, 'partial native trace helper')
+    return text
+
+def patch_noise(text: str) -> str:
+    anchor = '        noiseChunk.stopInterpolation();\n        return centerChunk;'
+    replacement = '        noiseChunk.stopInterpolation();\n        net.minecraft.world.level.chunk.NeverOverworldFlood.traceNativeWaterR37("NOISE", centerChunk);\n        return centerChunk;'
+    if replacement not in text:
+        require(text.count(anchor) == 1, 'noise trace anchor drift')
+        text = text.replace(anchor, replacement, 1)
+    return text
 
 def patch_cache(text: str) -> str:
     if 'R37_CACHE_WRITE' not in text:
@@ -123,11 +169,12 @@ def main() -> None:
     p.add_argument('folia', type=Path)
     p.add_argument('--check-only', action='store_true')
     args = p.parse_args()
-    paths = [args.folia/OWNER, args.folia/CACHE, args.folia/TEMPLATE]
+    paths = [args.folia/OWNER, args.folia/CACHE, args.folia/TEMPLATE, args.folia/NOISE]
     values = [path.read_text(encoding='utf-8') for path in paths]
     if not args.check_only:
-        values = [patch_owner(values[0]), patch_cache(values[1]), patch_template(values[2])]
-    verify(*values)
+        values = [patch_owner(values[0]), patch_cache(values[1]), patch_template(values[2]), patch_noise(values[3])]
+    verify(*values[:3])
+    require(TRACE_METHOD in values[0] and patch_noise(values[3]) == values[3], "native water provenance hooks missing")
     if not args.check_only:
         for path, value in zip(paths, values): path.write_text(value, encoding='utf-8')
     print('[FIELD-R37] open-column ocean, cache barriers and attachment relocation OK')

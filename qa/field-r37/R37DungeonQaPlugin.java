@@ -25,11 +25,16 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
  private final List<String> observedSpawns=new ArrayList<>();
  private final List<String> functionResults=new ArrayList<>();
  private boolean finished;
+ private final List<Entity> observedEntities=new ArrayList<>();
  private void check(boolean ok,String label){if(!ok)throw new AssertionError(label);checks.add(label);}
  @Override public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);}
  @EventHandler public void loaded(ServerLoadEvent ignored){
   var world=Bukkit.getWorlds().stream().filter(w->w.getEnvironment()==org.bukkit.World.Environment.NORMAL).findFirst().orElseThrow();
-  world.getChunkAtAsync(0,0,true).thenAccept(chunk->Bukkit.getRegionScheduler().execute(this,world,0,0,()->start(((CraftWorld)world).getHandle())));
+  world.getChunkAtAsync(0,0,true).thenAccept(chunk->Bukkit.getRegionScheduler().execute(this,world,0,0,()->{
+   world.addPluginChunkTicket(0,0,this);
+   world.setChunkForceLoaded(0,0,true);
+   Bukkit.getRegionScheduler().runDelayed(this,world,0,0,task->start(((CraftWorld)world).getHandle()),20);
+  }));
  }
  @EventHandler public void spawned(CreatureSpawnEvent event){
   var e=((org.bukkit.craftbukkit.entity.CraftEntity)event.getEntity()).getHandle();
@@ -37,6 +42,7 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   if(e.level()!=testLevel||e.getY()<395||e.getY()>405||e.getX()<2||e.getX()>14||e.getZ()<2||e.getZ()>14)return;
   // Freeze only entities inside the isolated test fixture, regardless of the
   // Bukkit spawn-reason adapter. Keep their original equipment and tags.
+  observedEntities.add(e);
   observedSpawns.add(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())+" tags="+e.entityTags()+" reason="+event.getSpawnReason());
   e.setNoGravity(true);if(e instanceof Mob m)m.setNoAi(true);
  }
@@ -47,7 +53,6 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   if(!level.addFreshEntity(e))throw new AssertionError("spawn "+id);return e;
  }
  private CommandSourceStack source(ServerLevel level,Entity e){
-  // Follow the actual enchantment RunFunction source path. Keep failures visible.
   return level.getServer().createCommandSourceStack().withEntity(e).withLevel(level)
    .withPosition(e.position()).withRotation(e.getRotationVector())
    .withPermission(PermissionSet.ALL_PERMISSIONS);
@@ -78,6 +83,13 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
  }
  private void finish(ServerLevel level){
   try{
+   check(level.getWorld().isChunkForceLoaded(0,0),"fixture chunk remains forced loaded");
+   for(Entity entity:observedEntities){
+    if(!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(entity)){
+     functionResults.add("entity migrated: "+entity.getUUID()); continue;
+    }
+    functionResults.add("lifecycle="+BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())+" removed="+entity.isRemoved()+" reason="+entity.getRemovalReason()+" pos="+entity.position());
+   }
    var mobs=level.getEntitiesOfClass(Mob.class,new AABB(2,395,2,14,405,14),e->true);
    functionResults.add("live query="+mobs.stream().map(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())+" "+e.entityTags()).toList());
    for(String tag:new String[]{"dnt_cave_spider_minion","dnt_guardian_minion","dnt_spider_minion"})
@@ -97,6 +109,10 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
    result.add("checks",new com.google.gson.Gson().toJsonTree(checks));if(error!=null)result.addProperty("error",error.toString());
    Files.writeString(getDataFolder().toPath().resolve("result.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(result));
   }catch(Exception e){e.printStackTrace();}
+  if(testLevel!=null){
+   testLevel.getWorld().setChunkForceLoaded(0,0,false);
+   testLevel.getWorld().removePluginChunkTicket(0,0,this);
+  }
   getLogger().info("R37 DUNGEON QA "+(error==null?"PASS":"FAIL")+" checks="+checks.size());
  }
 }
