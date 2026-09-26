@@ -31,7 +31,8 @@ def main() -> None:
         run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
         run("scripts/apply-never-overworld-field-r22.py", folia, True)
         run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
-        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32 final invariants OK")
+        run("scripts/apply-never-overworld-water-contract-r33.py", folia, True)
+        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33 final invariants OK")
         return
 
     run("scripts/apply-never-overworld-fixpack-r21.py", folia)
@@ -40,10 +41,12 @@ def main() -> None:
     # materialize first, then the final primary flood write receives the
     # conservative deep-aperture gate.
     run("scripts/apply-never-overworld-deep-aperture-r32.py", folia)
+    run("scripts/apply-never-overworld-water-contract-r33.py", folia)
     run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
     run("scripts/apply-never-overworld-field-r22.py", folia, True)
     run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
-    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32 installed")
+    run("scripts/apply-never-overworld-water-contract-r33.py", folia, True)
+    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33 installed")
 
 if __name__ == "__main__":
     main()
