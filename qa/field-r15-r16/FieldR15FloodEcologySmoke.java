@@ -88,6 +88,21 @@ public final class FieldR15FloodEcologySmoke {
                 column,new BlockPos(2,70,8),70),
             "R35 cell below natural OCEAN_FLOOR_WG must remain native-aquifer territory");
 
+        check(NeverOverworldFloodConnectivityR15.customOceanColumnOpen(
+                column,new BlockPos(2,128,8),128),
+            "R35 real ocean column must remain open at the Y128 ocean plane");
+
+        // A cave/overhang AIR cell at Y128 underneath high natural land is not
+        // ocean. This was the remaining route for rectangular WATER sheets to
+        // enter land chunks at the raised sea plane.
+        var landPlane=fixture();
+        set(landPlane,4,150,8,Blocks.STONE);
+        set(landPlane,4,128,8,Blocks.AIR);
+        Heightmap.primeHeightmaps(landPlane, EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG));
+        check(!NeverOverworldFloodConnectivityR15.customOceanColumnOpen(
+                landPlane,new BlockPos(4,128,8),128),
+            "R35 Y128 AIR below high natural land must not be treated as ocean");
+
         // R22: even with zero external neighbour seeds, the LIGHT reconciliation
         // pass must flood a seam-touching component that has its own verified
         // Y128 ocean seed. The pre-reconcile pass intentionally defers it.
