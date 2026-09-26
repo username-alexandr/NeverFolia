@@ -90,48 +90,79 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         final int topY,
         final StructureStart start
     ) {{
-        final int centerX = origin.getMiddleBlockX();
-        final int centerZ = origin.getMiddleBlockZ();
-        final int minChunkX = (centerX - radius) >> 4;
-        final int maxChunkX = (centerX + radius) >> 4;
-        final int minChunkZ = (centerZ - radius) >> 4;
-        final int maxChunkZ = (centerZ + radius) >> 4;
-        final java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>> byChunk =
-            SYNTHETIC_ISLANDS.computeIfAbsent(dimension, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        // Build only around the generated pieces, not a full policy-radius
+        // circle. Large R19 radii describe admission reach, not a requirement
+        // to manufacture a 190-block-wide artificial island.
+        final int islandMargin = Math.max(8, Math.min(16, (radius + 7) / 8));
+        final java.util.HashMap<Long, int[]> tops = new java.util.HashMap<>();
+        final java.util.HashMap<Long, int[]> hardCaps = new java.util.HashMap<>();
 
-        for (int cz = minChunkZ; cz <= maxChunkZ; ++cz) {{
-            for (int cx = minChunkX; cx <= maxChunkX; ++cx) {{
-                final int[] fillTopY = new int[256];
-                java.util.Arrays.fill(fillTopY, Integer.MIN_VALUE);
-                boolean any = false;
-                for (int lz = 0; lz < 16; ++lz) {{
-                    for (int lx = 0; lx < 16; ++lx) {{
-                        final int x = (cx << 4) + lx;
-                        final int z = (cz << 4) + lz;
-                        final long dx = (long)x - centerX;
-                        final long dz = (long)z - centerZ;
-                        if (dx * dx + dz * dz > (long)radius * radius) continue;
-                        final int index = (lz << 4) | lx;
-                        int fillTop = topY;
-                        for (final StructurePiece piece : start.getPieces()) {{
-                            final BoundingBox box = piece.getBoundingBox();
-                            if (x >= box.minX() && x <= box.maxX() && z >= box.minZ() && z <= box.maxZ()) {{
-                                fillTop = Math.min(fillTop, box.minY() - 1);
-                            }}
-                        }}
-                        fillTopY[index] = fillTop;
-                        any = true;
+        for (final StructurePiece piece : start.getPieces()) {{
+            final BoundingBox box = piece.getBoundingBox();
+            final int minX = box.minX() - islandMargin;
+            final int maxX = box.maxX() + islandMargin;
+            final int minZ = box.minZ() - islandMargin;
+            final int maxZ = box.maxZ() + islandMargin;
+
+            for (int z = minZ; z <= maxZ; ++z) {{
+                final int dz =
+                    z < box.minZ() ? box.minZ() - z :
+                    z > box.maxZ() ? z - box.maxZ() : 0;
+                for (int x = minX; x <= maxX; ++x) {{
+                    final int dx =
+                        x < box.minX() ? box.minX() - x :
+                        x > box.maxX() ? x - box.maxX() : 0;
+                    final int ring = Math.max(dx, dz);
+                    if (ring > islandMargin) continue;
+
+                    // Keep a broad dry shoulder and taper only the outside.
+                    final int drop = ring <= 4 ? 0 : (ring - 1) / 4;
+                    final int desiredTop = topY - drop;
+                    final int cx = x >> 4;
+                    final int cz = z >> 4;
+                    final long key = chunkKey(cx, cz);
+                    final int index = ((z & 15) << 4) | (x & 15);
+
+                    final int[] chunkTops = tops.computeIfAbsent(key, ignored -> {{
+                        final int[] values = new int[256];
+                        java.util.Arrays.fill(values, Integer.MIN_VALUE);
+                        return values;
+                    }});
+                    chunkTops[index] = Math.max(chunkTops[index], desiredTop);
+
+                    if (dx == 0 && dz == 0) {{
+                        final int[] caps = hardCaps.computeIfAbsent(key, ignored -> {{
+                            final int[] values = new int[256];
+                            java.util.Arrays.fill(values, Integer.MAX_VALUE);
+                            return values;
+                        }});
+                        caps[index] = Math.min(caps[index], box.minY() - 1);
                     }}
                 }}
-                if (!any) continue;
-                final long key = chunkKey(cx, cz);
-                byChunk.compute(key, (ignored, list) -> {{
-                    final java.util.List<IslandSlice> out =
-                        list == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(list);
-                    out.add(new IslandSlice(fillTopY));
-                    return java.util.List.copyOf(out);
-                }});
             }}
+        }}
+
+        final java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>> byChunk =
+            SYNTHETIC_ISLANDS.computeIfAbsent(dimension, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        for (final var entry : tops.entrySet()) {{
+            final long key = entry.getKey();
+            final int[] fillTopY = entry.getValue();
+            final int[] caps = hardCaps.get(key);
+            boolean any = false;
+            for (int index = 0; index < fillTopY.length; ++index) {{
+                if (fillTopY[index] == Integer.MIN_VALUE) continue;
+                if (caps != null && caps[index] != Integer.MAX_VALUE) {{
+                    fillTopY[index] = Math.min(fillTopY[index], caps[index]);
+                }}
+                any = true;
+            }}
+            if (!any) continue;
+            byChunk.compute(key, (ignored, list) -> {{
+                final java.util.List<IslandSlice> out =
+                    list == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(list);
+                out.add(new IslandSlice(fillTopY));
+                return java.util.List.copyOf(out);
+            }});
         }}
     }}
 
@@ -488,6 +519,9 @@ def verify(folia: Path) -> None:
         "Blocks.GRASS_BLOCK.defaultBlockState()",
         "chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz)",
         "floorY = MIN_DRY_SURFACE_Y - 1",
+        "final int islandMargin = Math.max(8, Math.min(16, (radius + 7) / 8));",
+        "final java.util.HashMap<Long, int[]> tops",
+        "final int drop = ring <= 4 ? 0 : (ring - 1) / 4;",
     ):
         if marker not in helper:
             fail("R24 synthetic-island marker missing: " + marker)
@@ -509,6 +543,8 @@ def verify(folia: Path) -> None:
         fail("R24 island materializer must inspect only its owning chunk before replacement")
     if "baseY" in helper:
         fail("R24 island materializer must not precompute expensive per-column base heights")
+    if "dx * dx + dz * dz" in helper:
+        fail("R24 full policy-radius circle survived synthetic-island optimization")
     print("[NeverFolia][External Structure Policy R19] final invariants OK")
 
 def self_test() -> None:
