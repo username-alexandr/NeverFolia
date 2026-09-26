@@ -43,6 +43,7 @@ on:
       - 'qa/field-r20/**'
       - 'qa/field-r22/**'
       - 'qa/field-r23/**'
+      - 'qa/field-r36/**'
       - 'qa/field-r24/**'
       - 'qa/field-r14-r16/**'
       - 'qa/field-r15-r16/**'
@@ -266,6 +267,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 qa/field-r23/probe-cave-flood-seed.py \
+            --jar artifacts/server.jar \
+            --overworld artifacts/NeverOverworld.zip \
+            --nether artifacts/NeverNether.zip \
+            --output artifacts \
+            --source-sha "$GITHUB_SHA"
+
+      - name: Reproduce FIELD-R36 chunk-square water seed
+        run: |
+          set -euo pipefail
+          python3 qa/field-r36/probe-water-square-seed.py \
             --jar artifacts/server.jar \
             --overworld artifacts/NeverOverworld.zip \
             --nether artifacts/NeverNether.zip \
