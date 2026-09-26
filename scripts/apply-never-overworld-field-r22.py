@@ -71,11 +71,12 @@ APPLY_NEW = """    public static int apply(final WorldGenLevel level, final Chun
         if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
 
-        // R24: consume FEATURES handoff inside the canonical R15 component
-        // scan. This avoids a second full owner BFS immediately afterwards.
+        // R24: inspect FEATURES handoff inside the canonical R15 component
+        // scan without consuming it. Final LIGHT reconciliation remains the
+        // sole authority that removes the handoff after all neighbours reach FEATURES.
         final int minY = Math.max(SCAN_MIN_Y, chunk.getMinY() + 1);
         final int maxY = Math.min(SCAN_MAX_Y, chunk.getMaxY() - 1);
-        final BitSet featureSeeds = takeFeatureBoundarySeeds(level.getLevel(), chunk);
+        final BitSet featureSeeds = peekFeatureBoundarySeeds(level.getLevel(), chunk);
         if (featureSeeds == null || featureSeeds.isEmpty() || minY > maxY) {
             return floodVerifiedComponents(chunk);
         }
@@ -256,6 +257,17 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
 
     private static long chunkKey(final int chunkX, final int chunkZ) {
         return ((long)chunkX & 0xffffffffL) | (((long)chunkZ & 0xffffffffL) << 32);
+    }
+
+    private static BitSet peekFeatureBoundarySeeds(
+        final net.minecraft.server.level.ServerLevel level,
+        final ChunkAccess owner
+    ) {
+        final java.util.concurrent.ConcurrentHashMap<Long, BitSet> worldSeeds = FEATURE_BOUNDARY_SEEDS.get(level);
+        if (worldSeeds == null) return null;
+        final ChunkPos ownerPos = owner.getPos();
+        final BitSet stored = worldSeeds.get(chunkKey(ownerPos.x(), ownerPos.z()));
+        return stored == null ? null : (BitSet)stored.clone();
     }
 
     private static BitSet takeFeatureBoundarySeeds(
@@ -678,6 +690,7 @@ def verify(folia: Path) -> None:
         "visited.cardinality()",
         "floodCacheConnectedOwner",
         "R23FeatureSeeds",
+        "peekFeatureBoundarySeeds",
         "takeFeatureBoundarySeeds",
         "chunkKey(final int chunkX, final int chunkZ)",
         "FEATURE_BOUNDARY_SEEDS",
@@ -715,7 +728,13 @@ def verify(folia: Path) -> None:
     require(EXTERNAL_SEED_NEW in text,
             "R24 verified FEATURES seed must prove ocean connectivity without pre-writing WATER")
     require(APPLY_NEW in text,
-            "R24 FEATURES handoff must be consumed by canonical R15 scan")
+            "R24 FEATURES handoff must be inspected by canonical R15 scan")
+    require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level.getLevel(), chunk);" in text,
+            "R24 early R15 scan must peek FEATURES handoff")
+    require(text.count("takeFeatureBoundarySeeds(level, owner)") >= 1,
+            "R24 final LIGHT reconciliation must consume FEATURES handoff")
+    require("return stored == null ? null : (BitSet)stored.clone();" in text,
+            "R24 FEATURES peek must clone shared handoff state")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
             and "while (head < tail)" in text
             and "enqueueOwner(owner, visited, queue" in text,
@@ -724,7 +743,7 @@ def verify(folia: Path) -> None:
             "R22 must not synchronously load/read neighbours through level")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R24] owner-only feature-handoff ocean-connectivity invariants OK")
+    print("[FIELD-R25] non-consuming R15 peek + final LIGHT handoff consumption invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -771,9 +790,13 @@ class X {
             "SELF-TEST existing WATER preservation missing")
     require("R24FeatureSeedsInR15" in out
             and "floodVerifiedComponents(chunk, externalSeeds, true)" in out,
-            "SELF-TEST R15 apply did not consume feature handoff")
+            "SELF-TEST R15 apply did not inspect feature handoff")
     require(EXTERNAL_SEED_NEW in out,
             "SELF-TEST external feature seed still requires pre-written WATER")
+    require("peekFeatureBoundarySeeds(level.getLevel(), chunk)" in out,
+            "SELF-TEST early R15 scan must peek feature handoff")
+    require("takeFeatureBoundarySeeds(level.getLevel(), chunk)" not in out,
+            "SELF-TEST early R15 scan must not consume feature handoff")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
     for forbidden in (
@@ -800,8 +823,9 @@ class X {
     )
     require(
         "publishFeatureBoundarySeeds" in reconcile_out
+        and "peekFeatureBoundarySeeds" in reconcile_out
         and "takeFeatureBoundarySeeds" in reconcile_out,
-        "SELF-TEST feature-boundary handoff helper missing",
+        "SELF-TEST feature-boundary handoff helpers missing",
     )
     require(
         "private static long chunkKey(final int chunkX, final int chunkZ)" in reconcile_out,
