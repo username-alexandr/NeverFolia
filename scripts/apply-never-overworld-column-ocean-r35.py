@@ -104,6 +104,22 @@ def patch_owner(text:str)->str:
 def patch_r15(text:str)->str:
     text=inject_before_encode(text,R15_HELPER)
 
+    # Canonical component discovery must not walk through enclosed cave cells.
+    old_seed="if(!traversable(chunk,pos)){visited[seed]=true;continue;}"
+    new_seed="if(!traversable(chunk,pos)||!customOceanColumnOpen(chunk,pos,y)){visited[seed]=true;continue;}"
+    if old_seed in text:
+        text=text.replace(old_seed,new_seed)
+
+    # Both BFS enqueue helpers are custom-ocean traversal. Keep them out of
+    # cells below the natural ocean floor even if they are replaceable AIR.
+    old_enqueue="if(!traversable(chunk,pos))return tail;"
+    new_enqueue="if(!traversable(chunk,pos)||!customOceanColumnOpen(chunk,pos,y))return tail;"
+    text=text.replace(old_enqueue,new_enqueue)
+
+    old_enqueue2="if (!traversable(chunk, pos)) return tailIn;"
+    new_enqueue2="if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;"
+    text=text.replace(old_enqueue2,new_enqueue2)
+
     # Canonical component fill.
     old="if(!state.is(Blocks.WATER)&&traversable(chunk,pos)){chunk.setBlockState(pos,water,0);++changed;}"
     new="if(!state.is(Blocks.WATER)&&traversable(chunk,pos)&&customOceanColumnOpen(chunk,pos,y)){chunk.setBlockState(pos,water,0);++changed;}"
@@ -161,6 +177,10 @@ def verify(owner:str,r15:str)->None:
 
     if "|| !customOceanColumnOpen(chunk, pos, y)) continue;" not in r15:
         fail("R22 fillVerifiedMask lacks column barrier")
+    if "||!customOceanColumnOpen(chunk,pos,y)){visited[seed]=true;continue;}" not in r15:
+        fail("R15 component discovery still enters enclosed caves")
+    if "customOceanColumnOpen(chunk,pos,y))return tail;" not in r15 and "customOceanColumnOpen(chunk, pos, y)) return tailIn;" not in r15:
+        fail("R15 BFS traversal lacks ocean-floor barrier")
 
 def self_test()->None:
     owner="""class NeverOverworldFlood {
@@ -175,6 +195,7 @@ def self_test()->None:
     static final int SCAN_MAX_Y = 128;
     void a(ChunkAccess chunk,BlockPos.MutableBlockPos pos,BlockState water,int y){
         BlockState state=chunk.getBlockState(pos);
+        if(!traversable(chunk,pos)){visited[seed]=true;continue;}
         if(!state.is(Blocks.WATER)&&traversable(chunk,pos)){chunk.setBlockState(pos,water,0);++changed;}
         if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
     }
