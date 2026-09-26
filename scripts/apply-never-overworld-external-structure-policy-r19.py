@@ -12,7 +12,7 @@ CHUNK_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chun
 HELPER_REL = Path("folia-server/src/minecraft/java/net/minecraft/world/level/chunk/NeverOverworldExternalStructurePolicyR19.java")
 GENERIC_REL = Path("folia-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java")
 MARKER = "// NeverFolia R19: external surface structures require a dry island footprint."
-ISLAND_HOOK = "// NeverFolia R24: materialize synthetic island slices after FEATURES."
+ISLAND_HOOK = "// NeverFolia R30: materialize pending synthetic island slices at/after FEATURES."
 GENERATED_MARKER = "// NeverFolia R19: generated external-land pieces must stay on dry island terrain."
 
 def fail(message: str) -> None:
@@ -504,7 +504,7 @@ def patch_generic(source: str) -> str:
     if source.count(anchor) != 1:
         fail("Moonrise generic FEATURES completion anchor missing/duplicated")
     injected = (
-        "        if (this.toStatus == ChunkStatus.FEATURES) {\n"
+        "        if (this.toStatus.isOrAfter(ChunkStatus.FEATURES)) {\n"
         "            " + ISLAND_HOOK + "\n"
         "            net.minecraft.world.level.chunk.NeverOverworldExternalStructurePolicyR19.applySyntheticIslands(this.world, newChunk);\n"
         "        }\n\n"
@@ -572,7 +572,9 @@ def verify(folia: Path) -> None:
         if marker not in helper:
             fail("R24 synthetic-island marker missing: " + marker)
     if ISLAND_HOOK not in generic or "applySyntheticIslands(this.world, newChunk)" not in generic:
-        fail("R24 FEATURES synthetic-island hook missing")
+        fail("R30 late synthetic-island hook missing")
+    if "this.toStatus.isOrAfter(ChunkStatus.FEATURES)" not in generic:
+        fail("R30 synthetic-island hook must retry on later statuses after FEATURES")
     for marker in (
         "allowsGenerated(",
         "for (final StructurePiece piece : start.getPieces())",
