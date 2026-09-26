@@ -36,6 +36,8 @@ on:
       - 'scripts/prepare-never-nether-noise-r5.py'
       - 'third_party/OpenSimplex2/**'
       - 'scripts/apply-never-overworld-fixpack-r22.py'
+      - 'scripts/apply-never-overworld-water-contract-r33.py'
+      - 'scripts/apply-never-overworld-no-synthetic-islands-r34.py'
       - 'scripts/normalize-never-overworld-light-flood-call.py'
       - 'qa/field-r20/**'
       - 'qa/field-r22/**'
