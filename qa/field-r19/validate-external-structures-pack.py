@@ -221,7 +221,7 @@ def audit(pack:Path,spec_path:Path)->dict:
         witch_mob_pool="data/betterwitchhuts/worldgen/template_pool/mobs.json"
         require(witch_mob_pool in names,
                 "Better Witch Huts standalone mob compatibility pool missing")
-        witch_mob_data=json.loads(z.read(witch_mob_pool))
+        witch_mob_data=json.loads(archive.read(witch_mob_pool))
         witch_mob_elements=witch_mob_data.get("elements")
         require(isinstance(witch_mob_elements,list) and len(witch_mob_elements)>0,
                 "Better Witch Huts standalone mob compatibility pool is empty")
