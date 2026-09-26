@@ -122,7 +122,7 @@ def main():
 
     chunks=sample_chunks()
     log=out/"field-r24-water-flora-server.log"
-    server=Server(a.jar.resolve(),work,log,java_args=["-Dneverfolia.debugFloodSeams=true"])
+    server=Server(a.jar.resolve(),work,log)
     normal=False
     try:
         server.wait(r"Done \(",timeout=300)
