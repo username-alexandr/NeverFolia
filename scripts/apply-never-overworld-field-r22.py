@@ -423,30 +423,46 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
             }
         }
 
-        final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
-        int featureSeedCount = 0;
-        if (featureSeeds != null) {
-            for (int y = minY; y <= maxY; ++y) {
-                for (int localZ = 0; localZ < 16; ++localZ) {
-                    for (int localX = 0; localX < 16; ++localX) {
-                        if (!featureSeeds.get(encode(localX, y, localZ, minY))) continue;
-                        final int regionX = localX + CACHE_OWNER_OFFSET;
-                        final int regionZ = localZ + CACHE_OWNER_OFFSET;
-                        if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) continue;
-                        final int e = encodeCache(regionX, y, regionZ, minY);
-                        if (!connected.get(e)) {
-                            connected.set(e);
-                            queue[tail++] = e;
-                            ++featureSeedCount;
-                        }
-                    }
+        // R25: compose transitive ocean proof from the whole native 3x3 cache.
+        // The owner consumes its handoff here; neighbours are only peeked so
+        // their own final LIGHT reconciliation can still consume the same proof.
+        int ownerFeatureSeedCount = 0;
+        int neighborFeatureSeedCount = 0;
+        final int localCapacity = layers * 256;
+        for (int tileZ = 0; tileZ < CACHE_CHUNK_WIDTH; ++tileZ) {
+            for (int tileX = 0; tileX < CACHE_CHUNK_WIDTH; ++tileX) {
+                final ChunkAccess chunk = chunks[tileZ * CACHE_CHUNK_WIDTH + tileX];
+                if (chunk == null) continue;
+                final boolean ownerTile = tileX == CACHE_CHUNK_RADIUS && tileZ == CACHE_CHUNK_RADIUS;
+                final BitSet featureSeeds = ownerTile
+                    ? takeFeatureBoundarySeeds(level, owner)
+                    : peekFeatureBoundarySeeds(level, chunk);
+                if (featureSeeds == null || featureSeeds.isEmpty()) continue;
+
+                for (int localE = featureSeeds.nextSetBit(0);
+                     localE >= 0 && localE < localCapacity;
+                     localE = featureSeeds.nextSetBit(localE + 1)) {
+                    final int localX = localE & 15;
+                    final int localZ = (localE >>> 4) & 15;
+                    final int y = minY + (localE >>> 8);
+                    final int regionX = tileX * 16 + localX;
+                    final int regionZ = tileZ * 16 + localZ;
+                    if (!traversableCache(chunks, regionX, y, regionZ, pos, adjacent)) continue;
+                    final int e = encodeCache(regionX, y, regionZ, minY);
+                    if (connected.get(e)) continue;
+                    connected.set(e);
+                    queue[tail++] = e;
+                    if (ownerTile) ++ownerFeatureSeedCount;
+                    else ++neighborFeatureSeedCount;
                 }
             }
         }
-        if (featureSeedCount > 0 && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+        if ((ownerFeatureSeedCount > 0 || neighborFeatureSeedCount > 0)
+            && Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
-                "[NeverFolia][R23FeatureSeeds] chunk=" + ownerPos.x() + "," + ownerPos.z()
-                + " count=" + featureSeedCount
+                "[NeverFolia][R25FeatureSeeds3x3] chunk=" + ownerPos.x() + "," + ownerPos.z()
+                + " owner=" + ownerFeatureSeedCount
+                + " neighbours=" + neighborFeatureSeedCount
             );
         }
 
@@ -689,7 +705,9 @@ def verify(folia: Path) -> None:
         "enqueueOwner",
         "visited.cardinality()",
         "floodCacheConnectedOwner",
-        "R23FeatureSeeds",
+        "R25FeatureSeeds3x3",
+        "neighborFeatureSeedCount",
+        "peekFeatureBoundarySeeds(level, chunk)",
         "peekFeatureBoundarySeeds",
         "takeFeatureBoundarySeeds",
         "chunkKey(final int chunkX, final int chunkZ)",
@@ -733,6 +751,10 @@ def verify(folia: Path) -> None:
             "R25 early R15 scan must peek FEATURES handoff")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text,
             "R25 final LIGHT reconciliation must consume FEATURES handoff")
+    require("peekFeatureBoundarySeeds(level, chunk)" in text
+            and "neighborFeatureSeedCount" in text
+            and "R25FeatureSeeds3x3" in text,
+            "R25 final LIGHT must compose transitive proof from neighbour handoffs")
     require("takeFeatureBoundarySeeds(level.getLevel(), chunk)" not in text,
             "R25 early R15 scan must never consume FEATURES handoff")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
@@ -745,7 +767,7 @@ def verify(folia: Path) -> None:
             "R22 must not synchronously load/read neighbours through level")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R25] non-consuming R15 peek + final LIGHT handoff consumption invariants OK")
+    print("[FIELD-R25] transitive 3x3 handoff proof + final LIGHT consumption invariants OK")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
