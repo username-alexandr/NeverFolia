@@ -30,14 +30,20 @@ def main() -> None:
     if a.check_only:
         run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
         run("scripts/apply-never-overworld-field-r22.py", folia, True)
-        print(f"[NeverOverworld R22] {PROFILE} final invariants OK")
+        run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
+        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32 final invariants OK")
         return
 
     run("scripts/apply-never-overworld-fixpack-r21.py", folia)
     run("scripts/apply-never-overworld-field-r22.py", folia)
+    # R32 is intentionally late: historical R9-R15/R22 source contracts must
+    # materialize first, then the final primary flood write receives the
+    # conservative deep-aperture gate.
+    run("scripts/apply-never-overworld-deep-aperture-r32.py", folia)
     run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
     run("scripts/apply-never-overworld-field-r22.py", folia, True)
-    print(f"[NeverOverworld R22] {PROFILE} installed")
+    run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
+    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32 installed")
 
 if __name__ == "__main__":
     main()
