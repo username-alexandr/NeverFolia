@@ -33,7 +33,8 @@ def main() -> None:
         run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
         run("scripts/apply-never-overworld-water-contract-r33.py", folia, True)
         run("scripts/apply-never-overworld-no-synthetic-islands-r34.py", folia, True)
-        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34 final invariants OK")
+        run("scripts/apply-never-overworld-column-ocean-r35.py", folia, True)
+        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35 final invariants OK")
         return
 
     run("scripts/apply-never-overworld-fixpack-r21.py", folia)
@@ -44,12 +45,14 @@ def main() -> None:
     run("scripts/apply-never-overworld-deep-aperture-r32.py", folia)
     run("scripts/apply-never-overworld-water-contract-r33.py", folia)
     run("scripts/apply-never-overworld-no-synthetic-islands-r34.py", folia)
+    run("scripts/apply-never-overworld-column-ocean-r35.py", folia)
     run("scripts/apply-never-overworld-fixpack-r21.py", folia, True)
     run("scripts/apply-never-overworld-field-r22.py", folia, True)
     run("scripts/apply-never-overworld-deep-aperture-r32.py", folia, True)
     run("scripts/apply-never-overworld-water-contract-r33.py", folia, True)
     run("scripts/apply-never-overworld-no-synthetic-islands-r34.py", folia, True)
-    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34 installed")
+    run("scripts/apply-never-overworld-column-ocean-r35.py", folia, True)
+    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35 installed")
 
 if __name__ == "__main__":
     main()
