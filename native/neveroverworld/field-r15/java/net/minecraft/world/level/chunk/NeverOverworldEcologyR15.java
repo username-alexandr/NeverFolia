@@ -23,7 +23,9 @@ public final class NeverOverworldEcologyR15 {
             ||s.is(Blocks.SMALL_DRIPLEAF)||s.is(Blocks.BIG_DRIPLEAF);
     }
     static boolean heightPlant(BlockState s){
-        return s.is(Blocks.SWEET_BERRY_BUSH)
+        return s.is(Blocks.CAVE_VINES)
+            || s.is(Blocks.CAVE_VINES_PLANT)
+            || s.is(Blocks.SWEET_BERRY_BUSH)
             || s.is(Blocks.CACTUS)
             || s.is(Blocks.MELON)
             || s.is(Blocks.BAMBOO)
