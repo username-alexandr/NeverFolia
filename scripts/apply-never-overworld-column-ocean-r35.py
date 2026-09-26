@@ -29,7 +29,7 @@ OWNER_HELPER="""    private static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL;
+        return y == FLOOD_LEVEL || (oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y < FLOOD_LEVEL);
     }
 
 """
@@ -46,7 +46,7 @@ R15_HELPER="""    static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y;
+        return y == SCAN_MAX_Y || (oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y < SCAN_MAX_Y);
     }
 
 """
@@ -112,18 +112,18 @@ def patch_r15(text:str)->str:
 
     # Canonical component discovery must not walk through enclosed cave cells.
     old_seed="if(!traversable(chunk,pos)){visited[seed]=true;continue;}"
-    new_seed="if(!traversable(chunk,pos)||!customOceanColumnOpen(chunk,pos,y)){visited[seed]=true;continue;}"
+    new_seed="if(!traversable(chunk,pos)||(!chunk.getBlockState(pos).is(Blocks.WATER)&&!customOceanColumnOpen(chunk,pos,y))){visited[seed]=true;continue;}"
     if old_seed in text:
         text=text.replace(old_seed,new_seed)
 
     # Both BFS enqueue helpers are custom-ocean traversal. Keep them out of
     # cells below the natural ocean floor even if they are replaceable AIR.
     old_enqueue="if(!traversable(chunk,pos))return tail;"
-    new_enqueue="if(!traversable(chunk,pos)||!customOceanColumnOpen(chunk,pos,y))return tail;"
+    new_enqueue="if(!traversable(chunk,pos)||(!chunk.getBlockState(pos).is(Blocks.WATER)&&!customOceanColumnOpen(chunk,pos,y)))return tail;"
     text=text.replace(old_enqueue,new_enqueue)
 
     old_enqueue2="if (!traversable(chunk, pos)) return tailIn;"
-    new_enqueue2="if (!traversable(chunk, pos) || !customOceanColumnOpen(chunk, pos, y)) return tailIn;"
+    new_enqueue2="if (!traversable(chunk, pos) || (!chunk.getBlockState(pos).is(Blocks.WATER) && !customOceanColumnOpen(chunk, pos, y))) return tailIn;"
     text=text.replace(old_enqueue2,new_enqueue2)
 
     # Canonical component fill.
@@ -183,10 +183,10 @@ def verify(owner:str,r15:str)->None:
 
     if "|| !customOceanColumnOpen(chunk, pos, y)) continue;" not in r15:
         fail("R22 fillVerifiedMask lacks column barrier")
-    if "||!customOceanColumnOpen(chunk,pos,y)){visited[seed]=true;continue;}" not in r15:
-        fail("R15 component discovery still enters enclosed caves")
-    if "customOceanColumnOpen(chunk,pos,y))return tail;" not in r15 and "customOceanColumnOpen(chunk, pos, y)) return tailIn;" not in r15:
-        fail("R15 BFS traversal lacks ocean-floor barrier")
+    if "is(Blocks.WATER)&&!customOceanColumnOpen(chunk,pos,y)" not in r15:
+        fail("R15 component discovery does not preserve authoritative WATER seeds")
+    if "is(Blocks.WATER)&&!customOceanColumnOpen(chunk,pos,y)" not in r15 and "is(Blocks.WATER) && !customOceanColumnOpen(chunk, pos, y)" not in r15:
+        fail("R15 BFS traversal lacks water-aware ocean-floor barrier")
 
 def self_test()->None:
     owner="""class NeverOverworldFlood {
