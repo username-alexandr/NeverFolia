@@ -20,6 +20,92 @@ R15_CONST = "    static final int CUSTOM_FLOOD_MIN_Y = 96;\n"
 def fail(message: str) -> None:
     raise ValueError("[FIELD-R33] " + message)
 
+def method_bounds(text: str, signature: str) -> tuple[int, int]:
+    start = text.find(signature)
+    if start < 0:
+        fail("method signature missing: " + signature)
+    brace = text.find("{", start)
+    if brace < 0:
+        fail("method opening brace missing: " + signature)
+    depth = 0
+    in_string = False
+    escaped = False
+    i = brace
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+        i += 1
+    fail("unterminated method: " + signature)
+
+LAVA_ONLY_CLEANUP = """    /**
+     * R33: preserve every native/vanilla WATER decision. The flooded overlay
+     * owns only the synthetic upper ocean; generated lava is still removed.
+     */
+    private static void removeGeneratedFluids(
+        final ChunkAccess chunk,
+        final int minY,
+        final int maxY,
+        final BlockState air
+    ) {
+        final int minSectionY = SectionPos.blockToSectionCoord(minY);
+        final int maxSectionY = SectionPos.blockToSectionCoord(maxY);
+        final LevelChunkSection[] sections = chunk.getSections();
+        final ChunkPos chunkPos = chunk.getPos();
+        final int minX = chunkPos.getMinBlockX();
+        final int minZ = chunkPos.getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int sectionY = minSectionY; sectionY <= maxSectionY; ++sectionY) {
+            final int sectionIndex = chunk.getSectionIndexFromSectionY(sectionY);
+            if (sectionIndex < 0 || sectionIndex >= sections.length) {
+                continue;
+            }
+            final LevelChunkSection section = sections[sectionIndex];
+            if (!section.maybeHas(state -> state.is(Blocks.LAVA))) {
+                continue;
+            }
+
+            final int sectionMinY = SectionPos.sectionToBlockCoord(sectionY);
+            final int scanMinY = Math.max(minY, sectionMinY);
+            final int scanMaxY = Math.min(maxY, sectionMinY + 15);
+            for (int y = scanMinY; y <= scanMaxY; ++y) {
+                final int localY = SectionPos.sectionRelative(y);
+                for (int localZ = 0; localZ < 16; ++localZ) {
+                    for (int localX = 0; localX < 16; ++localX) {
+                        final BlockState state = section.getBlockState(localX, localY, localZ);
+                        if (!state.is(Blocks.LAVA)) {
+                            continue;
+                        }
+                        pos.set(minX + localX, y, minZ + localZ);
+                        chunk.setBlockState(pos, air, 0);
+                    }
+                }
+            }
+        }
+    }"""
+
+def replace_cleanup_method(text: str) -> str:
+    start, end = method_bounds(text, "    private static void removeGeneratedFluids(")
+    return text[:start] + LAVA_ONLY_CLEANUP + text[end:]
+
 def patch_owner(text: str) -> str:
     if OWNER_CONST not in text:
         anchor = "    private static final int FLOOD_LEVEL = 128;\n"
@@ -27,12 +113,8 @@ def patch_owner(text: str) -> str:
             fail("owner FLOOD_LEVEL anchor missing/duplicated")
         text = text.replace(anchor, anchor + OWNER_CONST, 1)
 
-    old = "if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA))"
-    new = "if (!state.is(Blocks.LAVA))"
-    if old in text:
-        text = text.replace(old, new)
-    if old in text:
-        fail("owner still removes vanilla water")
+    if "R33: preserve every native/vanilla WATER decision" not in text:
+        text = replace_cleanup_method(text)
 
     # Do not create synthetic flood below the hydraulic overlay depth.
     bounds_old = "y < minY || y > maxY"
@@ -96,10 +178,14 @@ def patch_r15(text: str) -> str:
 def verify(owner: str, r15: str) -> None:
     if OWNER_CONST not in owner:
         fail("owner custom-flood lower bound missing")
-    if "if (!state.is(Blocks.LAVA))" not in owner:
-        fail("owner lava-only cleanup missing")
-    if "if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA))" in owner:
-        fail("owner still erases vanilla water")
+    if "R33: preserve every native/vanilla WATER decision" not in owner:
+        fail("owner lava-only cleanup method missing")
+    start, end = method_bounds(owner, "    private static void removeGeneratedFluids(")
+    cleanup = owner[start:end]
+    if "state.is(Blocks.WATER)" in cleanup:
+        fail("owner cleanup still references WATER")
+    if "state.is(Blocks.LAVA)" not in cleanup:
+        fail("owner cleanup lost LAVA filter")
     if "y < CUSTOM_FLOOD_MIN_Y" not in owner:
         fail("owner final water write is not depth-gated")
 
@@ -116,7 +202,9 @@ def verify(owner: str, r15: str) -> None:
 def self_test() -> None:
     owner = """class NeverOverworldFlood {
     private static final int FLOOD_LEVEL = 128;
-    void cleanup(BlockState state) {
+    private static void removeGeneratedFluids(
+        final ChunkAccess chunk, final int minY, final int maxY, final BlockState air
+    ) {
         if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA)) { return; }
     }
     void flood(int y,int minY,int maxY) {
