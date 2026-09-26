@@ -30,11 +30,17 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
  @Override public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);}
  @EventHandler public void loaded(ServerLoadEvent ignored){
   var world=Bukkit.getWorlds().stream().filter(w->w.getEnvironment()==org.bukkit.World.Environment.NORMAL).findFirst().orElseThrow();
-  world.getChunkAtAsync(0,0,true).thenAccept(chunk->Bukkit.getRegionScheduler().execute(this,world,0,0,()->{
-   world.addPluginChunkTicket(0,0,this);
-   world.setChunkForceLoaded(0,0,true);
-   Bukkit.getRegionScheduler().runDelayed(this,world,0,0,task->start(((CraftWorld)world).getHandle()),20);
-  }));
+  testLevel=((CraftWorld)world).getHandle();
+  // Force-loaded chunk state is global on Folia; entity creation stays local.
+  Bukkit.getGlobalRegionScheduler().execute(this,()->{
+   try {
+    world.setChunkForceLoaded(0,0,true);
+    world.getChunkAtAsync(0,0,true).whenComplete((chunk,error)->{
+     if(error!=null){report(error);return;}
+     Bukkit.getRegionScheduler().runDelayed(this,world,0,0,task->start(testLevel),20);
+    });
+   } catch(Throwable error){report(error);}
+  });
  }
  @EventHandler public void spawned(CreatureSpawnEvent event){
   var e=((org.bukkit.craftbukkit.entity.CraftEntity)event.getEntity()).getHandle();
@@ -64,7 +70,6 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
   manager.execute(f,source(level,e).withCallback((success,value)->functionResults.add(name+": success="+success+" value="+value)));
  }
  private void start(ServerLevel level){
-  testLevel=level;
   try{
    check(ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(level,0,0),"actual owning region thread");
    for(String name:new String[]{"data","tag","scoreboard","function","item","loot"})
@@ -86,7 +91,7 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
    check(level.getWorld().isChunkForceLoaded(0,0),"fixture chunk remains forced loaded");
    for(Entity entity:observedEntities){
     if(!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(entity)){
-     functionResults.add("entity migrated: "+entity.getUUID()); continue;
+     functionResults.add("entity migrated: "+entity.getUUID());continue;
     }
     functionResults.add("lifecycle="+BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())+" removed="+entity.isRemoved()+" reason="+entity.getRemovalReason()+" pos="+entity.position());
    }
@@ -98,7 +103,7 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
    report(null);
   }catch(Throwable e){report(e);}
  }
- private void report(Throwable error){
+ private synchronized void report(Throwable error){
   if(finished)return;finished=true;
   if(error!=null)error.printStackTrace();
   try{
@@ -110,8 +115,7 @@ public final class R37DungeonQaPlugin extends JavaPlugin implements Listener {
    Files.writeString(getDataFolder().toPath().resolve("result.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(result));
   }catch(Exception e){e.printStackTrace();}
   if(testLevel!=null){
-   testLevel.getWorld().setChunkForceLoaded(0,0,false);
-   testLevel.getWorld().removePluginChunkTicket(0,0,this);
+   Bukkit.getGlobalRegionScheduler().execute(this,()->testLevel.getWorld().setChunkForceLoaded(0,0,false));
   }
   getLogger().info("R37 DUNGEON QA "+(error==null?"PASS":"FAIL")+" checks="+checks.size());
  }
