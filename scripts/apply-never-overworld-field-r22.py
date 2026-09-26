@@ -60,6 +60,55 @@ HELPER = """    static boolean prospectiveOceanSurfaceSeed(final int surfaceY, f
 
 HELPER_ANCHOR = "    static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {\n"
 
+APPLY_OLD = """    public static int apply(final WorldGenLevel level, final ChunkAccess chunk) {
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
+        return floodVerifiedComponents(chunk);
+    }
+"""
+
+APPLY_NEW = """    public static int apply(final WorldGenLevel level, final ChunkAccess chunk) {
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
+
+        // R24: consume FEATURES handoff inside the canonical R15 component
+        // scan. This avoids a second full owner BFS immediately afterwards.
+        final int minY = Math.max(SCAN_MIN_Y, chunk.getMinY() + 1);
+        final int maxY = Math.min(SCAN_MAX_Y, chunk.getMaxY() - 1);
+        final BitSet featureSeeds = takeFeatureBoundarySeeds(level.getLevel(), chunk);
+        if (featureSeeds == null || featureSeeds.isEmpty() || minY > maxY) {
+            return floodVerifiedComponents(chunk);
+        }
+
+        final int capacity = (maxY - minY + 1) * 256;
+        final boolean[] externalSeeds = new boolean[capacity];
+        int accepted = 0;
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int e = featureSeeds.nextSetBit(0); e >= 0 && e < capacity; e = featureSeeds.nextSetBit(e + 1)) {
+            final int x = e & 15;
+            final int z = (e >>> 4) & 15;
+            final int y = minY + (e >>> 8);
+            pos.set(baseX + x, y, baseZ + z);
+            if (!traversable(chunk, pos)) continue;
+            externalSeeds[e] = true;
+            ++accepted;
+        }
+        if (accepted == 0) return floodVerifiedComponents(chunk);
+        if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+            System.out.println(
+                "[NeverFolia][R24FeatureSeedsInR15] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
+                + " accepted=" + accepted
+            );
+        }
+        return floodVerifiedComponents(chunk, externalSeeds, true);
+    }
+"""
+
+EXTERNAL_SEED_OLD = "            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;\n"
+EXTERNAL_SEED_NEW = "            if(externalSeeds!=null&&externalSeeds[e])hasOceanSeed=true;\n"
+
 CACHE_METHODS_ANCHOR = "    private static int seedFromNeighbor(\n"
 FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.ConcurrentHashMap<
         net.minecraft.server.level.ServerLevel,
@@ -569,6 +618,14 @@ def patch(text: str) -> str:
         require(text.count(OLD_SEEDS) == 1, "R21 existing-water seed block missing/drifted")
         text = text.replace(OLD_SEEDS, NEW_SEEDS, 1)
 
+    if APPLY_NEW not in text:
+        require(text.count(APPLY_OLD) == 1, "R15 apply handoff integration anchor missing/drifted")
+        text = text.replace(APPLY_OLD, APPLY_NEW, 1)
+
+    if EXTERNAL_SEED_NEW not in text:
+        require(text.count(EXTERNAL_SEED_OLD) == 1, "R15 external seed proof anchor missing/drifted")
+        text = text.replace(EXTERNAL_SEED_OLD, EXTERNAL_SEED_NEW, 1)
+
     if OLD_RECONCILE in text:
         text = text.replace(OLD_RECONCILE, NEW_RECONCILE, 1)
     elif (
@@ -622,6 +679,8 @@ def verify(folia: Path) -> None:
         "chunkKey(final int chunkX, final int chunkZ)",
         "FEATURE_BOUNDARY_SEEDS",
                                 "publishFeatureBoundarySeeds",
+        "R24FeatureSeedsInR15",
+        "return floodVerifiedComponents(chunk, externalSeeds, true);",
         "new BitSet(capacity)",
         "CACHE_CHUNK_RADIUS = 1",
         "CACHE_BLOCK_WIDTH = CACHE_CHUNK_WIDTH * 16",
@@ -650,6 +709,10 @@ def verify(folia: Path) -> None:
         "final int changed = floodFeatureHandoffOwner(level.getLevel(), owner, minY, maxY);" in text,
         "R24 owner-only feature handoff reconciliation missing"
     )
+    require(EXTERNAL_SEED_NEW in text,
+            "R24 verified FEATURES seed must prove ocean connectivity without pre-writing WATER")
+    require(APPLY_NEW in text,
+            "R24 FEATURES handoff must be consumed by canonical R15 scan")
     require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
             and "while (head < tail)" in text
             and "enqueueOwner(owner, visited, queue" in text,
@@ -667,6 +730,17 @@ class X {
     static final int SCAN_MAX_Y = 128;
     static boolean isFloodable(BlockState state){ return true; }
     static boolean traversable(ChunkAccess chunk, BlockPos pos){ return true; }
+    public static int apply(final WorldGenLevel level, final ChunkAccess chunk) {
+        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != -512 || level.getHeight() != 1024) return 0;
+        return floodVerifiedComponents(chunk);
+    }
+    static int floodVerifiedComponents(ChunkAccess chunk){ return 0; }
+    static int floodVerifiedComponents(ChunkAccess chunk, boolean[] externalSeeds, boolean allowSeams){ return 0; }
+    static void seedProof(boolean[] externalSeeds, int e, ChunkAccess chunk, BlockPos pos) {
+            boolean hasOceanSeed=false;
+            if(externalSeeds!=null&&externalSeeds[e]&&chunk.getBlockState(pos).is(Blocks.WATER))hasOceanSeed=true;
+    }
     static boolean[] oceanConnectedFloodable(final ChunkAccess chunk, final int minY, final int maxY) {
         final int capacity = (maxY - minY + 1) * 256;
         final boolean[] connected = new boolean[capacity];
@@ -692,6 +766,11 @@ class X {
     require("surfaceOceanSeed" in out, "SELF-TEST combined seed predicate not installed")
     require("state.is(Blocks.WATER) || prospectiveOceanSurfaceSeed" in out,
             "SELF-TEST existing WATER preservation missing")
+    require("R24FeatureSeedsInR15" in out
+            and "floodVerifiedComponents(chunk, externalSeeds, true)" in out,
+            "SELF-TEST R15 apply did not consume feature handoff")
+    require(EXTERNAL_SEED_NEW in out,
+            "SELF-TEST external feature seed still requires pre-written WATER")
     require("if (!chunk.getBlockState(pos).is(Blocks.WATER)) continue;" not in out,
             "SELF-TEST old WATER-only seed survived")
     for forbidden in (
