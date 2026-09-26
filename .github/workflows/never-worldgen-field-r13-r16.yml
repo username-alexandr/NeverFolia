@@ -30,6 +30,7 @@ on:
       - 'scripts/apply-never-overworld-field-r21.py'
       - 'scripts/apply-never-overworld-fixpack-r21.py'
       - 'scripts/apply-never-overworld-field-r22.py'
+      - 'scripts/apply-never-overworld-deep-aperture-r32.py'
       - 'scripts/apply-never-overworld-flood-hook.py'
       - 'scripts/apply-never-overworld-field-r10.py'
       - 'scripts/prepare-never-nether-noise-r5.py'
