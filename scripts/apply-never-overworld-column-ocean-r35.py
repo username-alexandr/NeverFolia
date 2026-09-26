@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""FIELD-R35: permit NeverFolia synthetic WATER only above natural OCEAN_FLOOR_WG.
+"""FIELD-R35: permit NeverFolia synthetic WATER at/above natural OCEAN_FLOOR_WG.
 
 R33 preserved vanilla aquifers and stopped custom flood below Y=96, but a
 surface-ocean seed could still traverse a cave component and write a rectangular
 chunk-local water volume. R35 makes the final write contract column-local:
-NeverFolia may create WATER only when the target block is above that column's
+NeverFolia may create WATER only when the target block is at/above that column's
 natural OCEAN_FLOOR_WG and at/below the raised ocean plane Y=128.
 
 Vanilla/native aquifer WATER is never removed or rewritten by this gate.
@@ -29,7 +29,7 @@ OWNER_HELPER="""    private static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < FLOOD_LEVEL && y > oceanFloorY && y <= FLOOD_LEVEL;
+        return oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL;
     }
 
 """
@@ -46,7 +46,7 @@ R15_HELPER="""    static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < SCAN_MAX_Y && y > oceanFloorY && y <= SCAN_MAX_Y;
+        return oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y;
     }
 
 """
