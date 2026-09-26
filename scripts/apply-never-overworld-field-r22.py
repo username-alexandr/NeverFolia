@@ -304,15 +304,25 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final ChunkAccess target = level.getChunkSource().getChunkAtImmediately(chunkX, chunkZ);
         if (target == null || !target.getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)) return;
 
+        // R31: FULL chunks are immutable to worldgen flood repair. Mutating a
+        // LevelChunk after generation made the persisted result depend on which
+        // neighbour happened to publish proof before that chunk unloaded.
+        if (target instanceof net.minecraft.world.level.chunk.LevelChunk) {
+            final BitSet discarded = takeFeatureBoundarySeeds(level, target);
+            if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
+                System.out.println(
+                    "[NeverFolia][R31FullSkip] chunk=" + chunkX + "," + chunkZ
+                    + " discarded=" + (discarded == null ? 0 : discarded.cardinality())
+                );
+            }
+            return;
+        }
+
         final int minY = Math.max(SCAN_MIN_Y, target.getMinY() + 1);
         final int maxY = Math.min(SCAN_MAX_Y, target.getMaxY() - 1);
         if (minY > maxY) return;
 
-        final boolean alreadyFull =
-            target instanceof net.minecraft.world.level.chunk.LevelChunk;
-        final BitSet seeds = alreadyFull
-            ? takeFeatureBoundarySeeds(level, target)
-            : peekFeatureBoundarySeeds(level, target);
+        final BitSet seeds = peekFeatureBoundarySeeds(level, target);
         if (seeds == null || seeds.isEmpty()) return;
 
         final boolean[] verified = oceanConnectedFloodableWithExternal(target, minY, maxY, seeds);
@@ -324,17 +334,13 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
             NeverOverworldEcologyR15.cleanup(level, target);
         }
 
-        // Before FULL the pending BitSet is intentionally retained, so the
-        // same proof cannot be re-added and re-scheduled by a neighbour. Once
-        // the target is already FULL, only real new WATER may propagate again;
-        // this prevents proof ping-pong after the FULL handoff was consumed.
-        if (!alreadyFull || changed > 0) {
-            publishVerifiedBoundaries(level, target, verified, minY, maxY);
-        }
+        // Before FULL the pending BitSet is retained so LIGHT can consume the
+        // same monotonic proof deterministically.
+        publishVerifiedBoundaries(level, target, verified, minY, maxY);
 
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
-                "[NeverFolia][R26LateSeam] chunk=" + chunkX + "," + chunkZ
+                "[NeverFolia][R31LateSeam] chunk=" + chunkX + "," + chunkZ
                 + " seeds=" + seeds.cardinality() + " changed=" + changed
             );
         }
@@ -348,31 +354,14 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
             || !level.dimension().equals(Level.OVERWORLD)
             || level.getMinY() != -512 || level.getHeight() != 1024) return;
 
-        final int minY = Math.max(SCAN_MIN_Y, chunk.getMinY() + 1);
-        final int maxY = Math.min(SCAN_MAX_Y, chunk.getMaxY() - 1);
-        if (minY > maxY) return;
-
-        final BitSet seeds = takeFeatureBoundarySeeds(level, chunk);
-        final boolean hasHandoff = seeds != null && !seeds.isEmpty();
-
-        // FULL is the durable settlement point. Even without an incoming
-        // handoff, publish the chunk's own surface-ocean proof so neighbours
-        // that completed LIGHT earlier can receive the final boundary truth.
-        final boolean[] verified = hasHandoff
-            ? oceanConnectedFloodableWithExternal(chunk, minY, maxY, seeds)
-            : oceanConnectedFloodable(chunk, minY, maxY);
-        final int changed = fillVerifiedMask(level, chunk, verified, minY, maxY);
-        if (changed > 0) {
-            NeverOverworldFlood.reweatherSubmergedSurface(level, chunk);
-            NeverOverworldEcologyR13.cleanup(level, chunk);
-            NeverOverworldEcologyR15.cleanup(level, chunk);
-        }
-        publishVerifiedBoundaries(level, chunk, verified, minY, maxY);
-
+        // Durable FULL state is observation-only for worldgen. Any proof that
+        // arrives after this boundary is intentionally discarded rather than
+        // changing persisted blocks in an order-dependent way.
+        final BitSet discarded = takeFeatureBoundarySeeds(level, chunk);
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
-                "[NeverFolia][R28FullSeam] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
-                + " seeds=" + (hasHandoff ? seeds.cardinality() : 0) + " changed=" + changed
+                "[NeverFolia][R31FullImmutable] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
+                + " discarded=" + (discarded == null ? 0 : discarded.cardinality())
             );
         }
     }
@@ -924,9 +913,9 @@ def verify(folia: Path) -> None:
         "getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)",
         "peekFeatureBoundarySeeds(level, target)",
         "target instanceof net.minecraft.world.level.chunk.LevelChunk",
-        "final boolean hasHandoff",
-        "R26LateSeam",
-        "R28FullSeam",
+        "R31FullSkip",
+        "R31LateSeam",
+        "R31FullImmutable",
         "chunk instanceof LevelChunk",
         "chunk.getSection(chunk.getSectionIndex(y))",
         "section.setBlockState(x, y & 15, z, water, false)",
@@ -981,15 +970,14 @@ def verify(folia: Path) -> None:
             "R26 FEATURES publication must compose inbound proof before republishing")
     require("queueChunkTask(" in text and "applyLateFeatureCorrection" in text,
             "R26 late seam correction must hop to the target owning region")
-    require("final boolean alreadyFull =" in text
-            and "peekFeatureBoundarySeeds(level, target)" in text
-            and "if (!alreadyFull || changed > 0)" in text,
-            "R28 late correction must preserve pre-FULL proof and stop post-FULL ping-pong")
+    require("target instanceof net.minecraft.world.level.chunk.LevelChunk" in text
+            and "R31FullSkip" in text
+            and "takeFeatureBoundarySeeds(level, target)" in text,
+            "R31 late correction must never mutate an already-FULL chunk")
     require("public static void onFullChunk(" in text
-            and "R28FullSeam" in text
-            and "final boolean hasHandoff" in text
-            and "oceanConnectedFloodable(chunk, minY, maxY)" in text,
-            "R28 FULL settlement/publication hook missing")
+            and "R31FullImmutable" in text
+            and "takeFeatureBoundarySeeds(level, chunk)" in text,
+            "R31 FULL hook must discard late proof without block mutation")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
             "R24 FEATURES peek must clone shared handoff state")
     require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level, owner);" in text
@@ -1003,7 +991,7 @@ def verify(folia: Path) -> None:
             "R29 FULL settlement must bypass LevelChunk block callbacks")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R29] FULL seam settlement bypasses live block callbacks")
+    print("[FIELD-R31] FULL chunks immutable; flood settlement ends before FULL")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -1151,7 +1139,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R29] installed: FULL settlement uses raw section writes; no live WATER callbacks")
+    print("[FIELD-R31] installed: no worldgen flood writes after FULL")
 
 if __name__ == "__main__":
     main()
