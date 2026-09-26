@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R32: reject narrow deep apertures in the final NeverOverworld primary flood.
+"""R32: reject narrow deep apertures in the final verified NeverOverworld flood write.
 
 Install late, after the historical R9->R15 exact-source chain and the R22
 fixpack. This intentionally does not alter any historical source contract.
@@ -15,21 +15,19 @@ CONSTANT_ANCHOR="    private static final int FLOOD_LEVEL = 128;\n"
 CONSTANTS="""    private static final int DEEP_FLOW_MAX_Y = 96;
     private static final int MIN_DEEP_APERTURE = 6;
 """
-WRITE_OLD="""            if (!chunk.getBlockState(pos).isAir()) {
-                continue;
-            }
+WRITE_OLD="""                    pos.set(baseX + x, y, baseZ + z);
+                    if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
 
-            chunk.setBlockState(pos, water, 0);
+                    if (rawFullWrite) {
 """
-WRITE_NEW="""            if (!chunk.getBlockState(pos).isAir()) {
-                continue;
-            }
-            if (y <= DEEP_FLOW_MAX_Y
-                && !hydraulicOpenAir(chunk, localX, y, localZ, minX, minZ)) {
-                continue;
-            }
+WRITE_NEW="""                    pos.set(baseX + x, y, baseZ + z);
+                    if (y <= DEEP_FLOW_MAX_Y
+                        && !hydraulicOpenAir(chunk, x, y, z, baseX, baseZ)) {
+                        continue;
+                    }
+                    if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
 
-            chunk.setBlockState(pos, water, 0);
+                    if (rawFullWrite) {
 """
 HELPER_ANCHOR="    private static int encode(final int localX, final int y, final int localZ, final int minY) {\n"
 HELPER="""    private static boolean hydraulicOpenAir(
@@ -75,7 +73,7 @@ def patch(text:str)->str:
     if text.count(CONSTANT_ANCHOR)!=1:
         fail("FLOOD_LEVEL anchor missing/duplicated")
     if text.count(WRITE_OLD)!=1:
-        fail(f"primary flood write anchor count={text.count(WRITE_OLD)}")
+        fail(f"final fillVerifiedMask write anchor count={text.count(WRITE_OLD)}")
     if text.count(HELPER_ANCHOR)!=1:
         fail("encode anchor missing/duplicated")
     text=text.replace(CONSTANT_ANCHOR,CONSTANT_ANCHOR+CONSTANTS,1)
@@ -97,12 +95,16 @@ def verify_text(text:str)->None:
 def self_test()->None:
     fixture="""class NeverOverworldFlood {
     private static final int FLOOD_LEVEL = 128;
-    void flood(ChunkAccess chunk, BlockPos.MutableBlockPos pos, BlockState water, int y, int localX, int localZ, int minX, int minZ) {
-            if (!chunk.getBlockState(pos).isAir()) {
-                continue;
-            }
+    void fillVerifiedMask(ChunkAccess chunk, BlockPos.MutableBlockPos pos, BlockState water, int y, int x, int z, int baseX, int baseZ, boolean rawFullWrite) {
+                    pos.set(baseX + x, y, baseZ + z);
+                    if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
 
-            chunk.setBlockState(pos, water, 0);
+                    if (rawFullWrite) {
+                        final LevelChunkSection section = chunk.getSection(chunk.getSectionIndex(y));
+                        section.setBlockState(x, y & 15, z, water, false);
+                    } else {
+                        chunk.setBlockState(pos, water, 0);
+                    }
     }
     private static int encode(final int localX, final int y, final int localZ, final int minY) {
         return 0;
