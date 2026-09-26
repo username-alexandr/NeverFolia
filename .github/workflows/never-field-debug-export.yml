@@ -9,24 +9,61 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
           ref: a0d252b9a6dc9548be7248282219c282112a9b52
           persist-credentials: false
-      - name: Export tracked source tree without Git credentials
-        shell: bash
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Fetch checksum-pinned original datapacks
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          test "$(git rev-parse HEAD)" = a0d252b9a6dc9548be7248282219c282112a9b52
-          git archive --format=tar.gz --output=artifacts/source-a0d252b.tar.gz HEAD
-          sha256sum artifacts/source-a0d252b.tar.gz > artifacts/SHA256SUMS.txt
-          printf '%s\n' "$(git rev-parse HEAD)" > artifacts/SOURCE-SHA.txt
+          mkdir -p artifacts/originals
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('builder','scripts/build-never-overworld-external-structures-r19.py')
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          for key in m.SOURCES:
+              m.fetch_source(key,Path('artifacts/originals'))
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: NeverWorldgen-source-a0d252b
-          path: artifacts/
+          name: NeverWorldgen-original-datapacks-a0d252b
+          path: artifacts/originals/
           retention-days: 3
           if-no-files-found: error
+      - name: Materialize pinned Java source
+        run: |
+          set -euo pipefail
+          git config --global user.email actions@github.com
+          git config --global user.name 'NeverFolia CI'
+          python3 scripts/prepare-never-nether-r13-upstream.py
+          bash scripts/apply-folia-patches-ci.sh .work/Folia
+          bash scripts/apply-neverfolia-post-patches.sh
+          python3 qa/ore-light-r12/defer-upper-pruning.py .work/Folia
+          python3 scripts/apply-never-overworld-fixpack-r22.py .work/Folia
+          mkdir -p artifacts/java
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          source=Path('.work/Folia/folia-server/src/minecraft/java')
+          exact={'ChunkAccess.java','ProtoChunk.java','Heightmap.java','StructureTemplate.java','JigsawPlacement.java','BaseSpawner.java','TrialSpawner.java','BlockAttachedEntity.java','HangingEntity.java','Commands.java','RunFunction.java','SinglePoolElement.java','ChunkStatusTasks.java','NoiseBasedChunkGenerator.java','NoiseChunk.java','Aquifer.java','ChunkTaskScheduler.java','ChunkLightTask.java'}
+          for p in source.rglob('*.java'):
+              if 'NeverOverworld' in p.name or p.name in exact:
+                  dest=Path('artifacts/java')/p.relative_to(source)
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  shutil.copyfile(p,dest)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverWorldgen-materialized-a0d252b
+          path: artifacts/java/
+          retention-days: 3
+          if-no-files-found: warn
