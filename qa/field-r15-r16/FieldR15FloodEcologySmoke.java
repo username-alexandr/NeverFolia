@@ -1,5 +1,7 @@
 package net.minecraft.world.level.chunk;
 
+import java.util.EnumSet;
+
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -13,6 +15,7 @@ import net.minecraft.world.level.biome.BiomeSpecialEffects;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 
 public final class FieldR15FloodEcologySmoke {
@@ -77,6 +80,7 @@ public final class FieldR15FloodEcologySmoke {
         var column=fixture();
         set(column,2,128,8,Blocks.WATER);
         for(int y=127;y>=80;y--)set(column,2,y,8,Blocks.AIR);
+        Heightmap.primeHeightmaps(column, EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG));
         check(NeverOverworldFloodConnectivityR15.customOceanColumnOpen(
                 column,new BlockPos(2,100,8),100),
             "R35 open ocean column above OCEAN_FLOOR_WG must accept custom water");
