@@ -236,6 +236,7 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final int baseZ = chunk.getPos().getMinBlockZ();
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         final BlockState water = Blocks.WATER.defaultBlockState();
+        final boolean rawFullWrite = chunk instanceof LevelChunk;
         int changed = 0;
         for (int y = minY; y <= maxY; ++y) {
             for (int z = 0; z < 16; ++z) {
@@ -244,11 +245,26 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
                     if (!verified[e]) continue;
                     pos.set(baseX + x, y, baseZ + z);
                     if (chunk.getBlockState(pos).is(Blocks.WATER) || !traversable(chunk, pos)) continue;
-                    chunk.setBlockState(pos, water, 0);
+
+                    if (rawFullWrite) {
+                        // FULL chunks must never call LevelChunk#setBlockState
+                        // here: WATER onPlace can synchronously query/load a
+                        // neighbouring chunk and deadlock a Folia region.
+                        final LevelChunkSection section =
+                            chunk.getSection(chunk.getSectionIndex(y));
+                        section.setBlockState(x, y & 15, z, water, false);
+                    } else {
+                        // ProtoChunk/LIGHT path remains generation-local and
+                        // does not execute live block callbacks.
+                        chunk.setBlockState(pos, water, 0);
+                    }
                     level.getChunkSource().getLightEngine().checkBlock(pos);
                     ++changed;
                 }
             }
+        }
+        if (rawFullWrite && changed > 0) {
+            chunk.setUnsaved(true);
         }
         return changed;
     }
@@ -911,6 +927,10 @@ def verify(folia: Path) -> None:
         "final boolean hasHandoff",
         "R26LateSeam",
         "R28FullSeam",
+        "chunk instanceof LevelChunk",
+        "chunk.getSection(chunk.getSectionIndex(y))",
+        "section.setBlockState(x, y & 15, z, water, false)",
+        "chunk.setUnsaved(true)",
         "public static void onFullChunk(",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
@@ -978,9 +998,12 @@ def verify(folia: Path) -> None:
             "R28 direct owner BFS must not consume FULL handoff")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
+    require("if (rawFullWrite)" in text
+            and "section.setBlockState(x, y & 15, z, water, false);" in text,
+            "R29 FULL settlement must bypass LevelChunk block callbacks")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R28] transitive proof preserved through LIGHT and consumed at FULL")
+    print("[FIELD-R29] FULL seam settlement bypasses live block callbacks")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -1128,7 +1151,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R28] installed: monotonic FEATURES handoff preserved through LIGHT and settled at FULL")
+    print("[FIELD-R29] installed: FULL settlement uses raw section writes; no live WATER callbacks")
 
 if __name__ == "__main__":
     main()
