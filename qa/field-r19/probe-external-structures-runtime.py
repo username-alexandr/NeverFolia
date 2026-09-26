@@ -245,11 +245,9 @@ def runtime_log_errors(out:Path):
     return rows
 
 def wait_marker(server,marker,timeout=15):
-    start=len(server.text())
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
-        segment=server.text()[start:]
-        if marker in segment:
+        if marker in server.text():
             return True
         require(server.p.poll() is None,"server exited during D&T runtime smoke")
         time.sleep(.2)
