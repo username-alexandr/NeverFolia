@@ -70,16 +70,19 @@ public final class FieldR15FloodEcologySmoke {
         check(underground.getBlockState(new BlockPos(12,80,8)).isAir(),
             "underground connected cavity remains dry without Y128 ocean seed");
 
-        // R21: a FEATURES-complete neighbour is not flooded yet. Ocean connectivity
-        // must therefore travel from Y128 water through AIR/floodable cave volume to the seam.
-        var neighbor=fixture();
-        set(neighbor,2,128,8,Blocks.WATER);
-        for(int y=127;y>=80;y--)set(neighbor,2,y,8,Blocks.AIR);
-        for(int x=3;x<=15;x++)set(neighbor,x,80,8,Blocks.AIR);
-        boolean[] oceanConnected=NeverOverworldFloodConnectivityR15.oceanConnectedFloodable(neighbor,-64,128);
-        int deepSeam=((80-(-64))<<8)|(8<<4)|15;
-        check(oceanConnected[deepSeam],
-            "R21 neighbour ocean seed must propagate through unflooded AIR to deep seam");
+        // R35: custom NeverFolia ocean water is column-bounded. A genuinely
+        // open ocean shaft above its natural OCEAN_FLOOR_WG may receive the
+        // raised-ocean overlay, while cells below that floor remain vanilla
+        // aquifer territory.
+        var column=fixture();
+        set(column,2,128,8,Blocks.WATER);
+        for(int y=127;y>=80;y--)set(column,2,y,8,Blocks.AIR);
+        check(NeverOverworldFloodConnectivityR15.customOceanColumnOpen(
+                column,new BlockPos(2,100,8),100),
+            "R35 open ocean column above OCEAN_FLOOR_WG must accept custom water");
+        check(!NeverOverworldFloodConnectivityR15.customOceanColumnOpen(
+                column,new BlockPos(2,70,8),70),
+            "R35 cell below natural OCEAN_FLOOR_WG must remain native-aquifer territory");
 
         // R22: even with zero external neighbour seeds, the LIGHT reconciliation
         // pass must flood a seam-touching component that has its own verified
@@ -96,10 +99,10 @@ public final class FieldR15FloodEcologySmoke {
         ];
         int localFlood=NeverOverworldFloodConnectivityR15.floodVerifiedComponents(
             localOceanSeam,noExternalSeeds,true);
-        check(localFlood>0,
-            "seam reconciliation must use owner's own Y128 ocean seed without external seeds");
-        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).is(Blocks.WATER),
-            "owner-local ocean seed must flood the deep seam cell");
+        check(localFlood==0,
+            "R35 seam reconciliation must not flood an enclosed cave below natural ocean floor");
+        check(localOceanSeam.getBlockState(new BlockPos(15,80,8)).isAir(),
+            "R35 enclosed deep seam cell must remain dry");
 
         // Lava contact blocks continuation.
         var lava=fixture();
