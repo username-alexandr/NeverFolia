@@ -73,7 +73,7 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         java.util.concurrent.ConcurrentHashMap<Long, java.util.List<IslandSlice>>
     > SYNTHETIC_ISLANDS = new java.util.concurrent.ConcurrentHashMap<>();
 
-    private record IslandSlice(int[] fillTopY) {{}}
+    private record IslandSlice(int[] fillTopY, int[] dryMinY, int[] dryMaxY) {{}}
 
     private static long chunkKey(final int chunkX, final int chunkZ) {{
         return ((long)chunkX << 32) ^ (chunkZ & 0xffffffffL);
@@ -96,6 +96,8 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
         final int islandMargin = Math.max(8, Math.min(16, (radius + 7) / 8));
         final java.util.HashMap<Long, int[]> tops = new java.util.HashMap<>();
         final java.util.HashMap<Long, int[]> hardCaps = new java.util.HashMap<>();
+        final java.util.HashMap<Long, int[]> dryMins = new java.util.HashMap<>();
+        final java.util.HashMap<Long, int[]> dryMaxs = new java.util.HashMap<>();
 
         for (final StructurePiece piece : start.getPieces()) {{
             final BoundingBox box = piece.getBoundingBox();
@@ -137,6 +139,19 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                             return values;
                         }});
                         caps[index] = Math.min(caps[index], box.minY() - 1);
+
+                        final int[] mins = dryMins.computeIfAbsent(key, ignored -> {{
+                            final int[] values = new int[256];
+                            java.util.Arrays.fill(values, Integer.MAX_VALUE);
+                            return values;
+                        }});
+                        final int[] maxs = dryMaxs.computeIfAbsent(key, ignored -> {{
+                            final int[] values = new int[256];
+                            java.util.Arrays.fill(values, Integer.MIN_VALUE);
+                            return values;
+                        }});
+                        mins[index] = Math.min(mins[index], box.minY());
+                        maxs[index] = Math.max(maxs[index], box.maxY());
                     }}
                 }}
             }}
@@ -157,10 +172,14 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                 any = true;
             }}
             if (!any) continue;
+            final int[] dryMinY = dryMins.getOrDefault(key, new int[256]);
+            final int[] dryMaxY = dryMaxs.getOrDefault(key, new int[256]);
+            if (!dryMins.containsKey(key)) java.util.Arrays.fill(dryMinY, Integer.MAX_VALUE);
+            if (!dryMaxs.containsKey(key)) java.util.Arrays.fill(dryMaxY, Integer.MIN_VALUE);
             byChunk.compute(key, (ignored, list) -> {{
                 final java.util.List<IslandSlice> out =
                     list == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(list);
-                out.add(new IslandSlice(fillTopY));
+                out.add(new IslandSlice(fillTopY, dryMinY, dryMaxY));
                 return java.util.List.copyOf(out);
             }});
         }}
@@ -214,6 +233,19 @@ public final class NeverOverworldExternalStructurePolicyR19 {{
                                     : Blocks.STONE.defaultBlockState();
                         chunk.setBlockState(pos, replacement, 0);
                         ++changed;
+                    }}
+                    final int dryMin = slice.dryMinY()[index];
+                    final int dryMax = slice.dryMaxY()[index];
+                    if (dryMin != Integer.MAX_VALUE && dryMax != Integer.MIN_VALUE) {{
+                        final int lo = Math.max(dryMin, chunk.getMinY() + 1);
+                        final int hi = Math.min(dryMax, chunk.getMaxY() - 1);
+                        for (int y = lo; y <= hi; ++y) {{
+                            pos.set(baseX + lx, y, baseZ + lz);
+                            final BlockState current = chunk.getBlockState(pos);
+                            if (!current.is(Blocks.WATER)) continue;
+                            chunk.setBlockState(pos, Blocks.AIR.defaultBlockState(), 0);
+                            ++changed;
+                        }}
                     }}
                 }}
             }}
@@ -522,6 +554,11 @@ def verify(folia: Path) -> None:
         "final int islandMargin = Math.max(8, Math.min(16, (radius + 7) / 8));",
         "final java.util.HashMap<Long, int[]> tops",
         "final int drop = ring <= 4 ? 0 : (ring - 1) / 4;",
+        "private record IslandSlice(int[] fillTopY, int[] dryMinY, int[] dryMaxY)",
+        "mins[index] = Math.min(mins[index], box.minY())",
+        "maxs[index] = Math.max(maxs[index], box.maxY())",
+        "if (!current.is(Blocks.WATER)) continue;",
+        "chunk.setBlockState(pos, Blocks.AIR.defaultBlockState(), 0);",
     ):
         if marker not in helper:
             fail("R24 synthetic-island marker missing: " + marker)
