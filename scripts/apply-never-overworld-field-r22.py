@@ -292,7 +292,11 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final int maxY = Math.min(SCAN_MAX_Y, target.getMaxY() - 1);
         if (minY > maxY) return;
 
-        final BitSet seeds = takeFeatureBoundarySeeds(level, target);
+        final boolean alreadyFull =
+            target instanceof net.minecraft.world.level.chunk.LevelChunk;
+        final BitSet seeds = alreadyFull
+            ? takeFeatureBoundarySeeds(level, target)
+            : peekFeatureBoundarySeeds(level, target);
         if (seeds == null || seeds.isEmpty()) return;
 
         final boolean[] verified = oceanConnectedFloodableWithExternal(target, minY, maxY, seeds);
@@ -304,10 +308,13 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
             NeverOverworldEcologyR15.cleanup(level, target);
         }
 
-        // Proof propagation is monotonic even when every verified cell was
-        // already WATER: publishFeatureBoundary only schedules neighbours when
-        // their stored BitSet actually gains new bits.
-        publishVerifiedBoundaries(level, target, verified, minY, maxY);
+        // Before FULL the pending BitSet is intentionally retained, so the
+        // same proof cannot be re-added and re-scheduled by a neighbour. Once
+        // the target is already FULL, only real new WATER may propagate again;
+        // this prevents proof ping-pong after the FULL handoff was consumed.
+        if (!alreadyFull || changed > 0) {
+            publishVerifiedBoundaries(level, target, verified, minY, maxY);
+        }
 
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
@@ -330,9 +337,14 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         if (minY > maxY) return;
 
         final BitSet seeds = takeFeatureBoundarySeeds(level, chunk);
-        if (seeds == null || seeds.isEmpty()) return;
+        final boolean hasHandoff = seeds != null && !seeds.isEmpty();
 
-        final boolean[] verified = oceanConnectedFloodableWithExternal(chunk, minY, maxY, seeds);
+        // FULL is the durable settlement point. Even without an incoming
+        // handoff, publish the chunk's own surface-ocean proof so neighbours
+        // that completed LIGHT earlier can receive the final boundary truth.
+        final boolean[] verified = hasHandoff
+            ? oceanConnectedFloodableWithExternal(chunk, minY, maxY, seeds)
+            : oceanConnectedFloodable(chunk, minY, maxY);
         final int changed = fillVerifiedMask(level, chunk, verified, minY, maxY);
         if (changed > 0) {
             NeverOverworldFlood.reweatherSubmergedSurface(level, chunk);
@@ -343,8 +355,8 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
 
         if (Boolean.getBoolean("neverfolia.debugFloodSeams")) {
             System.out.println(
-                "[NeverFolia][R27FullSeam] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
-                + " seeds=" + seeds.cardinality() + " changed=" + changed
+                "[NeverFolia][R28FullSeam] chunk=" + chunk.getPos().x() + "," + chunk.getPos().z()
+                + " seeds=" + (hasHandoff ? seeds.cardinality() : 0) + " changed=" + changed
             );
         }
     }
@@ -355,7 +367,7 @@ FEATURE_HANDOFF_METHODS = """    private static final java.util.concurrent.Concu
         final int minY,
         final int maxY
     ) {
-        final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);
+        final BitSet featureSeeds = peekFeatureBoundarySeeds(level, owner);
         if (featureSeeds == null || featureSeeds.isEmpty()) return 0;
 
         final int capacity = (maxY - minY + 1) * 256;
@@ -613,7 +625,7 @@ CACHE_METHODS = """    private static final int CACHE_CHUNK_RADIUS = 1;
                 if (chunk == null) continue;
                 final boolean ownerTile = tileX == CACHE_CHUNK_RADIUS && tileZ == CACHE_CHUNK_RADIUS;
                 final BitSet featureSeeds = ownerTile
-                    ? takeFeatureBoundarySeeds(level, owner)
+                    ? peekFeatureBoundarySeeds(level, owner)
                     : peekFeatureBoundarySeeds(level, chunk);
                 if (featureSeeds == null || featureSeeds.isEmpty()) continue;
 
@@ -894,8 +906,11 @@ def verify(folia: Path) -> None:
         "scheduleLateFeatureCorrection",
         "queueChunkTask",
         "getPersistedStatus().isOrAfter(ChunkStatus.LIGHT)",
+        "peekFeatureBoundarySeeds(level, target)",
+        "target instanceof net.minecraft.world.level.chunk.LevelChunk",
+        "final boolean hasHandoff",
         "R26LateSeam",
-        "R27FullSeam",
+        "R28FullSeam",
         "public static void onFullChunk(",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
@@ -934,8 +949,8 @@ def verify(folia: Path) -> None:
             "R24 FEATURES handoff must be inspected by canonical R15 scan")
     require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level.getLevel(), chunk);" in text,
             "R25 early R15 scan must peek FEATURES handoff")
-    require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text,
-            "R25 final LIGHT reconciliation must consume FEATURES handoff")
+    require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level, owner);" in text,
+            "R28 final LIGHT reconciliation must preserve FEATURES handoff until FULL")
     require("peekFeatureBoundarySeeds(level, chunk)" in text
             and "neighborFeatureSeedCount" in text
             and "R25FeatureSeeds3x3" in text,
@@ -946,22 +961,26 @@ def verify(folia: Path) -> None:
             "R26 FEATURES publication must compose inbound proof before republishing")
     require("queueChunkTask(" in text and "applyLateFeatureCorrection" in text,
             "R26 late seam correction must hop to the target owning region")
-    require("publishVerifiedBoundaries(level, target, verified, minY, maxY);" in text,
-            "R27 late correction must propagate new proof even when cells are already WATER")
+    require("final boolean alreadyFull =" in text
+            and "peekFeatureBoundarySeeds(level, target)" in text
+            and "if (!alreadyFull || changed > 0)" in text,
+            "R28 late correction must preserve pre-FULL proof and stop post-FULL ping-pong")
     require("public static void onFullChunk(" in text
-            and "R27FullSeam" in text,
-            "R27 FULL handoff hook missing")
+            and "R28FullSeam" in text
+            and "final boolean hasHandoff" in text
+            and "oceanConnectedFloodable(chunk, minY, maxY)" in text,
+            "R28 FULL settlement/publication hook missing")
     require("return stored == null ? null : (BitSet)stored.clone();" in text,
             "R24 FEATURES peek must clone shared handoff state")
-    require("final BitSet featureSeeds = takeFeatureBoundarySeeds(level, owner);" in text
+    require("final BitSet featureSeeds = peekFeatureBoundarySeeds(level, owner);" in text
             and "while (head < tail)" in text
             and "enqueueOwner(owner, visited, queue" in text,
-            "R24 handoff must use direct owner BFS")
+            "R28 direct owner BFS must not consume FULL handoff")
     require("getChunk(" not in text and "level.getBlockState(" not in text,
             "R22 must not synchronously load/read neighbours through level")
     require("ChunkPos.asLong(" not in text and ".toLong()" not in text,
             "R23 handoff must not depend on removed ChunkPos long-key APIs")
-    print("[FIELD-R25] transitive 3x3 handoff proof + final LIGHT consumption invariants OK")
+    print("[FIELD-R28] transitive proof preserved through LIGHT and consumed at FULL")
 
 def self_test() -> None:
     fixture = """package net.minecraft.world.level.chunk;
@@ -1109,7 +1128,7 @@ def main() -> None:
     flood_path.write_text(patch_r8(flood_path.read_text(encoding="utf-8")), encoding="utf-8")
     path.write_text(patch(path.read_text(encoding="utf-8")), encoding="utf-8")
     verify(folia)
-    print("[FIELD-R24] installed: FEATURES handoff + final exact 3x3 LIGHT reconciliation; proximity flood disabled")
+    print("[FIELD-R28] installed: monotonic FEATURES handoff preserved through LIGHT and settled at FULL")
 
 if __name__ == "__main__":
     main()
