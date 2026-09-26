@@ -146,8 +146,6 @@ public final class NeverOverworldFlood {
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final int FLOOD_LEVEL = 128;
-    private static final int DEEP_FLOW_MAX_Y = 96;
-    private static final int MIN_DEEP_APERTURE = 6;
 
     private NeverOverworldFlood() {}
 
@@ -273,10 +271,6 @@ public final class NeverOverworldFlood {
             if (!chunk.getBlockState(pos).isAir()) {
                 continue;
             }
-            if (y <= DEEP_FLOW_MAX_Y
-                && !hydraulicOpenAir(chunk, localX, y, localZ, minX, minZ)) {
-                continue;
-            }
 
             chunk.setBlockState(pos, water, 0);
 
@@ -316,35 +310,6 @@ public final class NeverOverworldFlood {
         visited[encoded] = true;
         queue[tail++] = encoded;
         return tail;
-    }
-
-    private static boolean hydraulicOpenAir(
-        final ChunkAccess chunk,
-        final int localX,
-        final int y,
-        final int localZ,
-        final int minX,
-        final int minZ
-    ) {
-        if (y > DEEP_FLOW_MAX_Y) {
-            return true;
-        }
-        final BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
-        int open = 0;
-        for (int dz = -1; dz <= 1; ++dz) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                final int x = localX + dx;
-                final int z = localZ + dz;
-                if (x < 0 || x > 15 || z < 0 || z > 15) {
-                    continue;
-                }
-                probe.set(minX + x, y, minZ + z);
-                if (chunk.getBlockState(probe).isAir() && ++open >= MIN_DEEP_APERTURE) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private static int encode(final int localX, final int y, final int localZ, final int minY) {
@@ -400,9 +365,6 @@ class ChunkStatusTasks {
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
         "floodSurfaceConnectedAir",
-        "hydraulicOpenAir",
-        "DEEP_FLOW_MAX_Y = 96",
-        "MIN_DEEP_APERTURE = 6",
         "chunk.setBlockState",
         "beginning of the LIGHT chunk status",
     ):
