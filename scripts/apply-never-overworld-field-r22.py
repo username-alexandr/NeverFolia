@@ -930,7 +930,7 @@ def verify(folia: Path) -> None:
         "chunk instanceof LevelChunk",
         "chunk.getSection(chunk.getSectionIndex(y))",
         "section.setBlockState(x, y & 15, z, water, false)",
-        "chunk.setUnsaved(true)",
+        "((LevelChunk) chunk).setUnsaved(true)",
         "public static void onFullChunk(",
                                 "publishFeatureBoundarySeeds",
         "R24FeatureSeedsInR15",
