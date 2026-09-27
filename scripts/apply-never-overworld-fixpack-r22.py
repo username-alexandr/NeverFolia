@@ -35,6 +35,7 @@ def main() -> None:
         run("scripts/apply-never-overworld-no-synthetic-islands-r34.py", folia, True)
         run("scripts/apply-never-overworld-column-ocean-r35.py", folia, True)
         run("scripts/apply-never-overworld-r37.py", folia, True)
+        run("scripts/apply-never-overworld-r38.py", folia, True)
         print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35 final invariants OK")
         return
 
@@ -55,7 +56,9 @@ def main() -> None:
     run("scripts/apply-never-overworld-no-synthetic-islands-r34.py", folia, True)
     run("scripts/apply-never-overworld-column-ocean-r35.py", folia, True)
     run("scripts/apply-never-overworld-r37.py", folia, True)
-    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37 installed")
+    run("scripts/apply-never-overworld-r38.py", folia)
+    run("scripts/apply-never-overworld-r38.py", folia, True)
+    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37/R38 installed")
 
 if __name__ == "__main__":
     main()

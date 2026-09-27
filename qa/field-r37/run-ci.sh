@@ -50,6 +50,7 @@ python3 scripts/build-never-overworld-native-structures.py --input artifacts/Nev
 python3 scripts/normalize-never-overworld-structure-type.py --input artifacts/NeverOverworld.zip
 python3 scripts/build-never-overworld-external-structures-r19.py --input artifacts/NeverOverworld.zip --output artifacts/NeverOverworld-R19.zip
 mv artifacts/NeverOverworld-R19.zip artifacts/NeverOverworld.zip
+python3 scripts/upgrade-neveroverworld-r38-pack.py --input artifacts/NeverOverworld.zip --report artifacts/r38-overworld-upgrade.json
 python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --inject
 python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld.zip --verify
 
@@ -59,6 +60,8 @@ python3 scripts/build-never-nether-height-r14.py --input .work/NeverNether-R13.z
 python3 scripts/build-never-nether-field-r15.py --input .work/NeverNether-R14.zip --output .work/NeverNether-R15.zip
 python3 scripts/fingerprint-never-nether-pack.py --input .work/NeverNether-R15.zip --verify
 python3 scripts/build-never-nether-field-r16.py --input .work/NeverNether-R15.zip --output artifacts/NeverNether.zip
+python3 scripts/upgrade-neveroverworld-r38-pack.py --input artifacts/NeverNether.zip --report artifacts/r38-nether-upgrade.json
+python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --inject
 python3 scripts/fingerprint-never-nether-pack.py --input artifacts/NeverNether.zip --verify
 
 python3 qa/field-r37/test-imports.py --sources .work/external-structures-r19 --output artifacts
@@ -71,7 +74,7 @@ gradle.projectsEvaluated {
     def output = new File(gradle.rootProject.buildDir, 'r37-qa-classes')
     server.tasks.register('r37QaCompile', JavaCompile) {
         dependsOn server.tasks.named('classes')
-        source server.files(new File(gradle.rootProject.projectDir, '../../qa/field-r37/R37DungeonQaPlugin.java'))
+        source server.files(new File(gradle.rootProject.projectDir, '../../qa/field-r37/R37DungeonQaPlugin.java'), new File(gradle.rootProject.projectDir, '../../qa/field-r38/R38TrialQaPlugin.java'))
         destinationDirectory = output
         classpath = server.sourceSets.main.runtimeClasspath
         options.release = 25
@@ -80,19 +83,14 @@ gradle.projectsEvaluated {
 GRADLE
 (cd .work/Folia && ./gradlew -I ../r37-qa.init.gradle :folia-server:r37QaCompile --no-configuration-cache --stacktrace)
 jar --create --file artifacts/R37DungeonQa.jar -C .work/Folia/build/r37-qa-classes . -C qa/field-r37 plugin.yml
-cp docs/FIELD-R37.md artifacts/READ-FIRST.md
+jar --create --file artifacts/R38TrialQa.jar -C .work/Folia/build/r37-qa-classes . -C qa/field-r38 plugin.yml
+# Ship precisely the self-contained bundler exercised by the live probes.
+cp artifacts/pack-input-bundler.jar artifacts/server.jar
+cp docs/FIELD-R38.md artifacts/READ-FIRST.md
 (cd artifacts && sha256sum server.jar NeverOverworld.zip NeverNether.zip > SHA256SUMS.txt)
 # Candidate inputs stay available if a later test fails. No automatic release.
 touch artifacts/CANDIDATE-NOT-A-RELEASE.txt
-set +e
-python3 qa/field-r36/probe-water-square-seed.py \
+python3 qa/field-r38/run-live.py \
     --jar artifacts/server.jar --overworld artifacts/NeverOverworld.zip \
-    --nether artifacts/NeverNether.zip --qa-plugin artifacts/R37DungeonQa.jar \
-    --source-sha "$SOURCE_SHA" --output artifacts
-result=$?
-if [ "$result" -ne 0 ] && [ ! -f artifacts/field-r36-water-square-seed.json ]; then
-    python3 qa/field-r36/probe-water-square-seed.py \
-        --jar artifacts/server.jar --overworld artifacts/NeverOverworld.zip \
-        --nether artifacts/NeverNether.zip --source-sha "$SOURCE_SHA" --output artifacts
-fi
-exit "$result"
+    --nether artifacts/NeverNether.zip --controller-plugin artifacts/R37DungeonQa.jar \
+    --trial-plugin artifacts/R38TrialQa.jar --source-sha "$SOURCE_SHA" --output artifacts

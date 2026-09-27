@@ -1,10 +1,11 @@
-name: NeverFolia FIELD-R37 focused QA
+name: NeverFolia FIELD-R38 live QA
 on:
   push:
     branches: ['wip/neveroverworld-r37-continuation']
     paths:
       - 'scripts/**'
       - 'qa/**'
+      - 'native/**'
       - 'worldgen-spec/**'
       - 'build.env'
       - '.github/workflows/never-r37-qa.yml'
@@ -39,11 +40,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NeverFolia-R37-CANDIDATE-${{ github.sha }}
+          name: NeverFolia-R38-CANDIDATE-${{ github.sha }}
           path: |
             artifacts/server.jar
             artifacts/NeverOverworld.zip
             artifacts/NeverNether.zip
+            artifacts/r38-water-evidence.zip
             artifacts/*.json
             artifacts/*.log
             artifacts/*.txt
@@ -54,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NeverFolia-R37-DEBUG-${{ github.sha }}
+          name: NeverFolia-R38-DEBUG-${{ github.sha }}
           path: artifacts/diagnostics.zip
           retention-days: 3
           if-no-files-found: ignore

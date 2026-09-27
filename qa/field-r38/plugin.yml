@@ -1,0 +1,5 @@
+name: R38TrialQa
+version: '1'
+main: R38TrialQaPlugin
+api-version: '26.2'
+folia-supported: true
