@@ -1,0 +1,30 @@
+name: R40 fixture holder contract
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-ocean-integration']
+    paths: ['.github/workflows/never-r40-holder-contract.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10940036171'
+          run-id: 36343802010
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: source
+          merge-multiple: true
+      - name: Print verified abstract holder declarations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('source/GenerationChunkHolder.java');raw=p.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='40a2e2b984a2b56c836234e4a5e553cd32ab418b7010548aacca3a7382131a7b'
+          print(raw.decode())
+          PY
