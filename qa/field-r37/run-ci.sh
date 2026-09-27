@@ -5,6 +5,7 @@ cd "$(dirname "$0")/../.."
 mkdir -p artifacts
 SOURCE_SHA="$(git rev-parse HEAD)"
 printf '%s\n' "$SOURCE_SHA" > artifacts/SOURCE-COMMIT.txt
+python3 qa/field-r38/test-pack-upgrade.py
 python3 qa/field-r19/validate-external-structures-pack.py --self-test
 
 git config --global user.email actions@github.com
