@@ -113,6 +113,8 @@ public final class R3910CavityQa extends JavaPlugin implements Listener {
             new int[]{1,1,bx+10,50,bz+10,bx+12,52,bz+12});
         owner.neverOverworldDryMineMaskR12=null;
         put(owner,11,51,11,Blocks.RAIL.defaultBlockState());
+        // Protected geometry must not hide a lava block from adjacency checks.
+        put(owner,9,50,10,Blocks.LAVA.defaultBlockState());
         List<String> neighbours=new ArrayList<>();for(int i=0;i<9;i++)if(i!=4)neighbours.add(hash(chunks[i]));
         int added=NeverOverworldOceanClosureR3910.closePrepared(owner,chunks);
         check(prefix+"positive_effect",added>0);
@@ -123,6 +125,8 @@ public final class R3910CavityQa extends JavaPlugin implements Listener {
         check(prefix+"mine_shell_dry",get(owner,9,51,10).isAir());
         check(prefix+"mine_rail_preserved",get(owner,11,51,11).is(Blocks.RAIL));
         check(prefix+"mine_guard_after_release",NeverOverworldDryMinesR12.protectedCell(owner,new BlockPos(bx+10,51,bz+10)));
+        check(prefix+"protected_lava_preserved",get(owner,9,50,10).is(Blocks.LAVA));
+        check(prefix+"protected_lava_outside_neighbour_dry",get(owner,8,50,10).isAir());
         for(int[] p:new int[][]{{2,60,3},{4,60,3},{3,59,3},{3,61,3},{3,60,2},{3,60,4}})
             check(prefix+"lava_barrier_"+Arrays.toString(p),get(owner,p[0],p[1],p[2]).isAir());
         check(prefix+"lava_preserved",get(owner,3,60,3).is(Blocks.LAVA));
