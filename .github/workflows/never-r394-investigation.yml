@@ -4,7 +4,8 @@ on:
     branches: ['fix/neveroverworld-r393-resource-qa']
     paths:
       - '.github/workflows/never-r394-investigation.yml'
-      - 'qa/field-r394/**'
+      - 'qa/field-r394/inspect_sources.py'
+      - 'qa/field-r394/cart_contract.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +47,7 @@ jobs:
           mkdir -p artifacts
           set -o pipefail
           python3 qa/field-r394/inspect_sources.py --candidate candidate --evidence prior-evidence --debug debug --output artifacts/investigation 2>&1 | tee artifacts/investigation.log
+          python3 qa/field-r394/cart_contract.py --pack candidate/NeverOverworld.zip --debug debug --output artifacts/investigation 2>&1 | tee artifacts/cart-contract.log
       - name: Preserve provenance
         if: always()
         run: |
