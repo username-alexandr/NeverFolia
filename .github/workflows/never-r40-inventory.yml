@@ -1,0 +1,78 @@
+name: R40 exact input inventory
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-water-resources']
+    paths: ['.github/workflows/never-r40-inventory.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Inspect sources and exact paired resources
+        run: |
+          mkdir inventory
+          python3 - <<'PY'
+          import hashlib,importlib.util,json,zipfile
+          from pathlib import Path
+          out=Path('inventory')
+          jar=Path('baseline/server.jar');pack=Path('baseline/world/datapacks/NeverOverworld.zip')
+          assert hashlib.sha256(jar.read_bytes()).hexdigest()=='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67'
+          assert hashlib.sha256(pack.read_bytes()).hexdigest()=='a5fb99cd0b15efc2ec78a1f155c763112f3e3d2669c1519aae69e468de7902be'
+          spec=importlib.util.spec_from_file_location('audit40','scripts/audit-neveroverworld-r39-resources.py');a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
+          report=a.audit_files(jar,pack)
+          (out/'resource-gaps.json').write_text(json.dumps(report,indent=2))
+          print('RESOURCE_COUNTS',json.dumps(report['counts']))
+          for r in report['missing']:print('MISSING',r['id'],','.join(r['origins'][:3]))
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              wanted=['NeverOverworldSubmergedRemnants.java','NeverOverworldSnowBlockCleanupR19.java','CreativeModeTabs.java','ChunkPyramid.java','ChunkLightTask.java']
+              for leaf in wanted:
+                  options=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  assert len(options)==1,(leaf,options)
+                  raw=z.read(options[0]);(out/leaf).write_bytes(raw)
+                  lines=raw.decode().splitlines()
+                  if leaf in wanted[:2]:print('SOURCE_BEGIN',leaf);print(raw.decode());print('SOURCE_END',leaf)
+                  elif leaf=='CreativeModeTabs.java':
+                      indexes=set()
+                      for i,line in enumerate(lines):
+                          if any(t in line for t in ['generateEnchantmentBookTypes','EnchantmentTags','enchantments.list','displayEnchantment']):indexes.update(range(max(0,i-4),min(len(lines),i+25)))
+                      print('CREATIVE_SOURCE');print('\n'.join(str(i+1)+': '+lines[i] for i in sorted(indexes)))
+              for n in z.namelist():
+                  if '/src/minecraft/java/' in n and n.endswith('.java') and ('NeverOverworld' in n):
+                      lines=z.read(n).decode().splitlines()
+                      matches=[(i+1,l.strip()) for i,l in enumerate(lines) if ('ICE' in l or 'frozen' in l.lower())]
+                      if matches: print('ICE_CALLS',Path(n).name,json.dumps(matches[:40]))
+          with zipfile.ZipFile(pack) as z:
+              data={'enchantments':{n:json.loads(z.read(n)) for n in z.namelist() if n.startswith('data/nova_structures/enchantment/') and n.endswith('.json')},'lang':[n for n in z.namelist() if '/lang/' in n],'pack':json.loads(z.read('pack.mcmeta'))}
+              (out/'enchantments.json').write_text(json.dumps(data,indent=2,ensure_ascii=False))
+              print('PACK_META',json.dumps(data['pack']))
+              print('LANG_ASSETS',json.dumps(data['lang']))
+              print('ENCHANT_IDS',json.dumps(list(data['enchantments'])))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-INPUT-INVENTORY-${{ github.sha }}
+          path: inventory/
+          retention-days: 14
+          if-no-files-found: error
