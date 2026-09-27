@@ -1,0 +1,116 @@
+name: R396 one-class water removal regression
+on:
+  push:
+    branches: ['fix/neveroverworld-r396-removal-water']
+    paths:
+      - 'native/overworld-r38/NeverOverworldWaterPolicyR38.java'
+      - 'qa/field-r396/**'
+      - '.github/workflows/never-r396-removal-water.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  removal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10927954200'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10930701040'
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: r393
+          merge-multiple: true
+      - name: Compile actual policy and fixture, check exact class delta
+        id: build
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r396/build.py 2>&1 | tee artifacts/build-command.log
+      - name: Real baseline and fixed removal fixtures, then restart
+        id: runtime
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python3 qa/field-r396/runtime.py 2>&1 | tee artifacts/runtime-command.log
+      - name: Preserve evidence, failures included
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp -R qa/field-r396 artifacts/source/
+          cp native/overworld-r38/NeverOverworldWaterPolicyR38.java .github/workflows/never-r396-removal-water.yml artifacts/source/
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          Path('artifacts/provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'scope':'One-class removal boundary regression; no global ocean closure or natural-generation acceptance','production_accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R396-REMOVAL-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Package only after successful bounded live regression
+        if: steps.runtime.outcome == 'success'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,shutil
+          report=json.loads(Path('artifacts/runtime.json').read_text())
+          assert report['pass'] is True
+          out=Path('candidate')
+          packs=out/'world/datapacks';packs.mkdir(parents=True)
+          for name in ('NeverOverworld.zip','NeverNether.zip'):
+              (out/name).rename(packs/name)
+          for name in ('build.json','runtime.json','provenance.json'):
+              shutil.copyfile(Path('artifacts',name),out/name)
+          (out/'eula.txt').write_text('eula=false\n')
+          (out/'jvm.args').write_text('-Xms1G\n-Xmx4G\n-Dfile.encoding=UTF-8\n')
+          (out/'server.properties').write_text('level-name=world\nlevel-seed=-4651369264513492755\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip,file/NeverNether.zip\nserver-ip=127.0.0.1\nserver-port=25601\nonline-mode=true\nwhite-list=true\nenforce-whitelist=true\nmax-players=2\ngamemode=creative\ndifficulty=normal\nallow-flight=true\nview-distance=4\nsimulation-distance=3\npause-when-empty-seconds=-1\nenable-rcon=false\n')
+          (out/'README-RU.md').write_text('# R39.6: точечное исправление удаления блока под водой\n\nЭто не полное исправление водяных стен. Изменён только класс NeverOverworldWaterPolicyR38 в точном ядре R38. Датапаки R39.3 и NeverNether неизменны. Экспериментальная заливка R395 и клиентский мод сюда НЕ включены.\n\nПодтверждено отдельным CI: десять синтетических сценариев на настоящих блоках и heightmap в серверном чанке, контроль на исходном ядре, старт/остановка и повторный старт исправленного ядра. Это НЕ проверка естественной генерации, всех снеговых обработчиков или защиты всех шахт.\n\nМеняется случай, когда выбранный для удаления снежный блок сам задаёт высоту OCEAN_FLOOR_WG и рядом есть вода. Сохранение исходных жидкостей и запрет под более высокой крышей оставлены. Крупные полости под островами, лёд и зачарования этой правкой не исправлены.\n\nЗапуск только в новой пустой папке, не поверх старого мира. Прочитать Minecraft EULA самостоятельно и при согласии заменить eula=false на eula=true. Java 25 устанавливается отдельно. Из каталога комплекта запустить: java @jvm.args -jar server.jar --nogui\n\nСервер слушает только localhost:25601. Для подключения с другой машины используйте SSH-туннель либо осознанно настройте server-ip/firewall на тестовой машине. В консоли после Done: whitelist add ВАШ_НИК; затем op ВАШ_НИК (две отдельные команды). Штатная остановка: stop. Никому не передавайте EULA-принятие автоматически.\n\nНе заменяйте server.jar внутри старого комплекта без обновления его контрольных сумм: старые стартовые скрипты закономерно откажут. Сохранённые повреждённые чанки не переписываются.\n\nПолная компиляция Gradle не выполнялась: это одноклассовая инкрементальная компиляция против точных реальных библиотек. 95 недостающих шаблонов прежнего пака остаются. Подробнее в build.json и runtime.json.\n')
+          (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(out).as_posix()+'\n' for p in sorted(out.rglob('*')) if p.is_file()))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.runtime.outcome == 'success'
+        with:
+          name: NeverFolia-R39.6-Removal-Hotfix-TEST-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Require real completed regression; not production acceptance
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          RUNTIME: ${{ steps.runtime.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          assert os.environ['BUILD']=='success' and os.environ['RUNTIME']=='success','Build or real baseline/fix regression did not pass'
+          assert json.loads(Path('artifacts/runtime.json').read_text())['pass'] is True
+          print('Bounded removal regression passed. Overall generation is NOT accepted.')
+          PY
