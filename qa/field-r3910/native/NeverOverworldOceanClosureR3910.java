@@ -87,11 +87,12 @@ public final class NeverOverworldOceanClosureR3910 {
                     p.set(bx+x,y,bz+z); BlockState state=chunk.getBlockState(p);
                     int layer=y-LOW,index=layer*AREA+plane,local=(layer<<8)|(z<<4)|x;
                     if (tile==4) beforeOwner[local]=state;
-                    cells[index]=protectedCells.get(((y-chunk.getMinY())<<8)|(z<<4)|x)
-                        ? OceanConnectivityR395.PROTECTED
+                    // Lava is already impassable. Keep its identity even inside
+                    // a protected envelope so its neighbours remain excluded too.
+                    cells[index]=state.is(Blocks.LAVA) ? OceanConnectivityR395.LAVA
+                        : protectedCells.get(((y-chunk.getMinY())<<8)|(z<<4)|x) ? OceanConnectivityR395.PROTECTED
                         : state.isAir() ? OceanConnectivityR395.AIR
                         : aquatic(state) ? OceanConnectivityR395.WATER
-                        : state.is(Blocks.LAVA) ? OceanConnectivityR395.LAVA
                         : OceanConnectivityR395.SOLID;
                 }
             }
