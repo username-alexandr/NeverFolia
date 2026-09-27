@@ -1,0 +1,39 @@
+name: R40 retained ice difference diagnosis
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-combined-ocean']
+    paths: ['qa/field-r40-review/**', '.github/workflows/never-r40-ice-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939853066'
+          run-id: 36343200218
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: evidence
+          merge-multiple: true
+      - name: Read differences and pre-write witness; no world writes or release
+        run: |
+          set -o pipefail
+          python3 qa/field-r40-review/ice_review.py 2>&1 | tee ice-review-command.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-ICE-DIAGNOSIS-${{ github.sha }}
+          path: |
+            ice-review/
+            ice-review-command.log
+            qa/field-r40-review/ice_review.py
+          retention-days: 14
+          if-no-files-found: error
