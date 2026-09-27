@@ -1,0 +1,71 @@
+name: FIELD-R39.4 independent 63-chunk water regression
+on:
+  push:
+    branches: ['fix/neveroverworld-r393-resource-qa']
+    paths: ['.github/workflows/never-r394-water.yml','qa/field-r394/water_regression.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: never-r394-independent-water
+  cancel-in-progress: false
+jobs:
+  water:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-FULL-PACK-TEST-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: r38
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Verify and execute independently of cart reconstruction
+        run: |
+          cp r38/server.jar r38/NeverNether.zip candidate/
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r394/water_regression.py --candidate candidate --debug debug --output artifacts 2>&1 | tee artifacts/water-runner.log
+      - name: Preserve exact source and available world metadata
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp qa/field-r394/water_regression.py qa/field-r38/run-live.py artifacts/source/
+          cp .github/workflows/never-r394-water.yml artifacts/source/
+          python3 - <<'PY'
+          import os,shutil,json
+          from pathlib import Path
+          for p in Path('.work/r394-water-worlds').glob('*/world/level.dat'):
+              out=Path('artifacts/levels')/p.parent.parent.name/'level.dat';out.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,out)
+          Path('artifacts/provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'gameplay_pack':'R39.3 unchanged','production_accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.4-WATER-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error

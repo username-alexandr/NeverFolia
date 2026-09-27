@@ -1,0 +1,134 @@
+name: FIELD-R39.4 full biome cart reconstruction and placement
+on:
+  push:
+    branches: ['fix/neveroverworld-r393-resource-qa']
+    paths: ['.github/workflows/never-r394-runtime.yml','qa/field-r394/build_candidate.py','qa/field-r394/cart_check.py','qa/field-r394/R394CartQaPlugin.java']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: never-r394-runtime
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Reconstruction regression tests
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r394/build_candidate.py --self-test 2>&1 | tee artifacts/r394-builder-tests.log
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-FULL-PACK-TEST-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: r393
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-evidence-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: prior-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: r38
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Reproduce 121 existing variants before reconstructing 22 missing models
+        id: build
+        run: |
+          mkdir -p candidate
+          python3 qa/field-r394/build_candidate.py --input r393/NeverOverworld.zip --output candidate/NeverOverworld.zip --report artifacts/r394-build.json
+          cp r38/server.jar r38/NeverNether.zip candidate/
+      - name: Compile against actual engine and exercise native cart jigsaw placement
+        id: carts
+        continue-on-error: true
+        run: |
+          python3 qa/field-r394/cart_check.py --candidate candidate --debug debug --output artifacts
+      - name: Resource closure retains remaining failures
+        id: closure
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 scripts/audit-neveroverworld-r39-resources.py --jar candidate/server.jar --pack candidate/NeverOverworld.zip --report artifacts/r394-resource-closure.json
+      - name: Exact delta rather than an assumed missing-count reduction
+        id: delta
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          old=json.loads(Path('prior-evidence/r393-resource-closure.json').read_text());new=json.loads(Path('artifacts/r394-resource-closure.json').read_text());build=json.loads(Path('artifacts/r394-build.json').read_text())
+          assert not old['errors'] and not new['errors']
+          a={(r['kind'],r['id']) for r in old['missing']};b={(r['kind'],r['id']) for r in new['missing']}
+          expected={('template','nova_structures:'+r['path'].split('/structure/',1)[1][:-4]) for r in build['added_templates']}
+          assert a-b==expected and not b-a,(a-b,expected,b-a)
+          report={'pass':True,'removed':sorted(a-b),'new_missing':sorted(b-a),'counts':new['counts'],'production_accepted':False}
+          Path('artifacts/r394-delta.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
+          PY
+      - name: Preserve evidence and exact candidate identities
+        if: always()
+        env:
+          CART_OUTCOME: ${{ steps.carts.outcome }}
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+        run: |
+          mkdir -p artifacts/source/qa/field-r394 artifacts/source/.github/workflows
+          cp qa/field-r394/*.py qa/field-r394/*.java artifacts/source/qa/field-r394/
+          cp .github/workflows/never-r394-runtime.yml artifacts/source/.github/workflows/
+          python3 - <<'PY'
+          import json,os,shutil
+          from pathlib import Path
+          report={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'cart_outcome':os.environ['CART_OUTCOME'],'resource_outcome':os.environ['CLOSURE_OUTCOME'],'water_scope':'Separate unchanged-R39.3 run; not transferred to this candidate','production_accepted':False}
+          Path('artifacts/provenance.json').write_text(json.dumps(report,indent=2)+'\n')
+          for name in ('r394-build.json','r394-inputs.json','r394-cart-placement.json','r394-resource-closure.json','r394-delta.json','provenance.json'):
+              src=Path('artifacts',name)
+              if src.is_file() and Path('candidate/NeverOverworld.zip').is_file():shutil.copyfile(src,Path('candidate',name))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.4-evidence-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.build.outcome == 'success'
+        with:
+          name: NeverFolia-R39.4-CANDIDATE-NOT-PRODUCTION-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Strict final acceptance gate
+        if: always()
+        env:
+          CART_OUTCOME: ${{ steps.carts.outcome }}
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          assert os.environ['CART_OUTCOME']=='success','Native cart placement failed or did not execute'
+          report=json.loads(Path('artifacts/r394-resource-closure.json').read_text())
+          assert os.environ['CLOSURE_OUTCOME']=='success' and report['pass'] is True,'Missing templates remain a release blocker'
+          print('Bounded cart and resource checks accepted, not complete gameplay acceptance')
+          PY

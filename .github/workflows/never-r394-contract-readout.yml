@@ -1,0 +1,61 @@
+name: FIELD-R39.4 evidence readout
+on:
+  push:
+    branches: ['fix/neveroverworld-r393-resource-qa']
+    paths: ['.github/workflows/never-r394-contract-readout.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  readout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.4-WATER-EVIDENCE-f8e165b40a928365861843cc51e654569004a81b
+          run-id: 36317616183
+          github-token: ${{ github.token }}
+          path: water
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.4-evidence-066d40c424aea6d24e03fce60b237cab214d5531
+          run-id: 36317930994
+          github-token: ${{ github.token }}
+          path: carts
+      - name: Summarize verified source reports without rewriting their verdicts
+        run: |
+          mkdir -p artifacts
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          report=json.loads(Path('water/live/r38-live-qa.json').read_text())
+          summary={k:v for k,v in report.items() if k not in ('phases','target_chunks')}
+          summary['phases']={name:{k:v for k,v in row.items() if k!='water_hashes'} for name,row in report['phases'].items()}
+          hashes={name:row.get('water_hashes',{}) for name,row in report['phases'].items()}
+          base=hashes['r38-trial-water']
+          summary['saved_different_after_restart']=[key for key,value in base.items() if hashes['r38-restart'].get(key)!=value]
+          summary['saved_different_reverse_order']=[key for key,value in base.items() if hashes['r38-reverse-water'].get(key)!=value]
+          forward={p.stem:json.loads(p.read_text()) for p in Path('water/live/r38-water-audit').glob('*.json')}
+          reverse={p.stem:json.loads(p.read_text()) for p in Path('water/live/r38-reverse-audit').glob('*.json')}
+          summary['forward_audit_failing_rows']={k:v for k,v in forward.items() if v.get('pass') is not True}
+          summary['reverse_audit_failing_rows']={k:v for k,v in reverse.items() if v.get('pass') is not True}
+          summary['audit_comparison_differences']={key:{'forward':value,'reverse':reverse.get(key)} for key,value in forward.items() if key in reverse and any(value.get(f)!=reverse[key].get(f) for f in ('before_water_sha256','after_water_sha256','native_water','new_water'))}
+          for key in list(summary['audit_comparison_differences']):
+              if len(summary['audit_comparison_differences'])>24:del summary['audit_comparison_differences'][key]
+          summary['cart_builder']=json.loads(Path('carts/r394-build.json').read_text())
+          Path('artifacts/readout.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('ACTUAL_READOUT_BEGIN\n'+json.dumps(summary,indent=2)+'\nACTUAL_READOUT_END',flush=True)
+          print('INPUT_FILES',json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in (Path('water/live/r38-live-qa.json'),Path('carts/r394-build.json'))}),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.4-detailed-readout-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,65 @@
+name: FIELD-R39.4 source and placement investigation
+on:
+  push:
+    branches: ['fix/neveroverworld-r393-resource-qa']
+    paths:
+      - '.github/workflows/never-r394-investigation.yml'
+      - 'qa/field-r394/inspect_sources.py'
+      - 'qa/field-r394/cart_contract.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: never-r394-investigation
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-FULL-PACK-TEST-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-evidence-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: prior-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Inspect candidate, exact source donors and native API
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r394/inspect_sources.py --candidate candidate --evidence prior-evidence --debug debug --output artifacts/investigation 2>&1 | tee artifacts/investigation.log
+          python3 qa/field-r394/cart_contract.py --pack candidate/NeverOverworld.zip --debug debug --output artifacts/investigation 2>&1 | tee artifacts/cart-contract.log
+      - name: Preserve provenance
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp qa/field-r394/*.py artifacts/source/
+          cp .github/workflows/never-r394-investigation.yml artifacts/source/
+          printf '%s\n' "$GITHUB_SHA" > artifacts/COMMIT.txt
+          printf '%s\n' "$GITHUB_RUN_ID" > artifacts/RUN.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.4-investigation-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
