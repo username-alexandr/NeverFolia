@@ -1,0 +1,96 @@
+name: R397 real generation order controls
+on:
+  push:
+    branches: ['qa/neveroverworld-r397-order-controls']
+    paths: ['qa/field-r397/**', 'qa/field-r395/control_contract.py', '.github/workflows/never-r397-controls.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r397-controls-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Unit tests for fresh evidence and full-state comparisons
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r397/test_controls.py > artifacts/r397-unit.log 2>&1
+          tail -5 artifacts/r397-unit.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10927954200'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10930701040'
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: r393
+          merge-multiple: true
+      - name: Rebuild unchanged experimental R395 code against pinned R38
+        id: build
+        run: |
+          python3 qa/field-r395/build_candidate.py > artifacts/build-command.log 2>&1
+          tail -8 artifacts/build-command.log
+      - name: Seven fresh real-Java phases and saved-state comparison
+        id: matrix
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python3 qa/field-r397/run_controls.py 2>&1 | tee artifacts/r397-command.log
+      - name: Preserve sources and report identity regardless of acceptance
+        if: always()
+        run: |
+          mkdir -p artifacts/r397-source
+          cp qa/field-r397/*.py qa/field-r395/control_contract.py .github/workflows/never-r397-controls.yml artifacts/r397-source/
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'scope':'Diagnostic control expansion, not a new ocean algorithm; R396 not changed','source_sha256':{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('artifacts/r397-source').glob('*')}}
+          Path('artifacts/r397-provenance.json').write_text(json.dumps(p,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R397-CONTROL-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Require completed and matching controls, never publish an unaccepted core
+        if: always()
+        env:
+          MATRIX_OUTCOME: ${{ steps.matrix.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('artifacts/r397-summary.json').read_text())
+          print('DIAGNOSTIC_COMPLETE',r['diagnostic_complete'])
+          print('BOUNDED_REGRESSION_PASS',r['bounded_regression_pass'])
+          if os.environ['MATRIX_OUTCOME']!='success' or not r['bounded_regression_pass']:
+              raise SystemExit('Controls disagree or did not finish. Retained evidence is not a release.')
+          print('Bounded controls matched. Production and full visual generation remain unaccepted.')
+          PY
