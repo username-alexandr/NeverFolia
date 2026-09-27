@@ -20,6 +20,7 @@ def need(ok,message):
     if not ok:raise ValueError(message)
 def light_transform(raw):
     if raw.count(CALL)==1:
+        need(raw.count(CALL+ANCHOR)==1,'R40 call is not at the verified LIGHT site')
         restored=raw.replace(CALL,b'',1)
         need(sha(restored)==LIGHT_SHA,'Changed already-installed LIGHT source')
         return raw
