@@ -8,9 +8,9 @@ ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts';OUT.mkdir(exist_ok=True)
 GENERATED=OUT/'r398-generated';GENERATED.mkdir(exist_ok=False)
 SOURCES={
- 'NeverOverworldFlood.java':('e9a68ef34c78988f1d584cbf14889f312872cc9f04b53aa9b44c744157d6bc27',[('reweatherSubmergedSurface','chunk','void')]),
- 'NeverOverworldFloodConnectivityR15.java':('064f5f7b1a418b57b0706b3789fc362353b60f2fb41957ebe3f763e94c16110e',[('apply','chunk','int'),('reconcileSeams','owner','int')]),
- 'NeverOverworldSubmergedRemnants.java':('f038b3ed3842e1c8133830d21a299ee1a8d1f9ba4e953eb712d784b569361078',[('apply','chunk','void')]),
+ 'NeverOverworldFlood.java':('e9a68ef34c78988f1d584cbf14889f312872cc9f04b53aa9b44c744157d6bc27',[('reweatherSubmergedSurface','chunk')]),
+ 'NeverOverworldFloodConnectivityR15.java':('064f5f7b1a418b57b0706b3789fc362353b60f2fb41957ebe3f763e94c16110e',[('apply','chunk'),('reconcileSeams','owner')]),
+ 'NeverOverworldSubmergedRemnants.java':('f038b3ed3842e1c8133830d21a299ee1a8d1f9ba4e953eb712d784b569361078',[('apply','chunk')]),
 }
 def need(ok,message):
  if not ok:raise ValueError(message)
@@ -23,16 +23,19 @@ with zipfile.ZipFile(ROOT/'debug/diagnostics.zip') as z:
   matches=[n for n in z.namelist() if n.endswith('/src/minecraft/java/net/minecraft/world/level/chunk/'+base)]
   need(len(matches)==1,'Ambiguous/missing exact source '+base)
   original=z.read(matches[0]);need(sha(original)==expected,'Materialized source changed: '+base)
-  text=original.decode()
-  for method,argument,result in methods:
-   pattern=r'public static '+result+r' '+method+r'\([^)]*\)\s*\{'
-   matches_method=list(re.finditer(pattern,text));need(len(matches_method)==1,'Ambiguous method '+method)
-   end=matches_method[0].end()
+  text=original.decode();declarations=[]
+  for method,argument in methods:
+   pattern=r'public\s+static\s+(void|int)\s+'+re.escape(method)+r'\s*\(([^)]*)\)\s*\{'
+   matches_method=[m for m in re.finditer(pattern,text) if re.search(r'\bChunkAccess\s+'+re.escape(argument)+r'\b',m.group(2))]
+   need(len(matches_method)==1,'Missing/ambiguous ChunkAccess entry point '+base+'#'+method)
+   match=matches_method[0];result=match.group(1);end=match.end()
+   declarations.append({'method':method,'return_type':result,'signature':match.group(0).strip()})
+   print('VERIFIED_GUARD_TARGET',base,match.group(0).strip(),flush=True)
    guard='\n        // R398: generation cleanup must never mutate a persisted FULL chunk.\n        if ('+argument+' != null && '+argument+'.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FULL)) return'+(' 0' if result=='int' else '')+';\n'
    text=text[:end]+guard+text[end:]
   (GENERATED/base).write_text(text)
   (GENERATED/(base+'.patch')).write_text(''.join(difflib.unified_diff(original.decode().splitlines(True),text.splitlines(True),fromfile='a/'+base,tofile='b/'+base)))
-  changes.append({'file':base,'source_sha256':expected,'patched_sha256':sha(text.encode()),'methods':[m[0] for m in methods]})
+  changes.append({'file':base,'source_sha256':expected,'patched_sha256':sha(text.encode()),'declarations':declarations})
 policy=ROOT/'native/overworld-r38/NeverOverworldWaterPolicyR38.java'
 need(sha(policy.read_bytes())=='f2f75f2ed71228da3d0637c77c7b892466b4b1b195571196a2de35fca2267fdb','Exact tested R396 policy missing')
 source=ROOT/'qa/field-r395/build_candidate.py'
