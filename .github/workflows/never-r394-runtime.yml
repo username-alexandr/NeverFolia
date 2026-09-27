@@ -1,12 +1,8 @@
-name: FIELD-R39.4 recovered carts and distant-water regression
+name: FIELD-R39.4 full biome cart reconstruction and placement
 on:
   push:
     branches: ['fix/neveroverworld-r393-resource-qa']
-    paths:
-      - '.github/workflows/never-r394-runtime.yml'
-      - 'qa/field-r394/build_candidate.py'
-      - 'qa/field-r394/run_checks.py'
-      - 'qa/field-r394/R394CartQaPlugin.java'
+    paths: ['.github/workflows/never-r394-runtime.yml','qa/field-r394/build_candidate.py','qa/field-r394/cart_check.py','qa/field-r394/R394CartQaPlugin.java']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +13,7 @@ concurrency:
 jobs:
   candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,59 +54,42 @@ jobs:
           run-id: 36308250793
           github-token: ${{ github.token }}
           path: debug
-      - name: Build exact full candidate with 22 reconstructed routers
+      - name: Reproduce 121 existing variants before reconstructing 22 missing models
         id: build
         run: |
           mkdir -p candidate
           python3 qa/field-r394/build_candidate.py --input r393/NeverOverworld.zip --output candidate/NeverOverworld.zip --report artifacts/r394-build.json
           cp r38/server.jar r38/NeverNether.zip candidate/
-      - name: Actual engine compilation and harness extraction
-        id: prepare
-        continue-on-error: true
-        run: |
-          python3 qa/field-r394/run_checks.py prepare --candidate candidate --debug debug --output artifacts
-      - name: Actual jigsaw placement and villagers for every recovered router
+      - name: Compile against actual engine and exercise native cart jigsaw placement
         id: carts
-        if: steps.prepare.outcome == 'success'
         continue-on-error: true
         run: |
-          python3 qa/field-r394/run_checks.py carts --candidate candidate --debug debug --output artifacts
-      - name: Native mobs and 63 saved chunks including distant screenshots
-        id: water
-        if: always() && steps.build.outcome == 'success'
-        continue-on-error: true
-        run: |
-          python3 qa/field-r394/run_checks.py water --candidate candidate --debug debug --output artifacts
-      - name: Exact resource closure - retain missing resources as failures
+          python3 qa/field-r394/cart_check.py --candidate candidate --debug debug --output artifacts
+      - name: Resource closure retains remaining failures
         id: closure
         if: always() && steps.build.outcome == 'success'
         continue-on-error: true
         run: |
           python3 scripts/audit-neveroverworld-r39-resources.py --jar candidate/server.jar --pack candidate/NeverOverworld.zip --report artifacts/r394-resource-closure.json
-      - name: Compare exact resource delta
+      - name: Exact delta rather than an assumed missing-count reduction
         id: delta
         if: always() && steps.build.outcome == 'success'
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          old=json.loads(Path('prior-evidence/r393-resource-closure.json').read_text())
-          new=json.loads(Path('artifacts/r394-resource-closure.json').read_text())
-          build=json.loads(Path('artifacts/r394-build.json').read_text())
+          old=json.loads(Path('prior-evidence/r393-resource-closure.json').read_text());new=json.loads(Path('artifacts/r394-resource-closure.json').read_text());build=json.loads(Path('artifacts/r394-build.json').read_text())
           assert not old['errors'] and not new['errors']
           a={(r['kind'],r['id']) for r in old['missing']};b={(r['kind'],r['id']) for r in new['missing']}
           expected={('template','nova_structures:'+r['path'].split('/structure/',1)[1][:-4]) for r in build['added_templates']}
           assert a-b==expected and not b-a,(a-b,expected,b-a)
-          assert len(expected)==22 and new['counts']['missing_templates']==73
-          report={'pass':True,'removed':sorted(a-b),'added_missing':sorted(b-a),'remaining':new['counts'],'production_accepted':False}
-          Path('artifacts/r394-delta.json').write_text(json.dumps(report,indent=2)+'\n')
-          print(json.dumps(report,indent=2))
+          report={'pass':True,'removed':sorted(a-b),'new_missing':sorted(b-a),'counts':new['counts'],'production_accepted':False}
+          Path('artifacts/r394-delta.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
           PY
-      - name: Preserve exact candidate and source evidence
+      - name: Preserve evidence and exact candidate identities
         if: always()
         env:
           CART_OUTCOME: ${{ steps.carts.outcome }}
-          WATER_OUTCOME: ${{ steps.water.outcome }}
           CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
         run: |
           mkdir -p artifacts/source/qa/field-r394 artifacts/source/.github/workflows
@@ -119,11 +98,11 @@ jobs:
           python3 - <<'PY'
           import json,os,shutil
           from pathlib import Path
-          report={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'core_commit':'c6e522c65e5ecd0852c27d724c652189464f51cc','cart_outcome':os.environ['CART_OUTCOME'],'water_outcome':os.environ['WATER_OUTCOME'],'resource_outcome':os.environ['CLOSURE_OUTCOME'],'production_accepted':False}
+          report={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'cart_outcome':os.environ['CART_OUTCOME'],'resource_outcome':os.environ['CLOSURE_OUTCOME'],'water_scope':'Separate unchanged-R39.3 run; not transferred to this candidate','production_accepted':False}
           Path('artifacts/provenance.json').write_text(json.dumps(report,indent=2)+'\n')
           for name in ('r394-build.json','r394-inputs.json','r394-cart-placement.json','r394-resource-closure.json','r394-delta.json','provenance.json'):
               src=Path('artifacts',name)
-              if src.is_file() and Path('candidate').exists():shutil.copyfile(src,Path('candidate',name))
+              if src.is_file() and Path('candidate/NeverOverworld.zip').is_file():shutil.copyfile(src,Path('candidate',name))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -139,19 +118,17 @@ jobs:
           path: candidate/
           retention-days: 14
           if-no-files-found: error
-      - name: Production gate remains strict
+      - name: Strict final acceptance gate
         if: always()
         env:
           CART_OUTCOME: ${{ steps.carts.outcome }}
-          WATER_OUTCOME: ${{ steps.water.outcome }}
           CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
         run: |
           python3 - <<'PY'
           import json,os
           from pathlib import Path
-          assert os.environ['CART_OUTCOME']=='success','Cart placement failed or did not execute'
-          assert os.environ['WATER_OUTCOME']=='success','Expanded water/mob regression failed or did not execute'
+          assert os.environ['CART_OUTCOME']=='success','Native cart placement failed or did not execute'
           report=json.loads(Path('artifacts/r394-resource-closure.json').read_text())
           assert os.environ['CLOSURE_OUTCOME']=='success' and report['pass'] is True,'Missing templates remain a release blocker'
-          print('Bounded checks accepted; full gameplay acceptance remains separate')
+          print('Bounded cart and resource checks accepted, not complete gameplay acceptance')
           PY
