@@ -1,0 +1,52 @@
+name: R40 exact input contracts
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-ocean-integration']
+    paths: ['.github/workflows/never-r40-input-contract.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: debug
+          merge-multiple: true
+      - name: Read exact source contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile
+          out=Path('source-contract');out.mkdir()
+          paths=list(Path('debug').rglob('diagnostics.zip'))
+          assert len(paths)==1
+          manifest={}
+          with zipfile.ZipFile(paths[0]) as z:
+              targets={'ProtoChunk.java':['public ProtoChunk(', 'setPersistedStatus', 'setBlockState(', 'setStatus('], 'GenerationChunkHolder.java':['public GenerationChunkHolder(', 'getChunkIfPresent', 'setChunk', 'completeGenerationTask'], 'StaticCache2D.java':['public static', 'create(', 'StaticCache2D(', 'contains('], 'LevelHeightAccessor.java':['create(', 'static '], 'ChunkLightTask.java':['R38', 'NeverOverworld', 'neverOverworldNeighbours']}
+              for leaf,terms in targets.items():
+                  names=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  assert len(names)==1,(leaf,names)
+                  raw=z.read(names[0]);(out/leaf).write_bytes(raw)
+                  manifest[leaf]={'sha256':hashlib.sha256(raw).hexdigest(),'source':names[0]}
+                  lines=raw.decode().splitlines();indices=set()
+                  for i,line in enumerate(lines):
+                      if any(t in line for t in terms):indices.update(range(max(0,i-2),min(len(lines),i+16)))
+                  print('SOURCE',leaf,manifest[leaf]['sha256'])
+                  for i in sorted(indices):print(str(i+1)+': '+lines[i])
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-INPUT-CONTRACT-${{ github.sha }}
+          path: source-contract/
+          retention-days: 14
+          if-no-files-found: error
