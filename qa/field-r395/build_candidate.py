@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Incremental Java 25 candidate, not a claim of full Gradle compilation.
-Rebuilds the exact LIGHT hook and two new classes; every other class is preserved.
-The experimental closure requires -Dneverfolia.r395OceanClosure=true.
+"""Incremental Java 25 candidate, not full Gradle compilation.
+The new closure is OFF without -Dneverfolia.r395OceanClosure=true.
 """
 from pathlib import Path
-import copy,hashlib,io,json,os,shutil,subprocess,urllib.request,zipfile
+import hashlib,io,json,os,shutil,subprocess,sys,urllib.request,zipfile
+from jar_packaging import rewrite_zip
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts';OUT.mkdir(exist_ok=True)
 WORK=ROOT/'.work/r395-build';WORK.mkdir(parents=True,exist_ok=False)
@@ -28,18 +28,7 @@ def run(command,name):
     need(p.returncode==0,'Command failed: '+name)
     return p.stdout
 
-def rewrite_zip(raw,replacements):
-    buffer=io.BytesIO()
-    with zipfile.ZipFile(io.BytesIO(raw)) as src,zipfile.ZipFile(buffer,'w',zipfile.ZIP_DEFLATED) as dst:
-        need(len(src.namelist())==len(set(src.namelist())),'Duplicate ZIP entries')
-        need(not any(n.upper().endswith(('.SF','.RSA','.DSA','.EC')) and n.startswith('META-INF/') for n in src.namelist()),'Signed JAR requires separate build')
-        for info in src.infolist():dst.writestr(copy.copy(info),replacements.get(info.filename,src.read(info)))
-        for n in sorted(set(replacements)-set(src.namelist())):
-            info=zipfile.ZipInfo(n,(1980,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;dst.writestr(info,replacements[n])
-    value=buffer.getvalue()
-    with zipfile.ZipFile(io.BytesIO(value)) as z:need(z.testzip() is None,'Repacked ZIP CRC failure')
-    return value
-
+run([sys.executable,str(Path(__file__).with_name('jar_packaging.py'))],'jar-packaging-tests.log')
 base=find(ROOT/'baseline','server.jar',BASE)
 nether=find(ROOT/'baseline','NeverNether.zip',NETHER)
 pack=find(ROOT/'r393','*.zip',PACK)
