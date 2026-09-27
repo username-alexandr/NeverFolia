@@ -1,0 +1,49 @@
+name: R40 integrated snapshot ocean candidate
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-integrated-worldgen']
+    paths: ['native/overworld-r40/**', 'qa/field-r40/build.py', '.github/workflows/never-r40-integrated.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '25'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compile staged engine against exact R399
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r40/build.py 2>&1 | tee artifacts/build-command.log
+      - name: Preserve artifacts without pretending runtime acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R40-COMPILED-NOT-ACCEPTED-${{ github.sha }}
+          path: |
+            artifacts/
+            candidate/
+            .work/r40-build/classpath.txt
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error
