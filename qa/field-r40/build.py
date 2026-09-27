@@ -54,7 +54,7 @@ def main():
         if not providers:need(len(api)==1,'Missing API');(libs/'folia-api.jar').write_bytes(api[0])
         for name in (LIGHT,TASKS,PYRAMID):
             raw=z.read(JAVA+name+'.java');sources[name]=raw.decode();source_hashes[name]=sha(raw)
-        for leaf in ('ChunkAccess.java','SurfaceSystem.java','IcebergFeature.java','BlueIceFeature.java','SnowAndFreezeFeature.java','NeverOverworldFlood.java','NeverOverworldFloodConnectivityR15.java'):
+        for leaf in ('ChunkAccess.java','ProtoChunk.java','SurfaceSystem.java','IcebergFeature.java','BlueIceFeature.java','SnowAndFreezeFeature.java','NeverOverworldFlood.java','NeverOverworldFloodConnectivityR15.java'):
             names=[n for n in z.namelist() if n.startswith(JAVA) and n.endswith('/'+leaf)];need(len(names)==1,'Source not unique '+leaf)
             out=OUT/'inspection'/leaf;out.parent.mkdir(exist_ok=True);out.write_bytes(z.read(names[0]))
     need(source_hashes[LIGHT]=='e3679bc3c336156e16dc9740d1ae16ab19112dfbeb19915f034f46c92250f283','LIGHT source drift')
@@ -63,10 +63,11 @@ def main():
     sources[LIGHT]=text[:a]+'                if (net.minecraft.world.level.chunk.NeverOverworldOceanR40.scope(task.world, task.fromChunk)) {\n                    net.minecraft.world.level.chunk.NeverOverworldOceanR40.close(task.world, task.neverOverworldNeighbours, task.fromChunk);\n                } else {\n'+old+'                }\n'+text[b:]
     text=sources[TASKS];a,b=method(text,'public static CompletableFuture<ChunkAccess> initializeLight(');section=text[a:b];brace=section.index('{')
     section=section[:brace+1]+'\n        net.minecraft.world.level.chunk.NeverOverworldOceanR40.prepare(context.level(), chunk);'+section[brace+1:];sources[TASKS]=text[:a]+section+text[b:]
-    text=sources[PYRAMID]
-    text=replace(text,'.step(ChunkStatus.INITIALIZE_LIGHT, s -> s.setTask(ChunkStatusTasks::initializeLight))', '.step(ChunkStatus.INITIALIZE_LIGHT, s -> {\n            if (net.minecraft.world.level.chunk.NeverOverworldOceanR40.ENABLED) s.addRequirement(ChunkStatus.FEATURES, 1).blockStateWriteRadius(0);\n            return s.setTask(ChunkStatusTasks::initializeLight);\n        })')
-    text=replace(text,'.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light))','.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, net.minecraft.world.level.chunk.NeverOverworldOceanR40.ENABLED ? net.minecraft.world.level.chunk.NeverOverworldOceanR40.RADIUS : 1).setTask(ChunkStatusTasks::light))')
-    sources[PYRAMID]=text
+    text=sources[PYRAMID];marker='    public static final ChunkPyramid LOADING_PYRAMID'
+    need(text.count(marker)==1,'Generation/loading boundary missing');generation,loading=text.split(marker,1)
+    generation=replace(generation,'.step(ChunkStatus.INITIALIZE_LIGHT, s -> s.setTask(ChunkStatusTasks::initializeLight))', '.step(ChunkStatus.INITIALIZE_LIGHT, s -> {\n            if (net.minecraft.world.level.chunk.NeverOverworldOceanR40.ENABLED) s.addRequirement(ChunkStatus.FEATURES, 1).blockStateWriteRadius(0);\n            return s.setTask(ChunkStatusTasks::initializeLight);\n        })')
+    generation=replace(generation,'.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light))','.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, net.minecraft.world.level.chunk.NeverOverworldOceanR40.ENABLED ? net.minecraft.world.level.chunk.NeverOverworldOceanR40.RADIUS : 1).setTask(ChunkStatusTasks::light))')
+    sources[PYRAMID]=generation+marker+loading
     source_dir=WORK/'src';classes=WORK/'classes';classes.mkdir();paths=[]
     for name,text in sources.items():
         path=source_dir/(name+'.java');path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text);paths.append(str(path))
@@ -74,8 +75,9 @@ def main():
     cp=os.pathsep.join(str(p) for p in sorted(libs.glob('*.jar')));(WORK/'classpath.txt').write_text(cp)
     run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes)]+paths,'core-javac.log')
     testclasses=WORK/'test-classes';testclasses.mkdir()
-    run(['javac','--release','25','-cp',str(classes),'-d',str(testclasses),str(ROOT/'qa/field-r40/SpanOceanTest.java')],'span-javac.log')
-    run(['java','-cp',str(testclasses)+os.pathsep+str(classes),'SpanOceanTest'],'span-tests.log')
+    tests=sorted((ROOT/'qa/field-r40').glob('*Test.java'))
+    run(['javac','--release','25','-cp',str(classes),'-d',str(testclasses)]+[str(p) for p in tests],'tests-javac.log')
+    for test in tests:run(['java','-cp',str(testclasses)+os.pathsep+str(classes),test.stem],test.stem+'.log')
     replacements={p.relative_to(classes).as_posix():p.read_bytes() for p in classes.rglob('*.class')}
     need(not set(KEEP)&set(replacements),'A previously accepted hotfix would be replaced')
     spec=importlib.util.spec_from_file_location('packaging40',ROOT/'qa/field-r395/jar_packaging.py');packaging=importlib.util.module_from_spec(spec);spec.loader.exec_module(packaging)
@@ -90,7 +92,6 @@ def main():
     for n in KEEP:need(inner[n]==after[n],'Lost prior fix '+n)
     report={'build_pass':True,'kind':'incremental javac25 from pinned R399; NOT full Gradle','base_core_sha256':BASE,'candidate_core_sha256':sha(newouter),'pack_sha256':PACK,'nether_sha256':NETHER,'source_inputs':source_hashes,'changed_or_added':{n:sha(raw) for n,raw in replacements.items()},'preserved_hotfixes':{n:sha(after[n]) for n in KEEP},'preserved_entries':len(untouched),'runtime_tested':False,'production_accepted':False}
     (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');print('R40_BUILD '+json.dumps(report),flush=True)
-    # Retain the full materialized sources for review/reproducibility.
     with zipfile.ZipFile(OUT/'source.zip','w',zipfile.ZIP_DEFLATED) as z:
         for p in source_dir.rglob('*.java'):z.write(p,p.relative_to(source_dir).as_posix())
         for p in (ROOT/'native/overworld-r40').glob('*.java'):z.write(p,'net/minecraft/world/level/chunk/'+p.name)
