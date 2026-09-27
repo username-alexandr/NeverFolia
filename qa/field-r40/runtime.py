@@ -120,11 +120,19 @@ def phase(name,folder,jar,enabled,reader_module=None,reverse=False,fixture=False
 def compare_pair(before,after,observer,paired,nbt,allow_fill):
     a=paired.saved_volume(observer,nbt,before/'world/dimensions/minecraft/overworld/region',TARGETS,{'normal_stop':True,'exit_code':0})
     b=paired.saved_volume(observer,nbt,after/'world/dimensions/minecraft/overworld/region',TARGETS,{'normal_stop':True,'exit_code':0})
+    be=load('r40_block_entities',ROOT/'qa/field-r40/block_entity_compare.py')
     counts=collections.Counter();changed_chunks=set();examples=[];non_water=0;protected_changes=0;geometry_changes=0;block_entity_changes=0;piece_count=0
+    reordered=[];be_differences=[];be_before_count=0;be_after_count=0
     for cx,cz in TARGETS:
         boxes=paired.pdc_boxes(a.roots[(cx,cz)]);piece_count+=len(boxes)
         if boxes!=paired.pdc_boxes(b.roots[(cx,cz)]):geometry_changes+=1
-        if a.roots[(cx,cz)].get('block_entities',[])!=b.roots[(cx,cz)].get('block_entities',[]):block_entity_changes+=1
+        # Retained run 36344565790 established outer-list reorder only in two
+        # chunks. Validate unique positions and compare EVERY compound field.
+        check=be.compare_block_entities(a.roots[(cx,cz)].get('block_entities',[]),b.roots[(cx,cz)].get('block_entities',[]),cx,cz)
+        be_before_count+=check['before_count'];be_after_count+=check['after_count']
+        if not check['equal']:
+            block_entity_changes+=1;be_differences.append({'chunk':[cx,cz],'differences':check['differences']})
+        if check['order_only']:reordered.append([cx,cz])
         for sy in range(-32,32):
             left=a.section((cx,sy,cz));right=b.section((cx,sy,cz))
             for i,(old,new) in enumerate(zip(left,right)):
@@ -137,10 +145,13 @@ def compare_pair(before,after,observer,paired,nbt,allow_fill):
                 if protected:protected_changes+=1
                 if len(examples)<30:examples.append({'position':[x,y,z],'before':old,'after':new})
     total=sum(counts.values())
-    return {'pass':(total>0 and non_water==0 if allow_fill else total==0) and protected_changes==0 and geometry_changes==0 and block_entity_changes==0,'changed_cells':total,'changed_chunks':len(changed_chunks),'transitions':dict(counts),'non_air_to_water_changes':non_water,'protected_envelope_changes':protected_changes,'recorded_piece_references':piece_count,'piece_metadata_changed_chunks':geometry_changes,'block_entity_changed_chunks':block_entity_changes,'examples':examples,'scope':'All saved block names/properties Y=-512..511; recorded mine envelopes. Not all natural dry rooms.'}
+    return {'pass':(total>0 and non_water==0 if allow_fill else total==0) and protected_changes==0 and geometry_changes==0 and block_entity_changes==0,'changed_cells':total,'changed_chunks':len(changed_chunks),'transitions':dict(counts),'non_air_to_water_changes':non_water,'protected_envelope_changes':protected_changes,'recorded_piece_references':piece_count,'piece_metadata_changed_chunks':geometry_changes,'block_entity_changed_chunks':block_entity_changes,'block_entity_reordered_chunks':reordered,'block_entities_before':be_before_count,'block_entities_after':be_after_count,'block_entity_differences':be_differences,'examples':examples,'scope':'All saved block names/properties Y=-512..511; recorded mine envelopes; all parsed block-entity fields keyed by unique position, outer order reported separately. Not all natural dry rooms.'}
 
 def main():
     WORK.mkdir(parents=True,exist_ok=False);build=json.loads((OUT/'build.json').read_text())
+    unit=subprocess.run(['python3',str(ROOT/'qa/field-r40/test_block_entities.py')],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=60)
+    (OUT/'block-entity-tests.log').write_text(unit.stdout);print(unit.stdout,flush=True)
+    need(unit.returncode==0,'Block-entity comparison tests failed')
     base=ROOT/'baseline/server.jar';candidate=ROOT/'candidate/server.jar'
     need(sha(base)==build['base_core_sha256'] and sha(candidate)==build['candidate_core_sha256'],'Wrong core input')
     old=load('r40_saved_reader',ROOT/'qa/field-r395/run_runtime.py')
@@ -167,7 +178,10 @@ def main():
         report['bounded_integration_pass']=all(r['pass'] for r in report['paired_comparisons'].values())
         need(report['bounded_integration_pass'],'Paired integration failed')
         report['inputs_unchanged']=sha(base)==build['base_core_sha256'] and sha(candidate)==build['candidate_core_sha256']
-        need(report['inputs_unchanged'],'Core mutated during testing')
+        for folder in folders.values():
+            for name,key in (('NeverOverworld.zip','pack_sha256'),('NeverNether.zip','nether_sha256')):
+                report['inputs_unchanged'] &= sha(folder/'world/datapacks'/name)==build[key]
+        need(report['inputs_unchanged'],'Core or paired datapack mutated during testing')
     except Exception as error:report['error']=repr(error)
     finally:save(OUT/'r40-runtime.json',report)
     print('R40_RESULT '+json.dumps({'bounded_integration_pass':report['bounded_integration_pass'],'production_accepted':False,'error':report.get('error')}),flush=True)
