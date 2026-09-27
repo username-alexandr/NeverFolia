@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Inspect typed NBT differences; no repairs yet."""
 from pathlib import Path
-import argparse,copy,json,zipfile
-from inspect_sources import module,ROOT,plain,summary
+import argparse,json,zipfile
+from inspect_sources import module,ROOT,plain,summary,save
 
 def diff(a,b,path=''):
     if type(a) is not type(b):return [(path,a,b)]
@@ -18,23 +18,24 @@ def diff(a,b,path=''):
     return [] if a==b else [(path,a,b)]
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--pack',type=Path,required=True);p.add_argument('--debug',type=Path,required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--pack',type=Path,required=True);p.add_argument('--debug',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
     builder=module('r394cart',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
-    prefix='data/nova_structures/structure/tavern/tavern_event_trader_car_'
+    prefix='data/nova_structures/structure/tavern/tavern_event_trader_car_';full={};diffs=[]
     with zipfile.ZipFile(a.pack) as z:
         for suffix in ('armorer','armorer_acacia','armorer_oak','butcher_acacia','farmer_acacia','cleric','cartographer'):
-            name=prefix+suffix+'.nbt';_,_,root=builder._nbt_parse(z.read(name))
-            print('CART',suffix,json.dumps(plain((10,root))),flush=True)
+            name=prefix+suffix+'.nbt';raw=z.read(name);obj=plain((10,builder._nbt_parse(raw)[2]));full[suffix]=obj
+            print('CART',suffix,json.dumps(summary(builder,raw)),flush=True)
         for biome in ('acacia','birch','cherry','desert','jungle','mangrove','oak','pale','snowy','spruce','swamp'):
             base=plain((10,builder._nbt_parse(z.read(prefix+'armorer_'+biome+'.nbt'))[2]))
             for role in ('butcher','farmer','fisher','fletcher','grindstone','leather_worker','librarian','loom','smithing_table','stonecutter'):
                 other=plain((10,builder._nbt_parse(z.read(prefix+role+'_'+biome+'.nbt'))[2]))
-                rows=diff(base,other)
-                print('WRAPPER_DIFF',biome,role,json.dumps(rows),flush=True)
+                rows=diff(base,other);diffs.append({'biome':biome,'role':role,'differences':rows})
+                print('WRAPPER_DIFF',biome,role,json.dumps(rows)[:6000],flush=True)
         for path in z.namelist():
             if '/worldgen/template_pool/' in path and path.endswith('.json') and ('trader' in path or 'tavern' in path and path!='data/nova_structures/worldgen/template_pool/tavern.json'):
                 obj=json.loads(z.read(path))
                 if any(s in str(obj) for s in ('cleric','cartographer','trader_car')):print('CART_POOL',path,json.dumps(obj),flush=True)
+    save(a.output/'cart-typed-values.json',full);save(a.output/'cart-wrapper-differences.json',diffs)
     with zipfile.ZipFile(a.debug/'diagnostics.zip') as z:
         for suffix,needles in [('StructureTemplate.java',('placeInWorld','getSize','getPalettes','filterBlocks')),('PlaceCommand.java',('placeInWorld','getStructure','StructurePlaceSettings','setRotation','RandomSource')),('StructureTemplateManager.java',('public Optional','public Structure','getOrCreate')),('Commands.java',('PlaceCommand.register','DataPackCommand.register'))]:
             paths=[n for n in z.namelist() if n.endswith('/'+suffix)];assert len(paths)==1,paths
