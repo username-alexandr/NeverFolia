@@ -122,6 +122,22 @@ def expected_unused(spec_path:Path)->set[str]:
     if len(result)!=4:fail(f"expected four pinned D&T source-unused structures, got {len(result)}")
     return result
 
+LEGACY_DROWNED_COMMANDS=(
+    'execute at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:["dnt_jockey_mount_tmp"]}',
+    'execute at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]',
+)
+
+def drowned_controller_contract(text:str)->str:
+    commands=tuple(line.strip() for line in text.splitlines()
+                   if line.strip() and not line.lstrip().startswith('#'))
+    if commands==('neverfolia:dnt drowned_mount',):
+        return 'native-r38'
+    if commands==LEGACY_DROWNED_COMMANDS:
+        # Only the intermediate output of the pinned R19 importer. The R38
+        # upgrader must replace it before final fingerprinting/live execution.
+        return 'intermediate-r19'
+    fail('D&T drowned-jockey controller does not match an exact supported contract')
+
 def audit(pack:Path,spec_path:Path)->dict:
     expected=expected_unused(spec_path)
     spec=json.loads(spec_path.read_text(encoding="utf-8"))
@@ -193,29 +209,10 @@ def audit(pack:Path,spec_path:Path)->dict:
             fail("safe D&T runtime function closure broken: "+repr(unresolved_functions[:40]))
 
         jockey_path="data/nova_structures/function/jockey/make_drowned_into_jockey.mcfunction"
+        jockey_contract=None
         if jockey_path in names:
-            jockey=archive.read(jockey_path).decode("utf-8","replace")
-            forbidden_jockey=(
-                "execute summon ",
-                "@n[",
-                "item replace entity @s saddle",
-                "data remove entity @s equipment.saddle",
-                "tag @s add dnt_jockey_mounted",
-                "data modify entity @s Tags",
-            )
-            bad=[token for token in forbidden_jockey if token in jockey]
-            if bad:
-                fail("D&T drowned-jockey controller still contains 26.2-incompatible syntax: "+repr(bad))
-            required_jockey=(
-                "summon minecraft:zombie_nautilus",
-                "ride @s mount @e[type=minecraft:zombie_nautilus",
-            )
-            missing=[token for token in required_jockey if token not in jockey]
-            if missing:
-                fail("D&T drowned-jockey controller migration incomplete: "+repr(missing))
-            if len([line for line in jockey.splitlines() if line.strip()]) != 2:
-                fail("D&T drowned-jockey controller must contain exactly summon + ride")
-
+            jockey=archive.read(jockey_path).decode("utf-8")
+            jockey_contract=drowned_controller_contract(jockey)
             enchant_path="data/nova_structures/enchantment/jockey/make_drowned_into_jockey.json"
             if enchant_path not in names:
                 fail("D&T drowned-jockey controller enchantment missing")
@@ -346,6 +343,7 @@ def audit(pack:Path,spec_path:Path)->dict:
 
         return {
             "schema":1,"profile":QA_PROFILE,"source_profile":PROFILE,"pack":pack.name,
+            "drowned_controller_contract":jockey_contract,
             "counts":{
                 "all_structure_json":len(structures),
                 "external_structure_json":len(external),
@@ -371,7 +369,7 @@ def audit(pack:Path,spec_path:Path)->dict:
             "pass":True,
         }
 
-def synthetic_pack(path:Path,spec_path:Path)->None:
+def synthetic_pack(path:Path,spec_path:Path,native:bool=False)->None:
     unused=expected_unused(spec_path)
     surface=list(REPRESENTATIVES["surface_land"])
     untouched=list(REPRESENTATIVES["source_placement"])
@@ -395,10 +393,7 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
             ns, name = rid.split(":", 1)
             text = "# validator fixture\n"
             if name == "jockey/make_drowned_into_jockey":
-                text = (
-                    'execute at @s run summon minecraft:zombie_nautilus ~ ~ ~ {PersistenceRequired:1b,Tags:["dnt_jockey_mount_tmp"]}\n'
-                    'execute at @s run ride @s mount @e[type=minecraft:zombie_nautilus,tag=dnt_jockey_mount_tmp,distance=..2,sort=nearest,limit=1]\n'
-                )
+                text = '# native controller fixture\nneverfolia:dnt drowned_mount\n' if native else '\n'.join(LEGACY_DROWNED_COMMANDS)+'\n'
             z.writestr(f"data/{ns}/function/{name}.mcfunction", text)
         z.writestr("data/nova_structures/enchantment/jockey/make_drowned_into_jockey.json", json.dumps({
             "effects":{"minecraft:tick":[{
@@ -446,11 +441,19 @@ def synthetic_pack(path:Path,spec_path:Path)->None:
 
 def self_test(spec_path:Path)->None:
     with tempfile.TemporaryDirectory(prefix="nr-external-qa-") as tmp:
-        pack=Path(tmp)/"pack.zip";synthetic_pack(pack,spec_path)
-        result=audit(pack,spec_path)
-        if not result["pass"] or result["counts"]["spawnable_island"]!=130:
-            fail("SELF-TEST valid synthetic pack rejected")
-    print("[NeverFolia][External Structures QA] SELF-TEST OK")
+        for native in (False,True):
+            pack=Path(tmp)/"pack.zip";synthetic_pack(pack,spec_path,native=native)
+            result=audit(pack,spec_path)
+            if not result["pass"] or result["counts"]["spawnable_island"]!=130:
+                fail("SELF-TEST valid synthetic pack rejected")
+            require(result['drowned_controller_contract']==('native-r38' if native else 'intermediate-r19'),
+                    'SELF-TEST controller contract label differs')
+    for text in ('neverfolia:dnt drowned_mount\nsay extra', '', 'neverfolia:dnt drowned_mount_wrong',
+                 '\n'.join(LEGACY_DROWNED_COMMANDS)+'\nneverfolia:dnt drowned_mount'):
+        try:drowned_controller_contract(text)
+        except ValueError:continue
+        fail('SELF-TEST unexpected controller accepted')
+    print("[NeverFolia][External Structures QA] SELF-TEST OK (legacy/native exact contracts + four negative cases)")
 
 def main()->None:
     root=Path(__file__).resolve().parents[2]
@@ -459,11 +462,14 @@ def main()->None:
     p.add_argument("--spec",type=Path,default=root/"worldgen-spec/never-overworld-external-structures-r19.json")
     p.add_argument("--output",type=Path)
     p.add_argument("--self-test",action="store_true")
+    p.add_argument("--require-native-controller",action="store_true")
     a=p.parse_args()
     spec=a.spec.resolve()
     if a.self_test:self_test(spec);return
     if a.pack is None:p.error("--pack is required")
     result=audit(a.pack.resolve(),spec)
+    if a.require_native_controller:
+        require(result['drowned_controller_contract']=='native-r38','final pack requires the native R38 controller')
     if a.output is not None:
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
