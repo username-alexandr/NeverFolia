@@ -1,0 +1,43 @@
+name: R398 exact hydrostate source inspection
+on:
+  push:
+    branches: ['fix/neveroverworld-r398-ordered-hydrostate']
+    paths: ['qa/field-r398/inspect.py','.github/workflows/never-r398-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10937005946'
+          run-id: 36333538457
+          github-token: ${{ github.token }}
+          path: evidence
+          merge-multiple: true
+      - name: Inspect exact materialized code and control reports
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r398/inspect.py 2>&1 | tee artifacts/inspection.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R398-SOURCE-INSPECTION-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
