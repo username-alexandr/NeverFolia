@@ -29,12 +29,12 @@ def position(a,i):return [a['cx']*16-16+i%48,-511+i//2304,a['cz']*16-16+(i//48)%
 def canonical(c):return 3 if c==4 else c
 
 def main():
-    left={p.name:p for p in (OUT/'candidate/closure/witness').glob('*.bin.gz')}
-    right={p.name:p for p in (OUT/'reverse/closure/witness').glob('*.bin.gz')}
+    left={p.name:p for p in (OUT/'proof-candidate/witness').glob('*.bin.gz')}
+    right={p.name:p for p in (OUT/'proof-reverse/witness').glob('*.bin.gz')}
     if not left or left.keys()!=right.keys():raise ValueError('Missing candidate/reverse witnesses')
     rows=[]
     for name in sorted(left):
-        a,b=read(left[name]),read(right[name]);pairs=Counter();examples=[];reach=[];raw_changes=0
+        a,b=read(left[name]),read(right[name]);pairs=Counter();examples=[];reach=[];raw_changes=0;reach_count=0
         if (a['cx'],a['cz'])!=(b['cx'],b['cz']):raise ValueError('Mismatched owner coordinates')
         for i,(old,new) in enumerate(zip(a['cells'],b['cells'])):
             if old!=new:raw_changes+=1
@@ -43,9 +43,10 @@ def main():
                 if len(examples)<48:examples.append({'position':position(a,i),'candidate':old,'reverse':new})
             x=i%48;z=(i//48)%48
             if 16<=x<32 and 16<=z<32 and bit(a['connected'],i)!=bit(b['connected'],i):
+                reach_count+=1
                 if len(reach)<32:reach.append({'position':position(a,i),'candidate_cell':old,'reverse_cell':new,'candidate_connected':bit(a['connected'],i),'reverse_connected':bit(b['connected'],i)})
         sky=[{'x':a['cx']*16-16+i%48,'z':a['cz']*16-16+i//48,'candidate':old,'reverse':new} for i,(old,new) in enumerate(zip(a['sky'],b['sky'])) if old!=new]
-        rows.append({'chunk':[a['cx'],a['cz']],'raw_changes':raw_changes,'passability_changes':dict(pairs),'examples':examples,'owner_reachability_examples':reach,'sky_changes':sky[:48],'sky_change_count':len(sky),'lava_equal':a['lava']==b['lava']})
+        rows.append({'chunk':[a['cx'],a['cz']],'raw_changes':raw_changes,'passability_changes':dict(pairs),'examples':examples,'owner_reachability_count':reach_count,'owner_reachability_examples':reach,'sky_changes':sky[:48],'sky_change_count':len(sky),'lava_equal':a['lava']==b['lava']})
     output={'source':'R397 before-write witness arrays from actual JVMs','classification_codes':{'unknown':0,'solid':1,'protected':2,'air':3,'water':4,'lava':5},'rows':rows,'production_accepted':False}
     (OUT/'witness-review.json').write_text(json.dumps(output,indent=2)+'\n')
     print('R397_WITNESS_REVIEW',json.dumps(output),flush=True)
