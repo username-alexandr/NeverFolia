@@ -1,0 +1,103 @@
+name: R40 detailed source and upstream comparison
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-integrated-worldgen']
+    paths: ['.github/workflows/never-r40-evidence-details.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  details:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10940318112'
+          run-id: 36345953188
+          github-token: ${{ github.token }}
+          path: inspected
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - name: Compare pinned upstream references and inspect ice cleanup
+        run: |
+          python3 - <<'PY'
+          import collections,difflib,hashlib,io,json,re,urllib.request,zipfile
+          from pathlib import Path
+          out=Path('details');out.mkdir()
+          missing=json.loads(Path('inspected/resources.json').read_text())['missing']
+          url='https://cdn.modrinth.com/data/tpehi7ww/versions/CS77UwHE/Dungeons%20and%20Taverns%20v5.3.2.zip'
+          with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'NeverFolia-Compatibility-Audit/1.0'}),timeout=60) as r:raw=r.read()
+          assert hashlib.sha512(raw).hexdigest()=='cf026b67f4fc0f5ab15229995f11faf43fdd41b29777a6756151276e83da65f887fe03b6356c5011f8ba32371f98941778928e4258e81b4c97411a40af1635ca'
+          (out/'Dungeons-and-Taverns-v5.3.2.zip').write_bytes(raw)
+          def walk(o,path=()):
+              if isinstance(o,dict):
+                  for k,v in o.items():
+                      if k=='location' and isinstance(v,str):yield path+(k,),v
+                      yield from walk(v,path+(k,))
+              elif isinstance(o,list):
+                  for i,v in enumerate(o):yield from walk(v,path+(i,))
+          with zipfile.ZipFile(io.BytesIO(raw)) as up,zipfile.ZipFile('baseline/world/datapacks/NeverOverworld.zip') as old:
+              un=set(up.namelist());on=set(old.namelist());ids={n[5:].split('/structure/',1)[0]+':'+n.split('/structure/',1)[1][:-4]:n for n in un if '/structure/' in n and n.endswith('.nbt')}
+              oldids={n[5:].split('/structure/',1)[0]+':'+n.split('/structure/',1)[1][:-4]:n for n in on if '/structure/' in n and n.endswith('.nbt')}
+              report={'upstream_url':url,'upstream_sha256':hashlib.sha256(raw).hexdigest(),'exact_available':[],'upstream_same_pool_references':[],'unresolved':[]}
+              for item in missing:
+                  rid=item['id']
+                  if rid in ids:report['exact_available'].append(rid);continue
+                  found=[]
+                  for origin in item['origins']:
+                      if not origin.startswith('pool:'):continue
+                      ns,loc=origin[5:].split(':',1);name='data/'+ns+'/worldgen/template_pool/'+loc+'.json'
+                      if name not in on or name not in un:continue
+                      a=json.loads(old.read(name));b=json.loads(up.read(name));bm=dict(walk(b))
+                      for path,value in walk(a):
+                          if value!=rid or path not in bm or bm[path]==rid:continue
+                          target=bm[path];found.append({'pool':name,'path':path,'target':target,'target_exists_upstream':target in ids,'target_exists_pack':target in oldids})
+                  if found:report['upstream_same_pool_references'].append({'id':rid,'proposals':found})
+                  else:report['unresolved'].append({'id':rid,'nearest_upstream':difflib.get_close_matches(rid,ids,3,0.72),'nearest_pack':difflib.get_close_matches(rid,oldids,3,0.72)})
+              (out/'upstream-comparison.json').write_text(json.dumps(report,indent=2)+'\n')
+              print('R40_UPSTREAM_COMPARISON '+json.dumps(report,separators=(',',':')))
+              functions={n for n in on if '/function/' in n and n.endswith('.mcfunction')}
+              refmissing=[]
+              for n in on:
+                  if n.endswith('.json'):
+                      try:data=json.loads(old.read(n))
+                      except:continue
+                      def scan(o):
+                          if isinstance(o,dict):
+                              if o.get('type') in ('minecraft:run_function','run_function'):
+                                  f=o.get('function');ns,p=f.split(':',1) if ':' in f else ('minecraft',f)
+                                  if 'data/'+ns+'/function/'+p+'.mcfunction' not in functions:refmissing.append([n,f])
+                              for v in o.values():scan(v)
+                          elif isinstance(o,list):
+                              for v in o:scan(v)
+                      scan(data)
+              print('R40_MISSING_RUN_FUNCTIONS',json.dumps(refmissing))
+              print('R40_PACK_FUNCTIONS',json.dumps(sorted(functions)))
+          for leaf in ('NeverOverworldFlood.java','NeverOverworldEcologyR13.java','NeverOverworldEcologyR15.java','IcebergFeature.java','BlueIceFeature.java'):
+              p=Path('inspected')/leaf
+              if not p.exists():continue
+              lines=p.read_text().splitlines();selected=set()
+              terms=('reweatherSubmergedSurface','isDrownedFrozenOverlay','frozen','Frozen','SNOW','ICE','remove','clear','initialize','getSeaLevel','setBlock')
+              for i,line in enumerate(lines):
+                  if any(t in line for t in terms):selected.update(range(max(0,i-3),min(len(lines),i+14)))
+              print('R40_DETAIL_SOURCE',leaf)
+              for i in sorted(selected)[:260]:print(str(i+1)+': '+lines[i])
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-DETAILS-${{ github.sha }}
+          path: details/
+          retention-days: 14
+          if-no-files-found: error
