@@ -1,0 +1,98 @@
+name: FIELD-R38 resource follow-up
+on:
+  push:
+    branches: ['wip/neveroverworld-r37-continuation']
+    paths: ['.github/workflows/never-r38-resource-followup.yml', 'qa/field-r39/**', 'scripts/repair-neveroverworld-r39-resources.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - uses: actions/download-artifact@v4
+        with:
+          name: R38-focused-evidence-49c7eef1e08355edde5a2ad3ccaca666c723b53d
+          run-id: 36308562344
+          github-token: ${{ github.token }}
+          path: focused
+      - name: Inspect exact source contract without substitutions
+        run: |
+          python3 - <<'PY'
+          import collections,hashlib,importlib.util,io,json,re,zipfile
+          from pathlib import Path
+          out=Path('artifacts');out.mkdir(exist_ok=True)
+          expected={'server.jar':'411f628603ae531216c173fde1dbd8c702effb170889f72e5f2c0f1af81b6a32','NeverOverworld.zip':'32ea5160f0bed3a80cf400c907622c7dbb76a9bb4160e309cacb5d712a8bd9f7','NeverNether.zip':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'}
+          for name,value in expected.items():
+              with open(Path('candidate',name),'rb') as stream:actual=hashlib.file_digest(stream,'sha256').hexdigest()
+              assert actual==value,(name,actual)
+          assert json.loads(Path('candidate/r38-live-qa.json').read_text())['pass'] is True
+          spec=importlib.util.spec_from_file_location('builder','scripts/build-never-overworld-external-structures-r19.py');b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
+          with zipfile.ZipFile('candidate/server.jar') as jar:
+              entries=[n for n in jar.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
+              assert len(entries)==1,entries
+              raw=jar.read(entries[0])
+          with zipfile.ZipFile(io.BytesIO(raw)) as vanilla,zipfile.ZipFile('candidate/NeverOverworld.zip') as pack:
+              pn=set(pack.namelist());names=pn|set(vanilla.namelist())
+              def read(name):return (pack if name in pn else vanilla).read(name)
+              aliases={n:json.loads(read(n)) for n in sorted(names) if re.fullmatch(r'data/[^/]+/worldgen/structure/.+\.json',n) and json.loads(read(n)).get('pool_aliases')}
+              missing=json.loads(Path('focused/r38-reachable-resources.json').read_text())['missing']
+              summary=collections.Counter('/'.join(r['id'].split('/')[:2]) for r in missing)
+              details=[]
+              for row in missing:
+                  candidates=[]
+                  for rid in row.get('similar_ids_diagnostic_only',[]):
+                      ns,value=rid.split(':',1)
+                      path=f'data/{ns}/structure/{value}.nbt'
+                      if row['kind']!='template' or path not in names:continue
+                      _,_,root=b._nbt_parse(read(path))
+                      ports=[]
+                      for block in root.get('blocks',(9,(10,[])))[1][1]:
+                          nbt=block.get('nbt',(10,{}))[1]
+                          if 'pool' not in nbt:continue
+                          ports.append({k:v[1] for k,v in nbt.items() if k in ('name','target','pool','final_state')})
+                      candidates.append({'id':rid,'sha256':hashlib.sha256(read(path)).hexdigest(),'size':root.get('size'),'jigsaws':ports[:12]})
+                  details.append({**row,'candidate_details_diagnostic_only':candidates})
+              payload={'source_sha':'c6e522c65e5ecd0852c27d724c652189464f51cc','artifact_checksums_verified':expected,'pool_aliases':aliases,'grouped_missing':dict(summary),'missing':details,'pack_metadata':json.loads(pack.read('pack.mcmeta'))}
+              (out/'r38-resource-source-details.json').write_text(json.dumps(payload,indent=2)+'\n')
+              print('POOL ALIASES',json.dumps(aliases,indent=2))
+              print('GROUPED MISSING',json.dumps(dict(summary),indent=2))
+              print('MISSING IDS\n'+'\n'.join(r['kind']+' '+r['id']+' <- '+', '.join(r['origins'][:2]) for r in missing))
+          with zipfile.ZipFile('debug/diagnostics.zip') as debug:
+              (out/'debug-index.txt').write_text('\n'.join(debug.namelist()))
+              text=[]
+              for suffix in ('/pools/JigsawPlacement.java','/pools/alias/PoolAliasLookup.java','/pools/alias/RandomGroup.java'):
+                  for name in debug.namelist():
+                      if name.endswith(suffix):
+                          lines=debug.read(name).decode().splitlines()
+                          selected=set()
+                          for i,line in enumerate(lines):
+                              if any(term in line for term in ('poolAliasLookup','aliasLookup','getFallback','getOrDefault','forEachResolved')):selected.update(range(max(0,i-5),min(len(lines),i+9)))
+                          text.append(name+'\n'+'\n'.join(f'{i+1}: {lines[i]}' for i in sorted(selected)))
+              (out/'r38-engine-alias-contract.txt').write_text('\n\n'.join(text))
+              print('ENGINE ALIAS CONTRACT\n'+'\n\n'.join(text))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R38-resource-followup-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
