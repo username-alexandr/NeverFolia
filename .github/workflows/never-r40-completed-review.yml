@@ -1,0 +1,64 @@
+name: R40 completed integration review
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-ocean-integration']
+    paths: ['.github/workflows/never-r40-completed-review.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for exact already running integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36344565790'
+          for i in range(100):
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','User-Agent':'NeverFolia-R40-review'})
+              with urllib.request.urlopen(req,timeout=30) as response:r=json.load(response)
+              assert r['head_sha']=='bd568abbf84cb2d0c16519399c9e10d9c8cc79ae'
+              if r['status']=='completed':
+                  print('COMPLETED_SOURCE',r['id'],r['conclusion']);break
+              time.sleep(10)
+          else:raise SystemExit('Source not complete; no evidence was summarized')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R40-INTEGRATION-EVIDENCE-bd568abbf84cb2d0c16519399c9e10d9c8cc79ae
+          run-id: 36344565790
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: evidence
+      - name: Read exact results including failures and limits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          root=Path('evidence');paths=list(root.rglob('r40-runtime.json'))
+          assert len(paths)==1,'No complete runtime report'
+          source=paths[0];r=json.loads(source.read_text())
+          assert r['build']['base_core_sha256']=='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67'
+          out={'source_run':36344565790,'source_report_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'production_accepted':False,'bounded_integration_pass':r.get('bounded_integration_pass'),'error':r.get('error'),'build':r['build'],'phases':{},'paired_comparisons':{k:{kk:vv for kk,vv in v.items() if kk!='examples'} for k,v in r.get('paired_comparisons',{}).items()}}
+          for name,phase in r['phases'].items():
+              observed=phase.get('observed',{});rows=observed.get('chunks',[])
+              out['phases'][name]={'pass':phase.get('pass'),'error':phase.get('error'),'exit_code':phase.get('exit_code'),'snapshot_water_equal':phase.get('snapshot_water_equal'),'proof':phase.get('proof'),'cases':observed.get('cases'),'completed_chunks':observed.get('completed_chunks'),'isolated_air':sum(row['single_air_with_six_aquatic_neighbours'] for row in rows),'ice_blocks':sum(row['ice_blocks'] for row in rows),'isolated_ice':sum(row['single_ice_with_six_aquatic_neighbours'] for row in rows)}
+          Path('r40-compact-results.json').write_text(json.dumps(out,indent=2)+'\n')
+          print('R40_COMPLETED_REVIEW '+json.dumps(out,separators=(',',':')))
+          if not out['bounded_integration_pass']:
+              for p in root.rglob('fixture.log'):
+                  lines=p.read_text(errors='replace').splitlines()
+                  for i,line in enumerate(lines):
+                      if any(t in line for t in ('AssertionError','Exception:','R40 FIXTURE FAIL')):print('\n'.join(lines[max(0,i-2):i+18]))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-COMPACT-COMPLETED-REVIEW-${{ github.sha }}
+          path: r40-compact-results.json
+          retention-days: 14
+          if-no-files-found: error

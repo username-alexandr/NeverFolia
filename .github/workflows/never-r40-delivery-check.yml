@@ -1,0 +1,110 @@
+name: R40 delivered kit verification
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-ocean-integration']
+    paths: ['.github/workflows/never-r40-delivery-check.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for the exact integration run and require successful packaging
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36345765349'
+          for attempt in range(100):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','User-Agent':'NeverFolia-R40-delivery-check'})
+              with urllib.request.urlopen(request,timeout=30) as response:run=json.load(response)
+              assert run['head_sha']=='0d3497380a41e061e829ee7339e8404b913f101c'
+              if run['status']=='completed':
+                  assert run['conclusion']=='success','Failed integration is not a deliverable'
+                  print('SOURCE_INTEGRATION_SUCCESS',run['id']);break
+              time.sleep(10)
+          else:raise SystemExit('Source integration has not completed')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: NeverFolia-R40-Ocean-Integrated-TEST-0d3497380a41e061e829ee7339e8404b913f101c
+          run-id: 36345765349
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: delivered
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R40-INTEGRATION-EVIDENCE-0d3497380a41e061e829ee7339e8404b913f101c
+          run-id: 36345765349
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: evidence
+      - name: Verify every shipped file and report, active flag, seed, and no saved world
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import hashlib,json
+          root=Path('delivered');evidence=Path('evidence')
+          def sha(path):
+              with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+          def verify_manifest(name):
+              checked={}
+              for line in (root/name).read_text().splitlines():
+                  expected,relative=line.split('  ',1);p=PurePosixPath(relative)
+                  assert len(expected)==64 and all(c in '0123456789abcdef' for c in expected)
+                  assert not p.is_absolute() and '..' not in p.parts and '\\' not in relative and relative not in checked
+                  target=root.joinpath(*p.parts)
+                  assert target.is_file() and not target.is_symlink() and sha(target)==expected,relative
+                  checked[relative]=expected
+              return checked
+          all_files=verify_manifest('SHA256SUMS.txt');binaries=verify_manifest('BINARIES.sha256')
+          assert set(all_files)=={p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and p.name!='SHA256SUMS.txt'}
+          expected={'server.jar':'2b68166d1088c47cee021494f0cf7e7acbe8de9d390f5abe8cca58d24ed07744','world/datapacks/NeverOverworld.zip':'a5fb99cd0b15efc2ec78a1f155c763112f3e3d2669c1519aae69e468de7902be','world/datapacks/NeverNether.zip':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'}
+          assert binaries==expected
+          assert {p.relative_to(root).as_posix() for p in (root/'world').rglob('*') if p.is_file()}==set(expected)-{'server.jar'}
+          assert not (root/'plugins').exists()
+          assert (root/'eula.txt').read_text()=='eula=false\n'
+          assert (root/'jvm.args').read_text().splitlines().count('-Dneverfolia.r395OceanClosure=true')==1
+          properties={}
+          for line in (root/'server.properties').read_text().splitlines():
+              if not line or line.startswith('#'):continue
+              key,value=line.split('=',1);assert key not in properties;properties[key]=value
+          assert properties['level-seed']=='-4651369264513492755'
+          assert properties['level-name']=='world'
+          assert properties['initial-enabled-packs']=='vanilla,file/NeverOverworld.zip,file/NeverNether.zip'
+          assert properties['server-ip']=='127.0.0.1' and properties['server-port']=='25610'
+          assert properties['online-mode']=='true' and properties['white-list']=='true'
+          for name in ('build.json','r40-runtime.json','r40-provenance.json'):
+              assert (root/name).read_bytes()==(evidence/name).read_bytes(),name
+          report=json.loads((root/'r40-runtime.json').read_text());provenance=json.loads((root/'r40-provenance.json').read_text())
+          assert provenance['commit']=='0d3497380a41e061e829ee7339e8404b913f101c' and provenance['run_id']=='36345765349'
+          assert report['bounded_integration_pass'] is True and report['inputs_unchanged'] is True and not report.get('error')
+          assert set(report['phases'])=={'fixture','baseline','candidate_off','candidate','baseline_reverse','reverse','restart'}
+          summary={'source_run':36345765349,'source_commit':provenance['commit'],'delivered_files_checked':len(all_files),'verified_binaries':binaries,'runtime_report_sha256':sha(root/'r40-runtime.json'),'delivery_verified':True,'bounded_integration_pass':True,'production_accepted':False,'active_ocean_flag':True,'saved_world_shipped':False,'phases':{},'pairs':report['paired_comparisons']}
+          for name,phase in report['phases'].items():
+              assert phase['pass'] is True and phase['exit_code']==0
+              observed=phase['observed'];assert observed['seed']==-4651369264513492755 and observed.get('nonce')
+              rows=observed.get('chunks',[])
+              entry={'exit_code':phase['exit_code'],'fresh_report_nonce':observed['nonce'],'snapshot_water_equal':phase.get('snapshot_water_equal'),'proof':phase.get('proof')}
+              if name=='fixture':
+                  entry['cases']=observed['cases'];assert len(entry['cases'])==10 and all(r['pass'] for r in entry['cases'])
+              else:
+                  assert len(rows)==54 and len({(r['chunk_x'],r['chunk_z']) for r in rows})==54
+                  entry.update({'target_chunks':len(rows),'isolated_air_cells':sum(r['single_air_with_six_aquatic_neighbours'] for r in rows),'ice_blocks':sum(r['ice_blocks'] for r in rows),'isolated_ice_cells':sum(r['single_ice_with_six_aquatic_neighbours'] for r in rows)})
+              summary['phases'][name]=entry
+          for value in summary['pairs'].values():
+              assert value['pass'] is True and value['block_entity_changed_chunks']==0 and value['protected_envelope_changes']==0
+              value.pop('examples',None)
+          Path('delivery-verification.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('R40_DELIVERY_VERIFIED '+json.dumps(summary,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-DELIVERY-VERIFICATION-${{ github.sha }}
+          path: delivery-verification.json
+          retention-days: 14
+          if-no-files-found: error
