@@ -1,0 +1,51 @@
+name: R3910 exact scheduling source
+on:
+  push:
+    branches: ['fix/neveroverworld-r3910-ocean-closure']
+    paths: ['.github/workflows/never-r3910-stage-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Read actual sources, do not alter engine
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          out=Path('sources');out.mkdir()
+          items=list(Path('debug').rglob('diagnostics.zip'));assert len(items)==1
+          targets={'ChunkTaskScheduler.java':['new ChunkLightTask','ChunkStatus.LIGHT','getBlockStateWriteRadius','blockStateWriteRadius','getAccumulatedRadiusOf'], 'ChunkLightTask.java':['public ChunkLightTask','runTask','void run','neverOverworldNeighbours','task.fromChunk'], 'ChunkStatusTasks.java':['initializeLight('], 'ProtoChunk.java':['public ProtoChunk('], 'ChunkUpgradeGenericStatusTask.java':['public ChunkUpgradeGenericStatusTask','blockStateWriteRadius','public void run'], 'ChunkPyramid.java':['INITIALIZE_LIGHT','ChunkStatus.LIGHT']}
+          manifest={}
+          with zipfile.ZipFile(items[0]) as z:
+              for leaf,terms in targets.items():
+                  matches=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  if len(matches)!=1:
+                      print('SOURCE_UNAVAILABLE',leaf,matches);continue
+                  raw=z.read(matches[0]);(out/leaf).write_bytes(raw)
+                  manifest[leaf]={'source':matches[0],'sha256':hashlib.sha256(raw).hexdigest()}
+                  lines=raw.decode().splitlines();indices=set()
+                  for i,line in enumerate(lines):
+                      if any(t in line for t in terms):indices.update(range(max(0,i-8),min(len(lines),i+22)))
+                  print('SOURCE',leaf,manifest[leaf]['sha256'])
+                  for i in sorted(indices)[:260]:print(str(i+1)+': '+lines[i])
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3910-exact-stage-source-${{ github.sha }}
+          path: sources/
+          retention-days: 14
+          if-no-files-found: error

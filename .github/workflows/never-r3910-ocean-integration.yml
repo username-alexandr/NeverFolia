@@ -1,0 +1,102 @@
+name: R3910 integrated ocean cavity checks
+on:
+  push:
+    branches: ['fix/neveroverworld-r3910-ocean-closure']
+    paths: ['qa/field-r3910/**', '.github/workflows/never-r3910-ocean-integration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: neverfolia-r3910-integration
+  cancel-in-progress: false
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Independent witness unit tests
+        run: |
+          mkdir -p artifacts
+          python3 qa/field-r3910/test_witness.py > artifacts/witness-unit.log 2>&1
+          tail -5 artifacts/witness-unit.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compile combined kernel and real-chunk fixtures
+        id: build
+        run: |
+          set -o pipefail
+          python3 qa/field-r3910/build.py 2>&1 | tee artifacts/build-command.log
+      - name: Real cavities, both generation orders, restart and independent witness replay
+        id: runtime
+        run: |
+          set -o pipefail
+          python3 qa/field-r3910/runtime.py 2>&1 | tee artifacts/runtime-command.log
+      - name: Preserve exact source and provenance even on failure
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp -R qa/field-r3910 artifacts/source/
+          cp .github/workflows/never-r3910-ocean-integration.yml artifacts/source/
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          data={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,
+                'scope':'Opt-in bounded 3x3 ocean closure on R399. No promise of global closure, arbitrary chunk scheduling or complete screenshot acceptance.',
+                'source_sha256':{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('artifacts/source').rglob('*') if p.is_file()}}
+          Path('artifacts/provenance.json').write_text(json.dumps(data,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3910-OCEAN-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Package only after bounded integration checks
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,shutil
+          from pathlib import Path
+          result=json.loads(Path('artifacts/r3910-runtime.json').read_text())
+          assert result['bounded_integration_pass'] is True and result['inputs_unchanged'] is True
+          out=Path('candidate');packs=out/'world/datapacks';packs.mkdir(parents=True)
+          for name in ('NeverOverworld.zip','NeverNether.zip'):(out/name).rename(packs/name)
+          for name in ('build.json','r3910-runtime.json','provenance.json'):shutil.copyfile(Path('artifacts')/name,out/name)
+          (out/'eula.txt').write_text('eula=false\n')
+          (out/'jvm.args').write_text('-Xms1G\n-Xmx4G\n-Dfile.encoding=UTF-8\n-Dneverfolia.r3910OceanClosure=true\n')
+          (out/'server.properties').write_text('level-name=world\nlevel-seed=-4651369264513492755\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip,file/NeverNether.zip\nserver-ip=127.0.0.1\nserver-port=25610\nonline-mode=true\nwhite-list=true\nenforce-whitelist=true\nmax-players=2\ngamemode=creative\ndifficulty=normal\nallow-flight=true\nview-distance=4\nsimulation-distance=3\npause-when-empty-seconds=-1\nenable-rcon=false\n')
+          (out/'start.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\ncd "$(dirname "$0")"\njava -version\nsha256sum -c BINARIES.sha256\nexec java @jvm.args -jar server.jar --nogui\n')
+          (out/'start.bat').write_bytes(b'@echo off\r\ncd /d "%~dp0"\r\njava -version\r\njava "@jvm.args" -jar server.jar --nogui\r\npause\r\n')
+          (out/'README-RU.md').write_text('# NeverFolia R39.10 — экспериментальная заливка полостей\n\nВключает обе бинарные правки R39.6/R39.9 и новый AIR-only проход с положительным путём к поверхности океана. Поиск ограничен окном 3x3 чанка. Крыша острова больше не запрещает боковой путь в океан. Существующая вода, твёрдые блоки и защищённые границы шахт не заменяются.\n\nЭТО ОТДЕЛЬНЫЙ ТЕСТОВЫЙ КАНДИДАТ, НЕ PRODUCTION. Полнота исправления всех скриншотов, пути за пределами окна и безопасность любого порядка параллельного доступа не подтверждены. Старый строгий тест полного совпадения разных порядков не отменён; наследуемые различия геологии остаются в отчётах. Лёд, зачарования и прежние 95 отсутствующих шаблонов отдельно не исправлены.\n\nРаспаковать в новую пустую папку. Старый мир со скриншотов сохранить отдельно, не переносить сюда и не удалять. Java 25 нужна отдельно. Прочитать Minecraft EULA и при согласии вручную установить eula=true. Windows: start.bat; Linux: bash start.sh. Подключение localhost:25610. После Done выполнить в консоли две команды: whitelist add ВАШ_НИК и op ВАШ_НИК. Штатная остановка: stop. Для другой машины нужен SSH-туннель либо осознанная настройка адреса и брандмауэра.\n\nПроход по умолчанию выключен в ядре. В этом тестовом комплекте его включает строка -Dneverfolia.r3910OceanClosure=true в jvm.args. Прямой запуск server.jar без этого файла НЕ проверяет новую заливку. Никаких экспериментальных опций R39.5 добавлять не нужно.\n\nПроверены реальные detached-ProtoChunk сцены открытой полости под крышей, закрытой комнаты, защитного объёма шахты, лавы и жидкостей; выполнено сравнение сохранённой естественной генерации по двум одинаковым порядкам и перезапуск. Каждый записанный конечный переход в целевой выборке дополнительно проверен независимым Python-обходом неизменяемого входа. Это не доказательство глобальной корректности мира.\n\nСборка инкрементальная javac --release 25 против точного R39.9, не полный Gradle. Проверка BINARIES.sha256 автоматическая только в Linux; Windows launcher не проверяет хеши. Подробные числа и ограничения — r3910-runtime.json. QA-плагины и сохранённые миры в комплект не включены.\n')
+          binary=[out/'server.jar',packs/'NeverOverworld.zip',packs/'NeverNether.zip']
+          (out/'BINARIES.sha256').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(out).as_posix()+'\n' for p in binary))
+          (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(out).as_posix()+'\n' for p in sorted(out.rglob('*')) if p.is_file()))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: success()
+        with:
+          name: NeverFolia-R39.10-Ocean-Integration-TEST-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+          if-no-files-found: error
