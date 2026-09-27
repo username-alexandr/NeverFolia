@@ -1,0 +1,53 @@
+name: R398 four-way saved voxel classification
+on:
+  push:
+    branches: ['qa/neveroverworld-r397-order-controls']
+    paths: ['qa/field-r398/**', '.github/workflows/never-r398-four-way-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Wait for the exact already-running control matrix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36337508038'
+          for attempt in range(80):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','User-Agent':'NeverFolia-r398-CI'})
+              with urllib.request.urlopen(request,timeout=30) as response:r=json.load(response)
+              assert r['head_sha']=='80eab9d12883abe2242fd6b31a72b08b92e66d14','Unexpected source commit'
+              if r['status']=='completed':
+                  print('SOURCE_MATRIX_FINISHED',r['id'],r['conclusion']);break
+              time.sleep(15)
+          else:raise SystemExit('Source matrix did not finish; no classification performed')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R397-CONTROL-EVIDENCE-80eab9d12883abe2242fd6b31a72b08b92e66d14
+          run-id: 36337508038
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Read full saved states, classify both orders and retain non-water changes
+        run: |
+          set -o pipefail
+          python3 qa/field-r398/review_controls.py 2>&1 | tee four-way-command.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R398-FOUR-WAY-REVIEW-${{ github.sha }}
+          path: |
+            review398/
+            four-way-command.log
+            qa/field-r398/review_controls.py
+          retention-days: 14
+          if-no-files-found: error
