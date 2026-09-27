@@ -1,0 +1,96 @@
+name: R40 combined ocean and mine protection
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-combined-ocean']
+    paths: ['qa/field-r40/**', 'native/overworld-r40/**', '.github/workflows/never-r40-combined-ocean.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Independent verifier unit tests
+        run: |
+          mkdir -p artifacts
+          python3 qa/field-r40/witness.py > artifacts/witness-unit.log 2>&1
+          tail -5 artifacts/witness-unit.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compile combined kernel and retain shipped R396 and R399 classes
+        id: build
+        run: |
+          set -o pipefail
+          python3 qa/field-r40/build.py 2>&1 | tee artifacts/build-command.log
+      - name: Real dry/open fixtures, seven natural phases and independent Python witness replay
+        id: runtime
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python3 qa/field-r40/runtime.py 2>&1 | tee artifacts/runtime-command.log
+      - name: Retain exact sources and provenance even on failure
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp -R qa/field-r40 native/overworld-r40 artifacts/source/
+          cp .github/workflows/never-r40-combined-ocean.yml artifacts/source/
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('artifacts/source')
+          p={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'scope':'R399 plus cache-bounded R40 ocean closure. No global closure, ice or all-dungeon acceptance.','source_sha256':{str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in root.rglob('*') if f.is_file()}}
+          Path('artifacts/provenance.json').write_text(json.dumps(p,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-COMBINED-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Package bounded manual-test kit only after current integration passes
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: python3 qa/field-r40/package.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        with:
+          name: NeverFolia-R40-COMBINED-OCEAN-MANUAL-TEST-${{ github.sha }}
+          path: manual-test/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Require actual integrated safety; never relabel full worldgen acceptance
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          RUNTIME: ${{ steps.runtime.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          assert os.environ['BUILD']=='success' and os.environ['RUNTIME']=='success','Build/integration failed or skipped'
+          report=json.loads(Path('artifacts/runtime.json').read_text())
+          assert report['bounded_integration_pass'] is True
+          assert report['production_accepted'] is False and report['global_closure_proven'] is False
+          print('R40 BOUNDED INTEGRATION PASSED; complete world generation is NOT accepted.')
+          print('STRICT GENERATION ORDER:',report['strict_generation_order_equal'])
+          PY

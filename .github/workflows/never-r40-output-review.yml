@@ -1,0 +1,100 @@
+name: R40 read-only output verification
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-combined-ocean']
+    paths: ['.github/workflows/never-r40-output-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Wait for exact already-running combined test
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36343200218'
+          for attempt in range(120):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','User-Agent':'NeverFolia-R40-review'})
+              with urllib.request.urlopen(request,timeout=30) as response:run=json.load(response)
+              assert run['head_sha']=='65f24bf7bbc580b0733c9a7605ea4d69e49358cc','Unexpected source commit'
+              if run['status']=='completed':
+                  print('SOURCE_COMPLETE',run['id'],run['conclusion'])
+                  with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('success='+str(run['conclusion']=='success').lower()+'\n')
+                  break
+              time.sleep(15)
+          else:raise SystemExit('Source still incomplete; no acceptance claimed')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R40-COMBINED-EVIDENCE-65f24bf7bbc580b0733c9a7605ea4d69e49358cc
+          run-id: 36343200218
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: evidence
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: steps.source.outputs.success == 'true'
+        with:
+          name: NeverFolia-R40-COMBINED-OCEAN-MANUAL-TEST-65f24bf7bbc580b0733c9a7605ea4d69e49358cc
+          run-id: 36343200218
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: kit
+      - name: Verify actual files and summarize completed observations
+        env:
+          SOURCE_SUCCESS: ${{ steps.source.outputs.success }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,statistics
+          e=Path('evidence');p=json.loads((e/'provenance.json').read_text())
+          assert p['commit']=='65f24bf7bbc580b0733c9a7605ea4d69e49358cc' and str(p['run_id'])=='36343200218'
+          out={'source_run':36343200218,'source_commit':p['commit'],'generation_rerun':False,'production_accepted':False}
+          if not (e/'runtime.json').exists():
+              out['error']='Source failed before runtime report';out['kit_verified']=False
+          else:
+              r=json.loads((e/'runtime.json').read_text());out['runtime_sha256']=hashlib.sha256((e/'runtime.json').read_bytes()).hexdigest()
+              out['bounded_integration_pass']=r.get('bounded_integration_pass');out['error']=r.get('error')
+              out['strict_generation_order_equal']=r.get('strict_generation_order_equal');out['effects']=r.get('effects')
+              out['fixture_pass']=r.get('synthetic',{}).get('pass');out['fixture_cases']=r.get('synthetic',{}).get('fixture',{}).get('cases')
+              out['phases']={name:{'pass':phase.get('pass'),'isolated_air':sum(row['single_air_with_six_aquatic_neighbours'] for row in phase.get('observed',{}).get('chunks',[])),'ice_blocks':sum(row['ice_blocks'] for row in phase.get('observed',{}).get('chunks',[]))} for name,phase in r['phases'].items()}
+              out['witnesses']={name:{'count':len(rows),'added':sum(row['added'] for row in rows),'unproven_air':sum(row['unproven_air'] for row in rows),'protected_cells':sum(row['protected_witness_cells'] for row in rows)} for name,rows in r.get('witnesses',{}).items()}
+              out['areas']={}
+              for name in ('candidate','reverse'):
+                  areas=[]
+                  for label,cx,cz in [('island-near-spawn',7,1),('island-south',1,-4),('cold-ocean',-197,-217),('frozen-ocean',-169,-250),('shore-inlet',-189,-223),('remote-dripstone',-1699,-769)]:
+                      rows=[row for row in r.get('witnesses',{}).get(name,[]) if abs(row['chunk'][0]-cx)<=1 and abs(row['chunk'][1]-cz)<=1]
+                      areas.append({'label':label,'center_chunk':[cx,cz],'chunks':len(rows),'added':sum(row['added'] for row in rows),'unproven_air':sum(row['unproven_air'] for row in rows)})
+                  out['areas'][name]=areas
+              if os.environ['SOURCE_SUCCESS']=='true':
+                  assert r['bounded_integration_pass'] is True and r['production_accepted'] is False and r['global_closure_proven'] is False
+                  kit=Path('kit');verified={}
+                  for line in (kit/'SHA256SUMS.txt').read_text().splitlines():
+                      expected,rel=line.split('  ',1);path=Path(rel)
+                      assert not path.is_absolute() and '..' not in path.parts
+                      actual=hashlib.sha256((kit/path).read_bytes()).hexdigest();assert actual==expected,rel;verified[rel]=actual
+                  for path,key in [('server.jar','candidate_core_sha256'),('world/datapacks/NeverOverworld.zip','pack_sha256'),('world/datapacks/NeverNether.zip','nether_sha256')]:assert verified[path]==r['build'][key],path
+                  assert (kit/'eula.txt').read_text().strip()=='eula=false'
+                  assert '-Dneverfolia.r395OceanClosure=true' in (kit/'jvm.args').read_text().splitlines()
+                  assert sorted(str(f.relative_to(kit/'world')) for f in (kit/'world').rglob('*') if f.is_file())==['datapacks/NeverNether.zip','datapacks/NeverOverworld.zip']
+                  assert not (kit/'plugins').exists()
+                  assert (kit/'runtime.json').read_bytes()==(e/'runtime.json').read_bytes()
+                  out['kit_verified']=True;out['verified_file_count']=len(verified);out['core_sha256']=verified['server.jar']
+                  out['kit_files']={str(f.relative_to(kit)):f.stat().st_size for f in kit.rglob('*') if f.is_file()}
+              else:out['kit_verified']=False
+          Path('verified-summary.json').write_text(json.dumps(out,indent=2)+'\n')
+          print('R40_VERIFIED_SUMMARY '+json.dumps(out,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-VERIFIED-OUTPUT-SUMMARY-${{ github.sha }}
+          path: verified-summary.json
+          retention-days: 14
+          if-no-files-found: error
