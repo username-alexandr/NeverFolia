@@ -51,11 +51,25 @@ with zipfile.ZipFile(base) as z:
     versions=z.read('META-INF/versions.list').decode()
     for i,n in enumerate(z.namelist()):
         if n.endswith('.jar') and n.startswith(('META-INF/libraries/','META-INF/versions/')):(libs/(str(i)+'-'+Path(n).name)).write_bytes(z.read(n))
+api_providers=[]
+for p in libs.glob('*.jar'):
+    with zipfile.ZipFile(p) as z:
+        if 'org/bukkit/Bukkit.class' in z.namelist():api_providers.append(p)
 with zipfile.ZipFile(ROOT/'debug/diagnostics.zip') as z:
     names=[n for n in z.namelist() if n.endswith('/src/minecraft/java/'+LIGHT+'.java')]
     need(len(names)==1,'Missing materialized LIGHT source');source=z.read(names[0]);need(digest(source)==LIGHT_SOURCE,'Wrong materialized LIGHT')
-    api=[n for n in z.namelist() if n.endswith('folia-api/build/libs/folia-api-26.2-R0.1-SNAPSHOT.jar')]
-    need(len(api)==1,'Missing exact Folia API');(libs/'folia-api.jar').write_bytes(z.read(api[0]))
+    if not api_providers:
+        api=[]
+        for name in z.namelist():
+            if 'folia-api' not in name or not name.endswith('.jar'):continue
+            raw=z.read(name)
+            with zipfile.ZipFile(io.BytesIO(raw)) as candidate:
+                if 'org/bukkit/Bukkit.class' in candidate.namelist():api.append((name,raw))
+        need(len(api)==1,'Missing/ambiguous API class provider in pinned artifacts: '+str([n for n in z.namelist() if n.endswith('.jar')]))
+        provider=libs/'folia-api.jar';provider.write_bytes(api[0][1]);api_providers.append(provider)
+need(len(api_providers)==1,'Ambiguous Bukkit API on exact runtime classpath')
+(OUT/'api-provider.json').write_text(json.dumps({'path':api_providers[0].name,'sha256':sha(api_providers[0]),'source':'pinned R38 runtime/debug artifacts'},indent=2)+'\n')
+print('ACTUAL BUKKIT API',api_providers[0].name,sha(api_providers[0]),flush=True)
 text=source.decode()
 anchor='                net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);'
 need(text.count(anchor)==1,'Unexpected LIGHT insertion site')
@@ -95,7 +109,6 @@ report={'build_kind':'incremental javac --release 25 against exact R38 runtime a
     'runtime_tested':False,'production_accepted':False,'experimental_default_enabled':False}
 (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n')
 
-# Optional client module: vanilla creative contents are constructed by the client.
 client_classes=WORK/'client-classes';client_classes.mkdir()
 metadata_url='https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.json'
 with urllib.request.urlopen(metadata_url,timeout=30) as response:loader=json.load(response)
