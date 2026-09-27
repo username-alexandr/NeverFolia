@@ -28,13 +28,20 @@ jobs:
           from pathlib import Path
           sys.path.insert(0,str(Path('qa/field-r394').resolve()))
           import build_candidate as r
+          from inspect_sources import summary,plain
+          from cart_contract import diff
           b=r.load('nbt',Path('scripts/build-never-overworld-external-structures-r19.py'))
           with zipfile.ZipFile('candidate/NeverOverworld.zip') as z:
+              print('PACK_SHA256',r.sha(Path('candidate/NeverOverworld.zip').read_bytes()),flush=True)
+              roots={}
               for name in ('armorer','cartographer','cleric','armorer_acacia','butcher_acacia','armorer_oak'):
-                  path=r.PREFIX+name+'.nbt';raw=z.read(path);c,n,root=b._nbt_parse(raw)
-                  print('TYPED',name,'sha=',r.sha(raw),'compression=',c,'root_name=',repr(n),'size=',repr(root.get('size')),'entities_header=',repr(root.get('entities',(None,(None,[])))[0:1]),'entity_count=',len(root.get('entities',(9,(0,[])))[1][1]),flush=True)
-                  if 'armorer_' in name or 'butcher_' in name:print('ROUTER_ROOT',repr(root),flush=True)
-                  elif name in ('cartographer','cleric'):
-                      print('CART_ENTITIES',repr(root.get('entities'))[:6000],flush=True)
-                      print('CART_POOL',z.read('data/nova_structures/worldgen/template_pool/tavern/trader/'+name+'.json').decode(),flush=True)
+                  path=r.PREFIX+name+'.nbt';raw=z.read(path);c,n,root=b._nbt_parse(raw);roots[name]=plain((10,root))
+                  print('TYPED',name,'sha=',r.sha(raw),'compression=',c,'size=',repr(root.get('size')),'entity_count=',len(root.get('entities',(9,(0,[])))[1][1]),flush=True)
+                  print('PROFILE',name,json.dumps(summary(b,raw)),flush=True)
+              print('WRAPPER_DIFF_ACACIA',json.dumps(diff(roots['armorer_acacia'],roots['butcher_acacia']))[:18000],flush=True)
+              print('BIOME_DIFF_ARMORER',json.dumps(diff(roots['armorer_acacia'],roots['armorer_oak']))[:18000],flush=True)
+              for path in z.namelist():
+                  if '/worldgen/template_pool/' in path and '/tavern/' in path and path.endswith('.json'):
+                      text=z.read(path).decode()
+                      if any(s in text for s in ('trader_car_cleric','trader_car_cartographer')):print('PARENT_POOL',path,text[:22000],flush=True)
           PY
