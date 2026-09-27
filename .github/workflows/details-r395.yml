@@ -1,0 +1,65 @@
+name: FIELD-R39.5 failure localization
+on:
+  push:
+    branches: ['fix/neveroverworld-r395-remote-water']
+    paths: ['qa/final-r395/**', '.github/workflows/details-r395.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  details:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.5-remote-water-evidence-332942a4cabcf9d1c73cd78441723578a55fe465
+          run-id: 36317855981
+          github-token: ${{ github.token }}
+          path: evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Localize actual failed records without another game run
+        run: |
+          python3 qa/final-r395/details.py evidence final-output
+      - name: Preserve actual relevant runtime source and water-write excerpts
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          out=Path('final-output');out.mkdir(exist_ok=True)
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              names=[n for n in z.namelist() if n.endswith('.java') and 'materialized/' in n and any(k in n for k in ('NeverOverworldFlood','NeverOverworldWater','NeverOverworldFluid'))]
+              manifest={}
+              for name in names:
+                  text=z.read(name).decode();target=out/'runtime-source'/name.split('materialized/',1)[1]
+                  target.parent.mkdir(parents=True,exist_ok=True);target.write_text(text)
+                  manifest[name]=hashlib.sha256(z.read(name)).hexdigest()
+                  print('SOURCE',name,len(text.splitlines()))
+                  if name.endswith('/NeverOverworldFlooding.java'):
+                      lines=text.splitlines();chosen=set()
+                      for i,line in enumerate(lines):
+                          if 'setBlockState(' in line or 'static ' in line and '(' in line:
+                              chosen.update(range(max(0,i-3),min(len(lines),i+4)))
+                      for i in sorted(chosen):print(f'{i+1}: {lines[i]}')
+              (out/'source-hashes.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.5-localized-findings-${{ github.sha }}
+          path: final-output/
+          retention-days: 14
+          if-no-files-found: error
