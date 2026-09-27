@@ -11,6 +11,7 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import uuid
 import zipfile
@@ -124,9 +125,8 @@ def audit_folder(folder, run_id):
 
 
 def seam_provenance(masks):
-    """Compare chunk-boundary water/air mask contacts before/after LIGHT.
-    Zero fluid code is NOT proof of air; these are water/non-water interfaces.
-    Saved block states, below, are used to identify actual water/air faces.
+    """Zero fluid code is NOT proof of air; these are water/non-water interfaces.
+    Saved block states, below, identify actual water/air faces.
     """
     counts = collections.Counter()
     examples = []
@@ -159,7 +159,6 @@ def saved_inventory(work, out, live_report):
     paired = load('r395_saved_paired', ROOT / 'scripts/probe-never-overworld-paired-r12.py')
     nbt = observer.load_nbt(ROOT)
     inventory = {'scope': 'Read-only persisted remote chunks after normal stop; no player activation or dungeon-completeness claim', 'phases': {}}
-    folders = {'r38-trial-water': 'trial', 'r38-restart': 'trial', 'r38-reverse-water': 'reverse'}
     # trial directory now contains post-restart bytes; never mislabel it first-pass evidence.
     selected = [('r38-restart', 'trial'), ('r38-reverse-water', 'reverse')]
     if not live_report.get('phases', {}).get('r38-restart', {}).get('normal_stop'):
@@ -213,6 +212,14 @@ def saved_inventory(work, out, live_report):
     return inventory
 
 
+def launch_command(jar, agent, run_id, extra):
+    need(isinstance(run_id, str) and str(uuid.UUID(run_id)) == run_id, 'Invalid diagnostic run UUID')
+    need(all(isinstance(v, str) and v.startswith('-D') for v in extra), 'Extra QA flags must remain system properties')
+    need(not any(v.startswith('-Dneverfolia.waterAuditRunId') for v in extra), 'Duplicate run identity')
+    return ['java', '-Xms1G', '-Xmx4G', '-XX:ActiveProcessorCount=4', '-DPaper.WorkerThreadCount=1',
+            '-javaagent:' + str(agent), '-Dneverfolia.waterAuditRunId=' + run_id, *extra, '-jar', str(jar), '--nogui']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('candidate', 'output'):
@@ -246,9 +253,20 @@ def main():
             def factory(observer):
                 base = original_factory(observer)
                 class InstrumentedServer(base):
-                    def __init__(self, *values, **options):
-                        options['java_args'] = ['-javaagent:' + str(agent), '-Dneverfolia.waterAuditRunId=' + run_id] + list(options.get('java_args') or [])
-                        super().__init__(*values, **options)
+                    def __init__(self, jar, folder, log, java_args=None):
+                        # Keep the original supervisor and commands unchanged. Only this
+                        # diagnostic subclass can launch this exact already-verified agent.
+                        need(sha(jar) == CORE and sha(agent) == build['agent_sha256'], 'Unreviewed JVM input')
+                        command = launch_command(jar, agent, run_id, list(java_args or []))
+                        self.log = log
+                        self.stream = log.open('x', encoding='utf-8')
+                        self.token = 0
+                        try:
+                            self.p = subprocess.Popen(command, cwd=folder, stdin=subprocess.PIPE,
+                                stdout=self.stream, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                        except Exception:
+                            self.stream.close()
+                            raise
                 return InstrumentedServer
             module.make_server = factory
         return module
