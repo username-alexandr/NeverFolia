@@ -52,7 +52,7 @@ public final class R394CartQaPlugin extends JavaPlugin implements Listener {
    Bukkit.getRegionScheduler().runDelayed(this,world,cx,300,task->{
     try{
      require(ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(level,pos),"observation must own fixture region");
-     var entities=level.getEntitiesOfClass(net.minecraft.world.entity.npc.villager.Villager.class,new AABB(x-7,399,z-7,x+8,409,z+8),e->true);
+     var entities=level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,new AABB(x-7,399,z-7,x+8,409,z+8),e->e.getBukkitEntity() instanceof Villager);
      List<String> professions=new ArrayList<>();for(var entity:entities)professions.add(((Villager)entity.getBukkitEntity()).getProfession().name());
      require(professions.size()==1&&professions.get(0).equals(role.toUpperCase(java.util.Locale.ROOT)),"expected one "+role+", got "+professions);
      int jigsaws=0,placed=0;
