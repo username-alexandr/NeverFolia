@@ -1,0 +1,75 @@
+name: FIELD-R39.5 saved evidence review
+on:
+  push:
+    branches: ['fix/neveroverworld-r395-remote-water']
+    paths: ['qa/review-r395/**', '.github/workflows/review-r395-evidence.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reviewer and launch-contract regression tests
+        run: |
+          mkdir -p review-output
+          set -o pipefail
+          python3 qa/review-r395/tests.py 2>&1 | tee review-output/review-tests.log
+      - name: Wait for the exact active diagnostic run to preserve its evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36317855981'
+          for _ in range(150):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as stream:result=json.load(stream)
+              if result['head_sha']!='332942a4cabcf9d1c73cd78441723578a55fe465':raise SystemExit('Wrong diagnostic commit')
+              if result['status']=='completed':
+                  print('Source diagnostic finished with',result['conclusion']);break
+              time.sleep(10)
+          else:raise SystemExit('Source evidence not yet available; do not infer a result')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.5-remote-water-evidence-332942a4cabcf9d1c73cd78441723578a55fe465
+          run-id: 36317855981
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Verify source checksums and analyze actual saved chunk boundaries
+        run: |
+          python3 qa/review-r395/review.py --evidence evidence --output review-output/review.json > review-output/full-review.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('review-output/review.json').read_text())
+          out={k:v for k,v in r.items() if k not in ('phases','water_audits')}
+          out['phases']={}
+          for name,p in r['phases'].items():
+              row={k:v for k,v in p.items() if k not in ('spawners_and_vaults','structures','largest_boundaries')}
+              row['structures']=[{k:v for k,v in x.items() if k!='template_counts'} for x in p.get('structures',[])]
+              row['template_examples']=[x.get('template_counts',{}) for x in p.get('structures',[])][:4]
+              row['spawner_counts']={kind:sum(e.get('id')==kind for e in p.get('spawners_and_vaults',[])) for kind in ('minecraft:spawner','minecraft:trial_spawner','minecraft:vault')}
+              row['spawner_examples']=p.get('spawners_and_vaults',[])[:8]
+              row['largest_boundaries']=p.get('largest_boundaries',[])[:5]
+              out['phases'][name]=row
+          out['water_audits']={name:{k:v for k,v in (a or {}).items() if k not in ('failing_chunks','invalid_records','missing_target_chunks')} for name,a in r['water_audits'].items()}
+          Path('review-output/summary.json').write_text(json.dumps(out,indent=2)+'\n')
+          print('NL_R395_REVIEW_SUMMARY\n'+json.dumps(out,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.5-saved-evidence-review-${{ github.sha }}
+          path: review-output/
+          retention-days: 14
+          if-no-files-found: error
