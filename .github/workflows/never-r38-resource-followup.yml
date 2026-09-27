@@ -1,0 +1,197 @@
+name: FIELD-R39 reference fixes and acceptance
+on:
+  push:
+    branches: ['wip/neveroverworld-r37-continuation']
+    paths:
+      - '.github/workflows/never-r38-resource-followup.yml'
+      - 'scripts/audit-neveroverworld-r39-resources.py'
+      - 'scripts/repair-neveroverworld-r39-resources.py'
+      - 'scripts/tests/test_r39_resource_audit.py'
+      - 'qa/field-r39/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Alias and exact-field regression tests
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 scripts/tests/test_r39_resource_audit.py 2>&1 | tee artifacts/r39-alias-tests.txt
+          python3 scripts/repair-neveroverworld-r39-resources.py --self-test 2>&1 | tee artifacts/r39-repair-tests.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Verify exact inputs and actual FeaturePoolElement codec
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          expected={'server.jar':'411f628603ae531216c173fde1dbd8c702effb170889f72e5f2c0f1af81b6a32','NeverOverworld.zip':'32ea5160f0bed3a80cf400c907622c7dbb76a9bb4160e309cacb5d712a8bd9f7','NeverNether.zip':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'}
+          for name,value in expected.items():
+              with open(Path('candidate',name),'rb') as stream:actual=hashlib.file_digest(stream,'sha256').hexdigest()
+              assert actual==value,(name,actual)
+          assert json.loads(Path('candidate/r38-live-qa.json').read_text())['pass'] is True
+          Path('artifacts/input-checksums.json').write_text(json.dumps(expected,indent=2)+'\n')
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              names=[n for n in z.namelist() if n.endswith('/pools/FeaturePoolElement.java')]
+              assert len(names)==1,names
+              text=z.read(names[0]).decode()
+              assert 'PlacedFeature.CODEC' in text and 'Holder<PlacedFeature>' in text,'Unexpected engine feature registry contract'
+              Path('artifacts/FeaturePoolElement-source.java').write_text(text)
+              print('ACTUAL ENGINE FEATURE CODEC\n'+'\n'.join(line for line in text.splitlines() if 'PlacedFeature' in line))
+          PY
+      - name: Audit unchanged baseline with corrected alias and placed-feature resolution
+        id: baseline
+        continue-on-error: true
+        run: |
+          python3 scripts/audit-neveroverworld-r39-resources.py --jar candidate/server.jar --pack candidate/NeverOverworld.zip --report artifacts/r39-before-closure.json
+      - name: Build exact-source reference overlay, preserving source bytes
+        id: repair
+        run: |
+          mkdir -p overlay
+          python3 scripts/repair-neveroverworld-r39-resources.py --pack candidate/NeverOverworld.zip --output overlay/NeverOverworld-R39-ReferenceFix.zip --report artifacts/r39-reference-changes.json
+          python3 - <<'PY'
+          import copy,json,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('candidate/NeverOverworld.zip') as base,zipfile.ZipFile('overlay/NeverOverworld-R39-ReferenceFix.zip') as extra:
+              replacements={n:extra.read(n) for n in extra.namelist() if n.startswith('data/')}
+              assert len(replacements)==5
+              assert set(replacements).issubset(set(base.namelist())),'Overlay must not invent new resources'
+              assert set(json.loads(extra.read('pack.mcmeta')))=={'pack'}
+              # Audit-only flattened view; never published as a replacement base pack.
+              with zipfile.ZipFile('effective-AUDIT-ONLY.zip','w',zipfile.ZIP_DEFLATED) as merged:
+                  for info in base.infolist():
+                      merged.writestr(copy.copy(info),replacements.get(info.filename,base.read(info.filename)))
+          PY
+      - name: Audit effective overlay resource view
+        id: closure
+        continue-on-error: true
+        run: |
+          python3 scripts/audit-neveroverworld-r39-resources.py --jar candidate/server.jar --pack effective-AUDIT-ONLY.zip --report artifacts/r39-after-closure.json
+      - name: Verify removed references and preserve exact-basename diagnostics
+        run: |
+          python3 - <<'PY'
+          import collections,hashlib,importlib.util,json,zipfile
+          from pathlib import Path
+          def load(name,path):
+              spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+          repair=load('repair','scripts/repair-neveroverworld-r39-resources.py')
+          before=json.loads(Path('artifacts/r39-before-closure.json').read_text())
+          after=json.loads(Path('artifacts/r39-after-closure.json').read_text())
+          assert not before['errors'] and not after['errors'],'Incomplete audit is not a before/after proof'
+          old={(r['kind'],r['id']) for r in before['missing']};new={(r['kind'],r['id']) for r in after['missing']}
+          expected={('template',k) for k in repair.FIXES}|{('pool',repair.TERMINAL_OLD)}
+          assert old-new==expected,(old-new,expected)
+          assert not new-old,'Repair introduced additional missing resources'
+          report={'pass':True,'removed':sorted(old-new),'new_missing':sorted(new-old),'remaining_counts':after['counts']}
+          Path('artifacts/r39-reference-delta.json').write_text(json.dumps(report,indent=2)+'\n')
+          print('VERIFIED REFERENCE DELTA',json.dumps(report,indent=2))
+          proposals=[]
+          with zipfile.ZipFile('candidate/NeverOverworld.zip') as z:
+              by_basename=collections.defaultdict(list)
+              for name in z.namelist():
+                  if name.startswith('data/') and '/structure/' in name and name.endswith('.nbt'):
+                      by_basename[name.rsplit('/',1)[-1]].append(name)
+              for row in after['missing']:
+                  if row['kind']!='template':continue
+                  ns,value=row['id'].split(':',1)
+                  family=value.split('/',1)[0]
+                  found=[n for n in by_basename[value.rsplit('/',1)[-1]+'.nbt'] if n.startswith(f'data/{ns}/structure/{family}/')]
+                  if len(found)==1:
+                      proposals.append({'missing_id':row['id'],'same_family_same_basename_path':found[0],
+                                        'candidate_sha256':hashlib.sha256(z.read(found[0])).hexdigest(),
+                                        'status':'DIAGNOSTIC ONLY: connector compatibility and intended path not yet accepted'})
+          Path('artifacts/r39-exact-basename-proposals.json').write_text(json.dumps(proposals,indent=2)+'\n')
+          print('SAME FAMILY + EXACT BASENAME DIAGNOSTIC CANDIDATES',len(proposals))
+          for row in proposals:print(row['missing_id'],'=>',row['same_family_same_basename_path'])
+          PY
+      - name: Isolated real-server startup and enabled-pack proof
+        id: smoke
+        run: |
+          python3 qa/field-r39/smoke-overlay.py --candidate candidate --overlay overlay/NeverOverworld-R39-ReferenceFix.zip --work .work/r39-overlay-smoke --output artifacts
+      - name: Assemble test-only overlay package
+        if: steps.smoke.outcome == 'success'
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,shutil
+          from pathlib import Path
+          report=json.loads(Path('artifacts/r39-after-closure.json').read_text())
+          smoke=json.loads(Path('artifacts/r39-overlay-startup.json').read_text())
+          assert smoke['pass'] is True
+          out=Path('overlay-package');out.mkdir()
+          shutil.copyfile('overlay/NeverOverworld-R39-ReferenceFix.zip',out/'NeverOverworld-R39-ReferenceFix.zip')
+          for name in ('r39-reference-changes.json','r39-reference-delta.json','r39-after-closure.json','r39-overlay-startup.json'):
+              shutil.copyfile(Path('artifacts',name),out/name)
+          out.joinpath('README-RU.md').write_text(
+              '# NeverFolia R39: точечный дополнительный датапак для проверки\n\n'
+              '**Не готовый производственный релиз.** Это overlay поверх точного R38 `c6e522c65e5ecd0852c27d724c652189464f51cc`, не новое ядро.\n\n'
+              'Исправлены три опечатки в ссылках на существующие шаблоны (две дороги Conduit Ruin и часть крыши Trident Monument), а также terminal pool в двух NBT Conduit Ruin. Полы, блоки, палитры, сущности, спавнеры, добыча и вода не переписываются. Пустые комнаты взамен отсутствующих не добавляются.\n\n'
+              'Проверено: точный SHA-256 исходника, неизменность посторонних JSON/NBT-полей, повторное чтение NBT, CRC ZIP, статический граф до/после, запуск настоящего сервера Java 25, загрузка всех трёх файловых датапаков и штатная остановка. Размещение исправленных частей в игре отдельно не проверено; 48-чанковый тест воды из R38 относится к базовому комплекту без этого overlay.\n\n'
+              f"Осталось отсутствующих ссылок: pools={report['counts']['missing_pools']}, templates={report['counts']['missing_templates']}, other={report['counts']['other_missing']}. Глобальная приёмка ресурсов остаётся отрицательной.\n\n"
+              '## Проверка только в новом отдельном мире\n'
+              'Использовать Java 25 и полный согласованный комплект R38: server.jar + NeverOverworld.zip + NeverNether.zip. Не использовать BASELINE-NOT-R38 из старого архива. До первого запуска разместить NeverOverworld.zip, NeverNether.zip и NeverOverworld-R39-ReferenceFix.zip в world/datapacks/.\n\n'
+              'В server.properties до создания мира:\n```properties\nlevel-name=world\nlevel-seed=-4651369264513492755\ninitial-enabled-packs=vanilla,file/NeverOverworld.zip,file/NeverNether.zip,file/NeverOverworld-R39-ReferenceFix.zip\nserver-ip=127.0.0.1\nserver-port=25597\nonline-mode=true\n```\n'
+              'Последним должен быть R39 overlay: он переопределяет пять ресурсов базового пака. Соглашение EULA для ручного запуска принять самостоятельно. Не копировать сюда рабочий мир и не заменять его файлы. Уже сохранённые квадраты и другие повреждения не удаляются.\n\n'
+              f"Исходники продолжения: {os.environ['GITHUB_SHA']}. CI run: {os.environ['GITHUB_RUN_ID']}. Полная машинная диагностика приложена.\n")
+          files=sorted(p for p in out.iterdir() if p.is_file())
+          out.joinpath('SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
+          PY
+      - name: Preserve sources and prior bounded live evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/source/scripts/tests artifacts/source/qa/field-r39
+          cp scripts/audit-neveroverworld-r39-resources.py scripts/repair-neveroverworld-r39-resources.py scripts/build-never-overworld-external-structures-r19.py artifacts/source/scripts/
+          cp scripts/tests/test_r39_resource_audit.py artifacts/source/scripts/tests/
+          cp qa/field-r39/smoke-overlay.py artifacts/source/qa/field-r39/
+          for name in r38-live-qa.json r38-water-provenance.json READ-FIRST.md ACCEPTANCE-CHECKLIST.md; do
+            test ! -f "candidate/$name" || cp "candidate/$name" artifacts/
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R39-reference-fix-evidence-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.smoke.outcome == 'success'
+        with:
+          name: NeverFolia-R39-ReferenceFix-OVERLAY-TEST-${{ github.sha }}
+          path: overlay-package/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Full resource acceptance gate - missing templates remain a blocker
+        if: always()
+        env:
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          assert os.environ['SMOKE_OUTCOME']=='success','Registry/startup smoke failed or did not execute'
+          assert os.environ['CLOSURE_OUTCOME']=='success','Static closure still has missing resources; not a full release'
+          assert json.loads(Path('artifacts/r39-after-closure.json').read_text())['pass'] is True
+          print('Static resource closure and registry startup accepted; gameplay remains separately bounded')
+          PY

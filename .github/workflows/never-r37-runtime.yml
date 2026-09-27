@@ -1,0 +1,163 @@
+name: FIELD-R38 pinned candidate evidence
+on:
+  push:
+    branches: ['wip/neveroverworld-r37-continuation']
+    paths: ['.github/workflows/never-r37-runtime.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: c6e522c65e5ecd0852c27d724c652189464f51cc
+          persist-credentials: false
+      - name: Wait for the exact already-running candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36308250793'
+          for attempt in range(120):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response:data=json.load(response)
+              assert data['head_sha']=='c6e522c65e5ecd0852c27d724c652189464f51cc'
+              if data['status']=='completed':
+                  print('Candidate workflow conclusion:',data['conclusion']);break
+              time.sleep(15)
+          else:raise SystemExit('Candidate is not complete; do not substitute another artifact')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Preserve and print focused acceptance evidence
+        run: |
+          python3 - <<'PY'
+          import json,shutil
+          from pathlib import Path
+          out=Path('artifacts');out.mkdir()
+          assert Path('candidate/SOURCE-COMMIT.txt').read_text().strip()=='c6e522c65e5ecd0852c27d724c652189464f51cc'
+          for path in Path('candidate').glob('*.json'):
+              shutil.copyfile(path,out/path.name)
+          for name in ('r38-pack-upgrader-tests.json','r37-java-unit.json','r38-overworld-upgrade.json','r38-nether-upgrade.json','r38-live-controller.json','r38-natural-trial.json','r38-loopback-client.json','r38-live-qa.json'):
+              path=Path('candidate',name)
+              if not path.exists():print(name,'MISSING (not a pass)');continue
+              data=json.loads(path.read_text())
+              if name=='r38-live-qa.json':
+                  water=data.get('water_provenance',{})
+                  data['water_provenance']={k:v for k,v in water.items() if k!='failing_chunks'}
+                  data['water_provenance']['failing_chunk_count']=len(water.get('failing_chunks',[]))
+                  data['water_provenance']['failing_examples']=water.get('failing_chunks',[])[:3]
+                  for phase in data.get('phases',{}).values():
+                      phase.pop('water_hashes',None)
+              print('\nREPORT',name,'\n'+json.dumps(data,indent=2,ensure_ascii=False)[:70000])
+          for path in Path('candidate').glob('*.log'):
+              if path.name=='production-chain.log':continue
+              text=path.read_text(errors='replace').splitlines()
+              suspicious=[line for line in text if any(t in line for t in ('ERROR','Exception','FAIL','Empty or non-existent pool','Unknown registry key'))]
+              print('\nLOG',path.name,'\n'+'\n'.join(suspicious[-40:] or text[-12:]))
+          PY
+      - name: Audit pools and templates reachable from natural structure sets
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import collections,difflib,importlib.util,io,json,re,zipfile
+          spec=importlib.util.spec_from_file_location('builder','scripts/build-never-overworld-external-structures-r19.py');b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
+          out=Path('artifacts')
+          with zipfile.ZipFile('debug/diagnostics.zip') as debug:
+              raw=debug.read('build/pack-input-bundler.jar')
+              source_indices={}
+              for name in debug.namelist():
+                  if name.startswith('upstream-packs/') and name.endswith('.zip'):
+                      source_indices[Path(name).name]=set(b.flatten_zip(debug.read(name)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as bundler:
+              nested=[n for n in bundler.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
+              if len(nested)!=1:raise ValueError('Ambiguous pinned bundled server resource index')
+              vanilla_bytes=bundler.read(nested[0])
+          with zipfile.ZipFile(io.BytesIO(vanilla_bytes)) as vanilla, zipfile.ZipFile('candidate/NeverOverworld.zip') as pack:
+              names=set(vanilla.namelist())|set(pack.namelist());pack_names=set(pack.namelist())
+              def read(name):return (pack if name in pack_names else vanilla).read(name)
+              def rid(value):return value if ':' in value else 'minecraft:'+value
+              def path_for(value,family,ext):
+                  ns,name=rid(value).split(':',1);return f'data/{ns}/{family}/{name}.{ext}'
+              def json_file(name):return json.loads(read(name))
+              def resource_index(family,ext):
+                  result={}
+                  for name in names:
+                      match=re.fullmatch('data/([^/]+)/'+re.escape(family)+'/(.+)\\.'+ext,name)
+                      if match:result[match[1]+':'+match[2]]=name
+                  return result
+              pools=resource_index('worldgen/template_pool','json')
+              structures=resource_index('worldgen/structure','json')
+              sets=resource_index('worldgen/structure_set','json')
+              templates=resource_index('structure','nbt')
+              roots=set()
+              for name in sets.values():
+                  for item in json_file(name).get('structures',[]):
+                      value=item.get('structure')
+                      if isinstance(value,str):roots.add(rid(value))
+              queue=collections.deque();seen_pools=set();seen_templates=set();missing=collections.defaultdict(set);parse_errors=[]
+              for root in sorted(roots):
+                  if root not in structures:continue
+                  value=json_file(structures[root]).get('start_pool')
+                  if isinstance(value,str):queue.append((rid(value),'structure:'+root))
+              def visit_template(value,origin):
+                  value=rid(value)
+                  if value not in templates:missing[('template',value)].add(origin);return
+                  if value in seen_templates:return
+                  seen_templates.add(value)
+                  try:
+                      _,_,root=b._nbt_parse(read(templates[value]))
+                      blocks=root.get('blocks',(9,(10,[])))[1][1]
+                      for block in blocks:
+                          nbt=block.get('nbt',(10,{}))[1]
+                          pool=nbt.get('pool')
+                          if pool and pool[0]==8 and pool[1]:queue.append((rid(pool[1]),'template:'+value))
+                  except Exception as error:parse_errors.append({'template':value,'error':repr(error)})
+              def elements(node,origin):
+                  if not isinstance(node,dict):return
+                  kind=node.get('element_type','')
+                  if kind in ('minecraft:single_pool_element','minecraft:legacy_single_pool_element','single_pool_element','legacy_single_pool_element'):
+                      value=node.get('location')
+                      if isinstance(value,str):visit_template(value,origin)
+                  for element in node.get('elements',[]):elements(element,origin)
+              while queue:
+                  value,origin=queue.popleft()
+                  if value not in pools:missing[('pool',value)].add(origin);continue
+                  if value in seen_pools:continue
+                  seen_pools.add(value);data=json_file(pools[value]);fallback=data.get('fallback')
+                  if isinstance(fallback,str) and rid(fallback)!=value:queue.append((rid(fallback),'fallback:'+value))
+                  for item in data.get('elements',[]):elements(item.get('element'),'pool:'+value)
+              rows=[]
+              for (kind,value),origins in sorted(missing.items()):
+                  family,ext=('structure','nbt') if kind=='template' else ('worldgen/template_pool','json')
+                  expected=path_for(value,family,ext)
+                  row={'kind':kind,'id':value,'origins':sorted(origins),'exact_source_matches':[name for name,index in source_indices.items() if expected in index]}
+                  candidates=templates if kind=='template' else pools
+                  row['similar_ids_diagnostic_only']=difflib.get_close_matches(value,candidates,n=3,cutoff=.86)
+                  rows.append(row)
+              result={'source_sha':'c6e522c65e5ecd0852c27d724c652189464f51cc','scope':'pool/template closure from natural structure_set roots; includes bundled vanilla resources; no substitutions or world edits; not processors/features/loot runtime','counts':{'roots':len(roots),'reachable_pools':len(seen_pools),'reachable_templates':len(seen_templates),'all_pools':len(pools),'all_templates':len(templates),'missing_pools':sum(r['kind']=='pool' for r in rows),'missing_templates':sum(r['kind']=='template' for r in rows)},'missing':rows,'parse_errors':parse_errors,'pass':not rows and not parse_errors}
+              (out/'r38-reachable-resources.json').write_text(json.dumps(result,indent=2)+'\n')
+              print('REACHABLE RESOURCE AUDIT',json.dumps(result,indent=2)[:140000])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R38-focused-evidence-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: warn

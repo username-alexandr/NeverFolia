@@ -1,0 +1,5 @@
+name: R37DungeonQa
+version: '1'
+main: R37DungeonQaPlugin
+api-version: '26.2'
+folia-supported: true

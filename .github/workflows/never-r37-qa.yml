@@ -1,0 +1,62 @@
+name: NeverFolia FIELD-R38 live QA
+on:
+  push:
+    branches: ['wip/neveroverworld-r37-continuation']
+    paths:
+      - 'scripts/**'
+      - 'qa/**'
+      - 'native/**'
+      - 'worldgen-spec/**'
+      - 'build.env'
+      - '.github/workflows/never-r37-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r37-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Compile exact candidate and execute focused regressions
+        run: bash qa/field-r37/run-ci.sh
+      - name: Preserve isolated diagnostic fixture and materialized sources
+        if: always()
+        run: |
+          if [ -f qa/field-r37/export-debug.py ]; then
+            python3 qa/field-r37/export-debug.py
+          fi
+      - name: Upload candidate inputs and honest QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-${{ github.sha }}
+          path: |
+            artifacts/server.jar
+            artifacts/NeverOverworld.zip
+            artifacts/NeverNether.zip
+            artifacts/r38-water-evidence.zip
+            artifacts/*.json
+            artifacts/*.log
+            artifacts/*.txt
+            artifacts/*.md
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Upload developer diagnostics separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-${{ github.sha }}
+          path: artifacts/diagnostics.zip
+          retention-days: 3
+          if-no-files-found: ignore

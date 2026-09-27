@@ -186,6 +186,11 @@ def verify(owner: str, r15: str) -> None:
         fail("owner cleanup still references WATER")
     if "state.is(Blocks.LAVA)" not in cleanup:
         fail("owner cleanup lost LAVA filter")
+    if "R37_COLUMN_OCEAN" in owner:
+        import runpy
+        r37 = runpy.run_path(str(Path(__file__).with_name("apply-never-overworld-r37.py")))
+        if r37["COLUMN_METHOD"] not in owner:
+            fail("incomplete R37 replacement of primary depth-limited flood")
     if "y < CUSTOM_FLOOD_MIN_Y" not in owner:
         fail("owner final water write is not depth-gated")
 
