@@ -1,20 +1,30 @@
-name: FIELD-R38 resource follow-up
+name: FIELD-R39 resource acceptance
 on:
   push:
     branches: ['wip/neveroverworld-r37-continuation']
-    paths: ['.github/workflows/never-r38-resource-followup.yml', 'qa/field-r39/**', 'scripts/repair-neveroverworld-r39-resources.py']
+    paths:
+      - '.github/workflows/never-r38-resource-followup.yml'
+      - 'scripts/audit-neveroverworld-r39-resources.py'
+      - 'scripts/repair-neveroverworld-r39-resources.py'
+      - 'scripts/tests/test_r39_resource_audit.py'
+      - 'qa/field-r39/**'
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
 jobs:
-  inspect:
+  audit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Test alias contract and negative gates
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 scripts/tests/test_r39_resource_audit.py 2>&1 | tee artifacts/r39-unit-tests.txt
       - uses: actions/download-artifact@v4
         with:
           name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
@@ -23,76 +33,107 @@ jobs:
           path: candidate
       - uses: actions/download-artifact@v4
         with:
-          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
-          run-id: 36308250793
+          name: R38-resource-followup-5e124ea3bd6c35d6812da913a6d091af50426916
+          run-id: 36310161205
           github-token: ${{ github.token }}
-          path: debug
-      - uses: actions/download-artifact@v4
-        with:
-          name: R38-focused-evidence-49c7eef1e08355edde5a2ad3ccaca666c723b53d
-          run-id: 36308562344
-          github-token: ${{ github.token }}
-          path: focused
-      - name: Inspect exact source contract without substitutions
+          path: original-evidence
+      - name: Verify exact tested inputs
         run: |
           python3 - <<'PY'
-          import collections,hashlib,importlib.util,io,json,re,zipfile
+          import hashlib,json
           from pathlib import Path
-          out=Path('artifacts');out.mkdir(exist_ok=True)
           expected={'server.jar':'411f628603ae531216c173fde1dbd8c702effb170889f72e5f2c0f1af81b6a32','NeverOverworld.zip':'32ea5160f0bed3a80cf400c907622c7dbb76a9bb4160e309cacb5d712a8bd9f7','NeverNether.zip':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'}
           for name,value in expected.items():
               with open(Path('candidate',name),'rb') as stream:actual=hashlib.file_digest(stream,'sha256').hexdigest()
               assert actual==value,(name,actual)
           assert json.loads(Path('candidate/r38-live-qa.json').read_text())['pass'] is True
-          spec=importlib.util.spec_from_file_location('builder','scripts/build-never-overworld-external-structures-r19.py');b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
-          with zipfile.ZipFile('candidate/server.jar') as jar:
-              entries=[n for n in jar.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
-              assert len(entries)==1,entries
-              raw=jar.read(entries[0])
-          with zipfile.ZipFile(io.BytesIO(raw)) as vanilla,zipfile.ZipFile('candidate/NeverOverworld.zip') as pack:
-              pn=set(pack.namelist());names=pn|set(vanilla.namelist())
-              def read(name):return (pack if name in pn else vanilla).read(name)
-              aliases={n:json.loads(read(n)) for n in sorted(names) if re.fullmatch(r'data/[^/]+/worldgen/structure/.+\.json',n) and json.loads(read(n)).get('pool_aliases')}
-              missing=json.loads(Path('focused/r38-reachable-resources.json').read_text())['missing']
-              summary=collections.Counter('/'.join(r['id'].split('/')[:2]) for r in missing)
-              details=[]
-              for row in missing:
-                  candidates=[]
-                  for rid in row.get('similar_ids_diagnostic_only',[]):
-                      ns,value=rid.split(':',1)
-                      path=f'data/{ns}/structure/{value}.nbt'
-                      if row['kind']!='template' or path not in names:continue
-                      _,_,root=b._nbt_parse(read(path))
-                      ports=[]
-                      for block in root.get('blocks',(9,(10,[])))[1][1]:
-                          nbt=block.get('nbt',(10,{}))[1]
-                          if 'pool' not in nbt:continue
-                          ports.append({k:v[1] for k,v in nbt.items() if k in ('name','target','pool','final_state')})
-                      candidates.append({'id':rid,'sha256':hashlib.sha256(read(path)).hexdigest(),'size':root.get('size'),'jigsaws':ports[:12]})
-                  details.append({**row,'candidate_details_diagnostic_only':candidates})
-              payload={'source_sha':'c6e522c65e5ecd0852c27d724c652189464f51cc','artifact_checksums_verified':expected,'pool_aliases':aliases,'grouped_missing':dict(summary),'missing':details,'pack_metadata':json.loads(pack.read('pack.mcmeta'))}
-              (out/'r38-resource-source-details.json').write_text(json.dumps(payload,indent=2)+'\n')
-              print('POOL ALIASES',json.dumps(aliases,indent=2))
-              print('GROUPED MISSING',json.dumps(dict(summary),indent=2))
-              print('MISSING IDS\n'+'\n'.join(r['kind']+' '+r['id']+' <- '+', '.join(r['origins'][:2]) for r in missing))
-          with zipfile.ZipFile('debug/diagnostics.zip') as debug:
-              (out/'debug-index.txt').write_text('\n'.join(debug.namelist()))
-              text=[]
-              for suffix in ('/pools/JigsawPlacement.java','/pools/alias/PoolAliasLookup.java','/pools/alias/RandomGroup.java'):
-                  for name in debug.namelist():
-                      if name.endswith(suffix):
-                          lines=debug.read(name).decode().splitlines()
-                          selected=set()
-                          for i,line in enumerate(lines):
-                              if any(term in line for term in ('poolAliasLookup','aliasLookup','getFallback','getOrDefault','forEachResolved')):selected.update(range(max(0,i-5),min(len(lines),i+9)))
-                          text.append(name+'\n'+'\n'.join(f'{i+1}: {lines[i]}' for i in sorted(selected)))
-              (out/'r38-engine-alias-contract.txt').write_text('\n\n'.join(text))
-              print('ENGINE ALIAS CONTRACT\n'+'\n\n'.join(text))
+          Path('artifacts/input-checksums.json').write_text(json.dumps(expected,indent=2)+'\n')
           PY
+      - name: Audit possible root-local resource closure
+        id: closure
+        continue-on-error: true
+        run: |
+          python3 scripts/audit-neveroverworld-r39-resources.py --jar candidate/server.jar --pack candidate/NeverOverworld.zip --report artifacts/r39-resource-closure.json
+      - name: Compare original reference candidates and official compatible upstream without modifying packs
+        if: always() && steps.closure.outcome != 'skipped'
+        run: |
+          python3 - <<'PY'
+          import hashlib,io,json,urllib.parse,urllib.request,zipfile
+          from pathlib import Path
+          original=json.loads(Path('original-evidence/r38-resource-source-details.json').read_text())
+          audited=json.loads(Path('artifacts/r39-resource-closure.json').read_text())
+          old={(r['kind'],r['id']) for r in original['missing']}
+          new={(r['kind'],r['id']) for r in audited.get('missing',[])}
+          result={'removed_from_naive_report':sorted(old-new),'newly_reached':sorted(new-old),'upstream':{'checked':False}}
+          print('NO LONGER REPORTED',json.dumps(result['removed_from_naive_report']))
+          print('NEWLY REACHED',json.dumps(result['newly_reached']))
+          for row in original['missing']:
+              if any(t in row['id'] for t in ('oof_wall4','shepert','bornfire','bonfire','minecraft_empty','cruve','wargon')):
+                  print('DIAGNOSTIC CANDIDATES ONLY',json.dumps(row))
+          def get(url,limit=32*1024*1024):
+              parsed=urllib.parse.urlparse(url)
+              assert parsed.scheme=='https' and parsed.hostname in ('api.modrinth.com','cdn.modrinth.com'),url
+              request=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-resource-audit/1.0 (https://github.com/username-alexandr/NeverFolia)'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  assert urllib.parse.urlparse(response.url).hostname in ('api.modrinth.com','cdn.modrinth.com'),response.url
+                  data=response.read(limit+1)
+              assert len(data)<=limit,'Response exceeds limit'
+              return data
+          try:
+              query=urllib.parse.urlencode({'game_versions':json.dumps(['26.2']),'loaders':json.dumps(['datapack'])})
+              versions=json.loads(get('https://api.modrinth.com/v2/project/dungeons-and-taverns/version?'+query))
+              result['upstream']['available_versions']=[{'id':v['id'],'version_number':v['version_number'],'name':v['name'],'date_published':v['date_published']} for v in versions]
+              print('OFFICIAL 26.2 DATAPACK VERSIONS',json.dumps(result['upstream']['available_versions']))
+              matches=[v for v in versions if v['version_number'] in ('5.3.2','v5.3.2') and '26.2' in v['game_versions'] and v['version_type']=='release']
+              if len(matches)!=1:
+                  raise ValueError('An unambiguous official datapack 5.3.2 release was not found; no version guessed')
+              version=matches[0]
+              files=[f for f in version['files'] if f.get('primary')]
+              assert len(files)==1,'Ambiguous primary asset'
+              asset=files[0];raw=get(asset['url'],64*1024*1024)
+              assert hashlib.sha512(raw).hexdigest()==asset['hashes']['sha512'],'Upstream hash mismatch'
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  names=set(z.namelist())
+                  found=[]
+                  for kind,name in sorted(new):
+                      if kind!='template':continue
+                      ns,value=name.split(':',1);path=f'data/{ns}/structure/{value}.nbt'
+                      if path in names:found.append({'id':name,'sha256':hashlib.sha256(z.read(path)).hexdigest()})
+                  result['upstream'].update({'checked':True,'version':version,'asset_sha256':hashlib.sha256(raw).hexdigest(),'exact_missing_template_matches':found})
+                  print('EXACT MISSING TEMPLATE MATCHES IN VERIFIED UPSTREAM',json.dumps(found))
+              # The source archive is evidence only; it is NOT installed or imported.
+              Path('artifacts/upstream-5.3.2-EVIDENCE-ONLY.zip').write_bytes(raw)
+          except Exception as error:
+              result['upstream']['error']=repr(error)
+              print('UPSTREAM COMPARISON NOT VERIFIED',repr(error))
+          Path('artifacts/r39-diagnostic-comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+          PY
+      - name: Preserve exact reports, sources and bounded live evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/sources
+          cp scripts/audit-neveroverworld-r39-resources.py scripts/tests/test_r39_resource_audit.py artifacts/sources/
+          for name in r38-live-qa.json r38-water-provenance.json READ-FIRST.md ACCEPTANCE-CHECKLIST.md; do
+            test ! -f "candidate/$name" || cp "candidate/$name" artifacts/
+          done
+          test ! -d original-evidence || cp original-evidence/r38-engine-alias-contract.txt artifacts/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: R38-resource-followup-${{ github.sha }}
+          name: R39-resource-acceptance-${{ github.sha }}
           path: artifacts/
           retention-days: 14
           if-no-files-found: error
+      - name: Resource acceptance gate - red means not releasable
+        if: always()
+        env:
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('artifacts/r39-resource-closure.json')
+          assert os.environ['CLOSURE_OUTCOME']=='success','Resource audit failed or did not execute; candidate not accepted'
+          assert path.is_file() and json.loads(path.read_text())['pass'] is True,'Missing/failed report; candidate not accepted'
+          print('Static resource closure accepted; runtime coverage remains separately bounded')
+          PY
