@@ -1,0 +1,80 @@
+name: R40 inspect pinned worldgen and resources
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-integrated-worldgen']
+    paths: ['.github/workflows/never-r40-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - name: Inspect effective sources and exact paired pack
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,importlib.util,json,zipfile,urllib.request
+          out=Path('inspect');out.mkdir()
+          assert hashlib.sha256(Path('baseline/server.jar').read_bytes()).hexdigest()=='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67'
+          sources=['ChunkStatusTasks.java','ChunkPyramid.java','NeverOverworldSubmergedRemnants.java','NeverOverworldSnowBlockCleanupR19.java','NeverOverworldEcologyR13.java','NeverOverworldEcologyR15.java','NeverOverworldFlood.java','NeverOverworldFloodConnectivityR15.java','FreezeTopLayerFeature.java','IcebergFeature.java','BlueIceFeature.java','CreativeModeTabs.java','EnchantmentTags.java']
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              manifest={}
+              for leaf in sources:
+                  names=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  if len(names)!=1:
+                      print('SOURCE_MISSING',leaf,names);continue
+                  raw=z.read(names[0]);(out/leaf).write_bytes(raw)
+                  manifest[leaf]={'path':names[0],'sha256':hashlib.sha256(raw).hexdigest()}
+                  text=raw.decode();lines=text.splitlines()
+                  if leaf in ('NeverOverworldSubmergedRemnants.java','NeverOverworldSnowBlockCleanupR19.java','FreezeTopLayerFeature.java','ChunkStatusTasks.java'):
+                      print('R40_SOURCE_BEGIN',leaf)
+                      print(text)
+                      print('R40_SOURCE_END',leaf)
+                  elif leaf in ('CreativeModeTabs.java','EnchantmentTags.java'):
+                      for i,line in enumerate(lines):
+                          if 'generateEnchantment' in line or 'NON_TREASURE' in line or 'IN_' in line or 'EnchantmentTags' in line:
+                              print('ENCHANT_SOURCE',leaf,i+1,'\n'.join(lines[max(0,i-2):min(len(lines),i+14)]))
+              (out/'sources.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          def load(name,path):
+              spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+          a=load('audit40',Path('scripts/audit-neveroverworld-r39-resources.py'))
+          r=a.audit_files(Path('baseline/server.jar'),Path('baseline/world/datapacks/NeverOverworld.zip'))
+          (out/'resources.json').write_text(json.dumps(r,indent=2)+'\n')
+          print('R40_RESOURCE_COUNTS',r['counts'])
+          for x in r['missing']:print('R40_MISSING',x['kind'],x['id'])
+          print('R40_REPO_SCRIPTS',json.dumps([str(p) for p in Path('scripts').glob('*') if any(t in p.name for t in ('r39','dnt','frozen','external'))]))
+          request=urllib.request.Request('https://api.modrinth.com/v2/project/dungeons-and-taverns/version',headers={'User-Agent':'NeverFolia-Compatibility-Audit/1.0'})
+          try:
+              with urllib.request.urlopen(request,timeout=30) as response:versions=json.load(response)
+              selected=[v for v in versions if '26.2' in v.get('game_versions',[]) and v.get('version_number','').startswith('5.3')]
+              (out/'upstream-versions.json').write_text(json.dumps(selected,indent=2)+'\n')
+              for v in selected: print('R40_UPSTREAM',json.dumps({k:v[k] for k in ('id','version_number','game_versions','loaders','files')}))
+          except Exception as e:print('R40_UPSTREAM_LOOKUP_ERROR',repr(e))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-PINNED-INSPECTION-${{ github.sha }}
+          path: inspect/
+          retention-days: 14
+          if-no-files-found: error
