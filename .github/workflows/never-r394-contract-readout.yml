@@ -1,0 +1,40 @@
+name: FIELD-R39.4 exact typed contracts
+on:
+  push:
+    branches: ['fix/neveroverworld-r393-resource-qa']
+    paths: ['.github/workflows/never-r394-contract-readout.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.3-FULL-PACK-TEST-fae6209634712069ced5882fd933e5666006a8c2
+          run-id: 36315038771
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Exact contracts, no writes to gameplay files
+        run: |
+          python3 - <<'PY'
+          import sys,json,zipfile
+          from pathlib import Path
+          sys.path.insert(0,str(Path('qa/field-r394').resolve()))
+          import build_candidate as r
+          b=r.load('nbt',Path('scripts/build-never-overworld-external-structures-r19.py'))
+          with zipfile.ZipFile('candidate/NeverOverworld.zip') as z:
+              for name in ('armorer','cartographer','cleric','armorer_acacia','butcher_acacia','armorer_oak'):
+                  path=r.PREFIX+name+'.nbt';raw=z.read(path);c,n,root=b._nbt_parse(raw)
+                  print('TYPED',name,'sha=',r.sha(raw),'compression=',c,'root_name=',repr(n),'size=',repr(root.get('size')),'entities_header=',repr(root.get('entities',(None,(None,[])))[0:1]),'entity_count=',len(root.get('entities',(9,(0,[])))[1][1]),flush=True)
+                  if 'armorer_' in name or 'butcher_' in name:print('ROUTER_ROOT',repr(root),flush=True)
+                  elif name in ('cartographer','cleric'):
+                      print('CART_ENTITIES',repr(root.get('entities'))[:6000],flush=True)
+                      print('CART_POOL',z.read('data/nova_structures/worldgen/template_pool/tavern/trader/'+name+'.json').decode(),flush=True)
+          PY
