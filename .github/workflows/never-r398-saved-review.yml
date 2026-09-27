@@ -1,0 +1,59 @@
+name: R398 independent saved-state and frozen-block review
+on:
+  push:
+    branches: ['fix/neveroverworld-r398-ordered-hydrostate']
+    paths: ['qa/field-r398/review_all_saved.py','.github/workflows/never-r398-saved-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Wait only for the exact identified regression, retaining its actual conclusion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          from pathlib import Path
+          base='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36335585542'
+          until=time.monotonic()+600
+          while True:
+              req=urllib.request.Request(base,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as response:run=json.load(response)
+              if run['head_sha']!='818a1c342e3ef56be73d4146649cd1116897eb13':raise SystemExit('Unexpected source commit')
+              if run['status']=='completed':break
+              if time.monotonic()>=until:raise SystemExit('Exact run did not finish in bounded wait')
+              time.sleep(20)
+          Path('source-run.json').write_text(json.dumps({k:run[k] for k in ('id','head_sha','status','conclusion','run_attempt')},indent=2)+'\n')
+          print('Exact completed run:',run['id'],run['conclusion'],'(failure is retained, not treated as production acceptance)')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R398-FULL-SAFETY-EVIDENCE-818a1c342e3ef56be73d4146649cd1116897eb13
+          run-id: 36335585542
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Compare all saved blocks and classify real frozen block IDs
+        run: |
+          set -o pipefail
+          python3 qa/field-r398/review_all_saved.py --evidence evidence --run-id 36335585542 2>&1 | tee read-only-review.log
+      - name: Preserve review source and actual input identity
+        if: always()
+        run: |
+          mkdir -p review
+          cp qa/field-r398/review_all_saved.py .github/workflows/never-r398-saved-review.yml review/
+          for file in source-run.json read-only-review.log; do test ! -f "$file" || cp "$file" review/; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R398-INDEPENDENT-SAVED-REVIEW-${{ github.sha }}
+          path: review/
+          retention-days: 14
+          if-no-files-found: error
