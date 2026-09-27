@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Bounded static jigsaw closure, with the pinned engine's one-hop alias semantics.
+"""Static jigsaw closure using the pinned engine's one-hop alias semantics.
 
 No pack/world writes. This checks possible references, not connector geometry,
 biome eligibility, generation depth, processors, loot, mob AI or runtime physics.
-Missing resources and unsupported constructs are failures, not empty templates.
+Missing resources and unsupported constructs fail; nothing becomes an empty room.
 """
 from __future__ import annotations
 import argparse
@@ -18,9 +18,9 @@ import sys
 import zipfile
 
 MAX_CONTEXTS = 4096
-SCOPE = ('Potential jigsaw pool/template closure from structure_set roots, with '
-         'root-local correlated alias choices and bundled vanilla resources. '
-         'Not a geometry, depth, biome, processor, loot or gameplay proof.')
+SCOPE = ('Potential jigsaw pool/template and placed-feature-holder references from '
+         'structure_set roots; root-local correlated aliases and bundled vanilla. '
+         'Not geometry, depth, biome, processor, feature-content, loot or gameplay proof.')
 
 
 def rid(value):
@@ -55,7 +55,6 @@ def combine(left, right, limit=MAX_CONTEXTS):
         for b in right:
             overlap = set(a) & set(b)
             if overlap:
-                # ImmutableMap.Builder in PoolAliasLookup rejects duplicate keys.
                 raise ValueError('Duplicate simultaneously selected alias: ' + ', '.join(sorted(overlap)))
             value = {**a, **b}
             result[tuple(sorted(value.items()))] = value
@@ -75,8 +74,7 @@ def alias_contexts(bindings, limit=MAX_CONTEXTS):
         if kind == 'minecraft:direct':
             choices = [{rid(binding['alias']): rid(binding['target'])}]
         elif kind == 'minecraft:random':
-            choices = [{rid(binding['alias']): rid(v['data'])}
-                       for v in weighted(binding['targets'])]
+            choices = [{rid(binding['alias']): rid(v['data'])} for v in weighted(binding['targets'])]
         elif kind == 'minecraft:random_group':
             choices = []
             for group in weighted(binding['groups']):
@@ -90,17 +88,12 @@ def alias_contexts(bindings, limit=MAX_CONTEXTS):
 
 
 class Audit:
-    """Loader returns decoded JSON resources or a list of pool IDs for a template."""
+    """Loader supplies decoded JSON or the declared pool IDs of NBT jigsaws."""
     def __init__(self, indexes, loader):
-        self.indexes = indexes
-        self.loader = loader
-        self.cache = {}
-        self.issues = {}
-        self.errors = set()
-        self.visited_pools = set()
-        self.visited_templates = set()
-        self.root_reports = []
-        self.center_fallbacks = set()
+        self.indexes, self.loader, self.cache = indexes, loader, {}
+        self.issues, self.errors = {}, set()
+        self.visited_pools, self.visited_templates = set(), set()
+        self.root_reports, self.center_fallbacks = [], set()
 
     def load(self, kind, name):
         key = (kind, name)
@@ -111,15 +104,14 @@ class Audit:
     def exists(self, kind, name, origin, root, context):
         if name in self.indexes.get(kind, {}):
             return True
-        key = (kind, name)
-        item = self.issues.setdefault(key, {'kind': kind, 'id': name, 'origins': set(),
-                                          'roots': set(), 'contexts': set(), 'examples': []})
+        item = self.issues.setdefault((kind, name), {
+            'kind': kind, 'id': name, 'origins': set(), 'roots': set(), 'contexts': set(), 'examples': []})
         item['origins'].add(origin)
         item['roots'].add(root)
-        context_key = (root, tuple(sorted(context.items())))
-        if context_key not in item['contexts'] and len(item['examples']) < 3:
+        key = (root, tuple(sorted(context.items())))
+        if key not in item['contexts'] and len(item['examples']) < 3:
             item['examples'].append({'structure': root, 'aliases': context})
-        item['contexts'].add(context_key)
+        item['contexts'].add(key)
         return False
 
     def run_root(self, root):
@@ -136,8 +128,7 @@ class Audit:
         contexts = alias_contexts(data.get('pool_aliases', []))
         self.root_reports.append({'id': root, 'jigsaw': True, 'alias_contexts': len(contexts)})
         for context in contexts:
-            # The start holder itself must decode. A missing mapped center pool
-            # falls back to the existing original holder (JigsawPlacement:70-72).
+            # The original start holder must decode before the alias is consulted.
             if not self.exists('pool', start, 'structure:' + root, root, context):
                 continue
             mapped = context.get(start, start)
@@ -149,15 +140,13 @@ class Audit:
 
             def template(name, origin):
                 name = rid(name)
-                if not self.exists('template', name, origin, root, context):
-                    return
-                if name in seen_templates:
+                if not self.exists('template', name, origin, root, context) or name in seen_templates:
                     return
                 seen_templates.add(name)
                 self.visited_templates.add(name)
                 for pool in self.load('template', name):
                     pool = rid(pool)
-                    # Exactly one lookup. Alias chains must NOT resolve recursively.
+                    # PoolAliasLookup performs one lookup, not recursive substitution.
                     queue.append((context.get(pool, pool), 'template:' + name))
 
             def element(node, origin):
@@ -176,8 +165,9 @@ class Audit:
                     pass
                 elif kind == 'minecraft:feature_pool_element':
                     feature = node.get('feature')
+                    # FeaturePoolElement holds PlacedFeature, NOT ConfiguredFeature.
                     if isinstance(feature, str):
-                        self.exists('configured_feature', rid(feature), origin, root, context)
+                        self.exists('placed_feature', rid(feature), origin, root, context)
                     elif not isinstance(feature, dict):
                         raise ValueError('Invalid feature element in ' + origin)
                 else:
@@ -185,15 +175,13 @@ class Audit:
 
             while queue:
                 name, origin = queue.popleft()
-                if not self.exists('pool', name, origin, root, context):
-                    continue
-                if name in seen_pools:
+                if not self.exists('pool', name, origin, root, context) or name in seen_pools:
                     continue
                 seen_pools.add(name)
                 self.visited_pools.add(name)
                 pool = self.load('pool', name)
                 fallback = rid(pool['fallback'])
-                # Fallback is a holder, not an alias lookup (JigsawPlacement:332).
+                # Fallback is already a holder; its ID is NOT alias-remapped.
                 if fallback != name:
                     queue.append((fallback, 'fallback:' + name))
                 values = pool.get('elements')
@@ -210,28 +198,25 @@ class Audit:
         roots = set()
         for name in sorted(self.indexes.get('set', {})):
             try:
-                data = self.load('set', name)
-                for entry in weighted(data['structures']):
+                for entry in weighted(self.load('set', name)['structures']):
                     roots.add(rid(entry['structure']))
-            except Exception as error:
+            except (Exception, SystemExit) as error:
                 self.errors.add('structure_set:' + name + ': ' + repr(error))
         if not roots:
             self.errors.add('No structure_set roots found; empty coverage is not a pass')
         for root in sorted(roots):
             try:
                 self.run_root(root)
-            except Exception as error:
+            except (Exception, SystemExit) as error:
                 self.errors.add('structure:' + root + ': ' + repr(error))
         issues = []
         for _, item in sorted(self.issues.items()):
-            issues.append({k: sorted(v) if isinstance(v, set) else v
-                           for k, v in item.items() if k != 'contexts'})
+            issues.append({k: sorted(v) if isinstance(v, set) else v for k, v in item.items() if k != 'contexts'})
             issues[-1]['context_count'] = len(item['contexts'])
-        return {'schema': 1, 'scope': SCOPE, 'pass': not issues and not self.errors,
+        return {'schema': 2, 'scope': SCOPE, 'pass': not issues and not self.errors,
                 'counts': {'roots': len(roots), 'jigsaw_roots': sum(r['jigsaw'] for r in self.root_reports),
                            'alias_contexts': sum(r.get('alias_contexts', 0) for r in self.root_reports),
-                           'reachable_pools': len(self.visited_pools),
-                           'reachable_templates': len(self.visited_templates),
+                           'reachable_pools': len(self.visited_pools), 'reachable_templates': len(self.visited_templates),
                            'missing_pools': sum(r['kind'] == 'pool' for r in issues),
                            'missing_templates': sum(r['kind'] == 'template' for r in issues),
                            'other_missing': sum(r['kind'] not in ('pool', 'template') for r in issues)},
@@ -273,7 +258,7 @@ def audit_files(jar_path, pack_path):
             return (pack if name in pn else vanilla).read(name)
         families = {'pool': ('worldgen/template_pool', 'json'), 'structure': ('worldgen/structure', 'json'),
                     'set': ('worldgen/structure_set', 'json'), 'template': ('structure', 'nbt'),
-                    'configured_feature': ('worldgen/configured_feature', 'json')}
+                    'placed_feature': ('worldgen/placed_feature', 'json')}
         indexes = {}
         for kind, (family, ext) in families.items():
             pattern = re.compile('data/([^/]+)/' + re.escape(family) + '/(.+)\\.' + ext)
@@ -306,8 +291,8 @@ def main():
     a = p.parse_args()
     try:
         report = audit_files(a.jar, a.pack)
-    except Exception as error:
-        report = {'schema': 1, 'scope': SCOPE, 'pass': False, 'errors': [repr(error)]}
+    except (Exception, SystemExit) as error:
+        report = {'schema': 2, 'scope': SCOPE, 'pass': False, 'errors': [repr(error)]}
     a.report.parent.mkdir(parents=True, exist_ok=True)
     a.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n')
     print(json.dumps({k: report[k] for k in ('pass', 'counts', 'errors') if k in report}, indent=2))
