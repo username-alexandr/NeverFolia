@@ -1,0 +1,30 @@
+name: R40 exact cart biome reconstruction
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-integrated-worldgen']
+    paths: ['qa/field-r40/build_carts.py', '.github/workflows/never-r40-cart-repair.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  carts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {artifact-ids: '10939310250', run-id: 36340789810, github-token: '${{ github.token }}', path: baseline, merge-multiple: true}
+      - name: Prove the recipe on every available original role and biome
+        run: |
+          set -o pipefail
+          python3 qa/field-r394/build_candidate.py --self-test
+          python3 qa/field-r40/build_carts.py 2>&1 | tee cart-command.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-CART-RECONSTRUCTION-${{ github.sha }}
+          path: |
+            cart-recovery/
+            cart-command.log
+          retention-days: 14
+          if-no-files-found: error
