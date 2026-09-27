@@ -1,0 +1,73 @@
+name: R40 retained block entity review
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-ocean-integration']
+    paths: ['.github/workflows/never-r40-block-entity-review.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10940213120'
+          run-id: 36344565790
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: evidence
+          merge-multiple: true
+      - name: Compare all block-entity fields by actual coordinates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import hashlib,importlib.util,json,zipfile
+          root=Path.cwd();out=root/'be-review';out.mkdir();e=root/'evidence'
+          def load(name,path):
+              spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+          observer=load('obs',root/'scripts/probe-never-overworld-trees-villages-r1.py')
+          paired=load('paired',root/'scripts/probe-never-overworld-paired-r12.py');nbt=observer.load_nbt(root)
+          report=json.loads((e/'r40-runtime.json').read_text())
+          assert report['build']['candidate_core_sha256']=='2b68166d1088c47cee021494f0cf7e7acbe8de9d390f5abe8cca58d24ed07744'
+          volumes={}
+          for name in ('candidate','restart'):
+              phase=json.loads((e/(name+'-phase.json')).read_text());assert phase['pass'] and phase['exit_code']==0
+              folder=out/name;folder.mkdir()
+              with zipfile.ZipFile(e/(name+'-saved-regions.zip')) as z:
+                  assert z.testzip() is None and len(z.namelist())==len(set(z.namelist()))
+                  for item in z.infolist():
+                      path=PurePosixPath(item.filename)
+                      assert not path.is_absolute() and '..' not in path.parts and '\\' not in item.filename
+                      if item.is_dir():continue
+                      target=folder.joinpath(*path.parts);target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(z.read(item))
+              targets=[(r['chunk_x'],r['chunk_z']) for r in phase['observed']['chunks']]
+              volumes[name]=paired.saved_volume(observer,nbt,folder/'world/dimensions/minecraft/overworld/region',targets,{'normal_stop':True,'exit_code':0})
+          rows=[]
+          def index(values):
+              result={}
+              for entity in values:
+                  key=tuple(entity[k] for k in ('x','y','z'))
+                  assert key not in result,'Duplicate block-entity coordinate'
+                  result[key]=entity
+              return result
+          for key,oldroot in volumes['candidate'].roots.items():
+              before=oldroot.get('block_entities',[]);after=volumes['restart'].roots[key].get('block_entities',[])
+              if before==after:continue
+              a=index(before);b=index(after)
+              rows.append({'chunk':key,'before_order':[list(p) for p in a],'after_order':[list(p) for p in b],'same_by_coordinate':a==b,'differences':[{'position':p,'before':a.get(p),'after':b.get(p)} for p in sorted(set(a)|set(b)) if a.get(p)!=b.get(p)]})
+          result={'source_run':36344565790,'source_report_sha256':hashlib.sha256((e/'r40-runtime.json').read_bytes()).hexdigest(),'read_only':True,'changed_lists':rows,'all_changes_order_only':bool(rows) and all(r['same_by_coordinate'] for r in rows),'production_accepted':False}
+          (out/'review.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('BLOCK_ENTITY_REVIEW '+json.dumps(result,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-BLOCK-ENTITY-REVIEW-${{ github.sha }}
+          path: be-review/review.json
+          retention-days: 14
+          if-no-files-found: error
