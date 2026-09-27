@@ -1,0 +1,51 @@
+name: R397 read-only retained seam evidence
+on:
+  push:
+    branches: ['fix/neveroverworld-r397-seam-water']
+    paths: ['.github/workflows/never-r397-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10935998393'
+          run-id: 36332731284
+          github-token: ${{ github.token }}
+          path: artifacts
+          merge-multiple: true
+      - name: Validate original evidence identity and reader regressions
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('artifacts/r397-provenance.json').read_text())
+          assert p['commit']=='6c74292a2280cdaccc2bf0baf24b560f0dc9a412'
+          assert str(p['run_id'])=='36332731284'
+          print('ACTUAL WITNESSES',[str(p) for p in Path('artifacts').rglob('*.bin.gz')])
+          PY
+          python3 qa/field-r397/test_review.py
+      - name: Compare input passability and ocean reachability
+        run: python3 qa/field-r397/review.py
+      - name: Compare persisted real blocks with baseline reverse
+        run: python3 qa/field-r397/review_saved.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R397-READ-ONLY-REVIEW-${{ github.sha }}
+          path: |
+            review/
+            artifacts/witness-review.json
+            qa/field-r397/review.py
+            qa/field-r397/review_saved.py
+            qa/field-r397/test_review.py
+          retention-days: 14
+          if-no-files-found: error
