@@ -1,0 +1,77 @@
+name: R3910 integration evidence summary
+on:
+  push:
+    branches: ['fix/neveroverworld-r3910-ocean-closure']
+    paths: ['.github/workflows/never-r3910-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Await the exact existing integration run, do not restart it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          from pathlib import Path
+          url='https://api.github.com/repos/username-alexandr/NeverFolia/actions/runs/36342385196'
+          for attempt in range(170):
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','User-Agent':'NeverFolia-r3910-review'})
+              with urllib.request.urlopen(req,timeout=30) as response:r=json.load(response)
+              assert r['head_sha']=='da88f28d95b9a764eb4eba4f52a37fc3ff1523e6'
+              if r['status']=='completed':
+                  Path('source-run.json').write_text(json.dumps({'run':r['id'],'commit':r['head_sha'],'conclusion':r['conclusion']},indent=2)+'\n')
+                  print('SOURCE_INTEGRATION_COMPLETE',r['id'],r['conclusion']);break
+              time.sleep(15)
+          else:raise SystemExit('No completed integration, no result is inferred')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R3910-OCEAN-EVIDENCE-da88f28d95b9a764eb4eba4f52a37fc3ff1523e6
+          run-id: 36342385196
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Summarize actual reports without accepting an incomplete run
+        run: |
+          python3 - <<'PY'
+          import collections,hashlib,json
+          from pathlib import Path
+          found=list(Path('evidence').rglob('r3910-runtime.json'));assert len(found)==1
+          source=found[0];r=json.loads(source.read_text())
+          fixture=r.get('phases',{}).get('fixtures',{}).get('observed',{})
+          out={'source_run':json.loads(Path('source-run.json').read_text()),'source_report_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+               'bounded_integration_pass':r.get('bounded_integration_pass',False),'production_accepted':False,'global_closure_proven':False,
+               'strict_cross_order_match':r.get('strict_cross_order_match'), 'inputs_unchanged':r.get('inputs_unchanged'),
+               'error':r.get('error'),'build':r.get('build'),
+               'phases':{n:{k:p.get(k) for k in ('pass','exit_code','error')} for n,p in r.get('phases',{}).items()},
+               'fixture_cases':len(fixture.get('cases',[])), 'fixture_failed':[x for x in fixture.get('cases',[]) if x.get('pass') is not True],
+               'comparisons':r.get('comparisons',{}),'replays':{}}
+          centers=((7,1),(1,-4),(-197,-217),(-169,-250),(-189,-223),(-1699,-769))
+          for name,proof in r.get('witnesses',{}).items():
+              groups=collections.Counter();records=proof.get('records',[])
+              for row in records:
+                  cx,cz=row['chunk']
+                  matches=[str(c) for c in centers if abs(c[0]-cx)<=1 and abs(c[1]-cz)<=1]
+                  if name!='fixtures':assert len(matches)==1
+                  groups[matches[0] if matches else 'detached_fixture_or_startup']+=row['added']
+              out['replays'][name]={'pass':proof.get('pass'), 'records':len(records),'unique_writes':proof.get('unique_writes'),
+                  'added_by_sample_center':dict(groups),'protected_owner_air':sum(x['protected_owner_air'] for x in records),
+                  'missing_cache_chunks':sum(x['missing_cache_chunks'] for x in records),
+                  'max_measured_pass_ms':max((x['elapsed_ms'] for x in records),default=0)}
+          Path('r3910-summary.json').write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n')
+          print('R3910_COMPACT '+json.dumps(out,separators=(',',':'),ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3910-COMPACT-INTEGRATION-${{ github.sha }}
+          path: |
+            source-run.json
+            r3910-summary.json
+          retention-days: 14
+          if-no-files-found: error
