@@ -107,21 +107,35 @@ def main() -> None:
                         original_class = engine.read(CLASS)
     need(original_class is not None, 'Actual bundled observer class missing')
     with zipfile.ZipFile(debug / 'diagnostics.zip') as archive:
-        for suffix, target in (
-            ('qa/field-r37/R37DungeonQa.jar', ROOT / '.work/r395-plugins/R37DungeonQa.jar'),
-            ('qa/field-r38/R38TrialQa.jar', ROOT / '.work/r395-plugins/R38TrialQa.jar'),
-            ('materialized/folia-server/src/minecraft/java/net/minecraft/network/protocol/game/GameProtocols.java', ROOT / '.work/Folia/folia-server/src/minecraft/java/net/minecraft/network/protocol/game/GameProtocols.java'),
-            ('folia-api/build/libs/folia-api-26.2-R0.1-SNAPSHOT.jar', libs / 'folia-api.jar'),
-        ):
-            extract_one(archive, suffix, target)
+        relevant = [n for n in archive.namelist() if n.endswith('.jar') or n.endswith('/GameProtocols.java')]
+        (out / 'debug-relevant-members.json').write_text(json.dumps(relevant, indent=2) + '\n')
+        extract_one(archive, 'materialized/folia-server/src/minecraft/java/net/minecraft/network/protocol/game/GameProtocols.java',
+                    ROOT / '.work/Folia/folia-server/src/minecraft/java/net/minecraft/network/protocol/game/GameProtocols.java')
     classes = work / 'classes'
     classes.mkdir()
+    plugins = (
+        ('R37DungeonQa', 'qa/field-r37/R37DungeonQaPlugin.java', '7a1abcf15884884a6e0df3d94fd543b203f9f974'),
+        ('R38TrialQa', 'qa/field-r38/R38TrialQaPlugin.java', '8725a4268e9425e48118cb0307d9a67f444b31fd'),
+    )
+    for _, path, expected in plugins:
+        need(blob((ROOT / path).read_bytes()) == expected, 'QA source changed: ' + path)
     command = ['javac', '--release', '25', '-classpath', os.pathsep.join(map(str, sorted(libs.glob('*.jar')))),
                '-d', str(classes), str(source), str(ROOT / 'qa/field-r395/AuditAgent.java')]
+    command.extend(str(ROOT / path) for _, path, _ in plugins)
     result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (out / 'javac.log').write_text(result.stdout)
     print(result.stdout, flush=True)
-    need(result.returncode == 0, 'Actual-core observer compilation failed')
+    need(result.returncode == 0, 'Actual-core observer/plugin compilation failed')
+    plugin_dir = ROOT / '.work/r395-plugins'
+    plugin_dir.mkdir()
+    plugin_proof = {}
+    for name, path, expected in plugins:
+        jar = plugin_dir / (name + '.jar')
+        with zipfile.ZipFile(jar, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for bytecode in classes.glob(name + 'Plugin*.class'):
+                archive.write(bytecode, bytecode.name)
+            archive.writestr('plugin.yml', (ROOT / path).with_name('plugin.yml').read_bytes())
+        plugin_proof[name] = {'source_blob': expected, 'sha256': sha(jar), 'compiled_against_actual_core': True}
     agent = out / 'NeverFolia-R395-Observer-CI-ONLY.jar'
     with zipfile.ZipFile(agent, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nPremain-Class: neverfolia.qa.r395.AuditAgent\n\n')
@@ -132,7 +146,7 @@ def main() -> None:
     proof = {'pass': True, 'gameplay_files_unchanged': {n: sha(candidate / n) == v for n, v in EXPECTED.items()},
              'inputs': EXPECTED, 'observer_source_blob': SOURCE_BLOB, 'instrumented_class': CLASS,
              'original_class_sha256': hashlib.sha256(original_class).hexdigest(),
-             'diagnostic_class_sha256': sha(classes / CLASS), 'agent_sha256': sha(agent),
+             'diagnostic_class_sha256': sha(classes / CLASS), 'agent_sha256': sha(agent), 'qa_plugins': plugin_proof,
              'compiler': subprocess.run(['javac', '-version'], text=True, capture_output=True, check=True).stdout,
              'scope': 'Only observer coverage and read-only mask export changed; not a rebuilt gameplay engine'}
     need(all(proof['gameplay_files_unchanged'].values()), 'Candidate changed during build')
