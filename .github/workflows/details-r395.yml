@@ -1,0 +1,58 @@
+name: FIELD-R39.5 failure localization
+on:
+  push:
+    branches: ['fix/neveroverworld-r395-remote-water']
+    paths: ['qa/final-r395/**', '.github/workflows/details-r395.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  details:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R39.5-localized-findings-09341c66dd7eaf4746bf5ffb1597aeee30924fc5
+          run-id: 36318593704
+          github-token: ${{ github.token }}
+          path: captured
+      - name: Verify and inspect actual runtime water-write source
+        run: |
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          out=Path('final-output');out.mkdir()
+          manifest=json.loads(Path('captured/source-hashes.json').read_text())
+          excerpt=[]
+          for name,expected in manifest.items():
+              p=Path('captured/runtime-source')/name.split('materialized/',1)[1]
+              raw=p.read_bytes()
+              if hashlib.sha256(raw).hexdigest()!=expected:raise SystemExit('Captured source changed: '+name)
+              lines=raw.decode().splitlines();selected=set()
+              if p.name in ('NeverOverworldFlood.java','NeverOverworldFloodConnectivityR15.java'):
+                  for i,line in enumerate(lines):
+                      if 'setBlockState(' in line or 'getHeight(' in line or 'WaterPolicyR38' in line or 'static ' in line and '(' in line:
+                          selected.update(range(max(0,i-10),min(len(lines),i+11)))
+              elif p.name=='NeverOverworldWaterPolicyR38.java':selected=set(range(len(lines)))
+              if selected:
+                  excerpt.append('SOURCE '+name+' SHA256 '+expected)
+                  excerpt.extend(f'{i+1}: {lines[i]}' for i in sorted(selected))
+          text='\n'.join(excerpt)+'\n'
+          (out/'verified-water-source-excerpts.txt').write_text(text)
+          print(text)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.5-water-source-review-${{ github.sha }}
+          path: final-output/
+          retention-days: 14
+          if-no-files-found: error

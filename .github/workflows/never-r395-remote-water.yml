@@ -1,0 +1,93 @@
+name: FIELD-R39.5 remote dungeon water evidence
+on:
+  push:
+    branches: ['fix/neveroverworld-r395-remote-water']
+    paths:
+      - 'qa/field-r395/**'
+      - '.github/workflows/never-r395-remote-water.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  remote-water:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Regression tests for exact scope and fresh mask evidence
+        run: |
+          mkdir -p artifacts/r395
+          set -o pipefail
+          python3 qa/field-r395/tests.py 2>&1 | tee artifacts/r395/unit-tests.log
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-CANDIDATE-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: baseline
+      - uses: actions/download-artifact@v4
+        with:
+          name: NeverFolia-R38-DEBUG-c6e522c65e5ecd0852c27d724c652189464f51cc
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+      - name: Reproduce exact R39.3 gameplay inputs
+        run: |
+          mkdir candidate
+          python3 qa/field-r393/build_candidate.py --input baseline/NeverOverworld.zip --output candidate/NeverOverworld.zip --report artifacts/r395/pack-build.json
+          cp baseline/server.jar baseline/NeverNether.zip candidate/
+      - name: Compile only the read-only observer against actual Java 25 core
+        run: |
+          python3 qa/field-r395/prepare.py --candidate candidate --debug debug --output artifacts/r395
+      - name: Real 129-chunk generation, ordinary-player trial fixtures, restart and reverse order
+        id: water
+        continue-on-error: true
+        run: |
+          python3 qa/field-r395/run_water.py --candidate candidate --output artifacts/r395
+      - name: Preserve exact sources and provenance even after test failure
+        if: always()
+        run: |
+          mkdir -p artifacts/r395/source/qa/field-r395 artifacts/r395/source/native/overworld-r38
+          cp qa/field-r395/* artifacts/r395/source/qa/field-r395/ || true
+          cp native/overworld-r38/NeverOverworldWaterAuditR38.java artifacts/r395/source/native/overworld-r38/
+          cp .github/workflows/never-r395-remote-water.yml artifacts/r395/source/
+          git rev-parse HEAD > artifacts/r395/source/COMMIT.txt
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('artifacts/r395')
+          rows={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
+          (root/'SHA256SUMS.json').write_text(json.dumps(rows,indent=2)+'\n')
+          (root/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'scope':'R38 gameplay engine + exact R39.3 datapack; agent replaces only the read-only observer; remote 81 plus original 48 targets. Not a rebuilt production core; missing resources and actual in-dungeon player activation remain separate.','production_accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NeverFolia-R39.5-remote-water-evidence-${{ github.sha }}
+          path: artifacts/r395/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Bounded water regression gate, never production acceptance
+        if: always()
+        env:
+          WATER_OUTCOME: ${{ steps.water.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path('artifacts/r395/r395-water-result.json')
+          if os.environ['WATER_OUTCOME']!='success' or not p.exists():raise SystemExit('Water diagnostic failed or did not execute; evidence retained')
+          result=json.loads(p.read_text())
+          if result.get('pass') is not True:raise SystemExit('Water evidence not accepted')
+          print('Bounded water checks passed; not a production or complete dungeon/mob acceptance')
+          PY
