@@ -23,6 +23,17 @@ jobs:
           mkdir -p review-output
           set -o pipefail
           python3 qa/review-r395/tests.py 2>&1 | tee review-output/review-tests.log
+          PYTHONPATH=qa/review-r395 python3 - <<'PY'
+          from verify_saved import direction_label,signed32
+          cases=[((1,0),(1,0),(1,0),'same_water_polarity_already_PRE_LIGHT'),((0,0),(1,0),(1,0),'water_polarity_created_in_LIGHT'),((0,1),(1,0),(1,0),'water_polarity_reversed_in_LIGHT'),((1,0),(1,0),(0,1),'polarity_changed_after_LIGHT'),((0,0),(0,0),(1,0),'polarity_changed_after_LIGHT')]
+          for before,after,saved,expected in cases:
+              if direction_label(before,after,saved)!=expected:raise AssertionError((before,after,saved))
+          try:direction_label((1,0),(1,0),(0,0))
+          except ValueError:pass
+          else:raise AssertionError('Non-interface accepted')
+          if (signed32(0xffffffff),signed32(0x80000000),signed32(0x7fffffff))!=(-1,-2147483648,2147483647):raise AssertionError('Packed structure coordinates failed')
+          print('7 side-attribution/coordinate checks passed')
+          PY
       - name: Wait for the exact active diagnostic run to preserve its evidence
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,6 +76,19 @@ jobs:
           out['water_audits']={name:{k:v for k,v in (a or {}).items() if k not in ('failing_chunks','invalid_records','missing_target_chunks')} for name,a in r['water_audits'].items()}
           Path('review-output/summary.json').write_text(json.dumps(out,indent=2)+'\n')
           print('NL_R395_REVIEW_SUMMARY\n'+json.dumps(out,indent=2))
+          PY
+      - name: Independently verify saved chunk hashes, water direction and referenced structure starts
+        run: |
+          python3 qa/review-r395/verify_saved.py --evidence evidence --output review-output/actual-anvil-review.json > review-output/actual-anvil-review.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('review-output/actual-anvil-review.json').read_text())
+          for phase,value in report['phases'].items():
+              value['actual_block_examples']=value.get('actual_block_examples',[])[:5]
+              for row in value.get('structures_including_readable_reference_origins',[]):
+                  row.pop('template_counts',None)
+          print('NL_R395_ACTUAL_ANVIL_REVIEW\n'+json.dumps(report,indent=2))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
