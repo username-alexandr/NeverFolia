@@ -2,7 +2,7 @@ name: R398 exact hydrostate source inspection
 on:
   push:
     branches: ['fix/neveroverworld-r398-ordered-hydrostate']
-    paths: ['qa/field-r398/inspect.py','.github/workflows/never-r398-inspect.yml']
+    paths: ['qa/field-r398/source_review.py','.github/workflows/never-r398-inspect.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,11 +29,11 @@ jobs:
           github-token: ${{ github.token }}
           path: evidence
           merge-multiple: true
-      - name: Inspect exact materialized code and control reports
+      - name: Inspect actual source and every stored difference
         run: |
           mkdir -p artifacts
           set -o pipefail
-          python3 qa/field-r398/inspect.py 2>&1 | tee artifacts/inspection.log
+          python3 qa/field-r398/source_review.py 2>&1 | tee artifacts/inspection.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
