@@ -22,6 +22,10 @@ public final class NeverOverworldWaterPolicyR38 {
     }
 
     public static boolean allowsNewWater(int y, int floor, boolean waterContact) {
-        return waterContact && floor < 128 && y > floor && y <= 128;
+        // R396: the height is sampled BEFORE the selected removable block is
+        // replaced. That block can itself be the topmost solid block (y == floor).
+        // A higher roof, missing water contact and the sea-level bound still deny
+        // new water. This is not an under-island cave flood algorithm.
+        return waterContact && floor < 128 && y >= floor && y <= 128;
     }
 }
