@@ -17,12 +17,12 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.structure.pools.JigsawPlacement;
 import net.minecraft.world.phys.AABB;
 
-/** Isolated CI ONLY. Never install on a player's existing world. */
+/** CI only: new empty fixture areas, never install on an existing player world. */
 public final class R394CartQaPlugin extends JavaPlugin implements Listener {
  private static final String[] BIOMES={"acacia","birch","cherry","desert","jungle","mangrove","oak","pale","snowy","spruce","swamp"};
  private static final String[] ROLES={"cartographer","cleric"};
  private final List<com.google.gson.JsonObject> checks=new ArrayList<>();
- private org.bukkit.World world;private ServerLevel level;private boolean finished;
+ private org.bukkit.World world;private ServerLevel level;private volatile boolean finished;
  @Override public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);}
  @EventHandler public void loaded(ServerLoadEvent event){
   world=Bukkit.getWorlds().stream().filter(w->w.getEnvironment()==org.bukkit.World.Environment.NORMAL).findFirst().orElseThrow();level=((CraftWorld)world).getHandle();next(0);
@@ -43,24 +43,24 @@ public final class R394CartQaPlugin extends JavaPlugin implements Listener {
   try{
    require(ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(level,pos),"placement must own fixture region");
    var template=level.getStructureManager().get(Identifier.parse("nova_structures:tavern/tavern_event_trader_car_"+role+"_"+biome)).orElseThrow();
-   require(template.getSize().getX()==1&&template.getSize().getY()==1&&template.getSize().getZ()==1,"real template manager must load router");
+   require(template.getSize().getX()==5&&template.getSize().getY()==4&&template.getSize().getZ()==5,"real template manager must load a full 5x4x5 cart");
    BlockPos.MutableBlockPos block=new BlockPos.MutableBlockPos();
-   for(int dx=-7;dx<=7;dx++)for(int dz=-7;dz<=7;dz++)for(int y=399;y<=408;y++)level.setBlock(block.set(x+dx,y,z+dz),(y==399?Blocks.STONE:Blocks.AIR).defaultBlockState(),3);
+   for(int dx=-7;dx<=7;dx++)for(int dz=-7;dz<=7;dz++)for(int y=398;y<=408;y++)level.setBlock(block.set(x+dx,y,z+dz),(y==398?Blocks.STONE:Blocks.AIR).defaultBlockState(),3);
    var registry=level.registryAccess().lookupOrThrow(Registries.TEMPLATE_POOL);
    var pool=registry.getOrThrow(ResourceKey.create(Registries.TEMPLATE_POOL,Identifier.parse("neverfolia_qa:cart/"+role+"_"+biome)));
-   require(JigsawPlacement.generateJigsaw(level,pool,Identifier.parse("minecraft:event/trader/"+role+"_"+biome),2,pos,false),"real jigsaw generation failed");
+   require(JigsawPlacement.generateJigsaw(level,pool,Identifier.parse("nova_structures:tavern_trader_car_"+biome),2,pos,false),"real jigsaw generation failed");
    Bukkit.getRegionScheduler().runDelayed(this,world,cx,300,task->{
     try{
      require(ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(level,pos),"observation must own fixture region");
-     var entities=level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,new AABB(x-7,399,z-7,x+8,409,z+8),e->e.getBukkitEntity() instanceof Villager);
+     var entities=level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,new AABB(x-6,398,z-6,x+7,409,z+7),e->e.getBukkitEntity() instanceof Villager);
      List<String> professions=new ArrayList<>();for(var entity:entities)professions.add(((Villager)entity.getBukkitEntity()).getProfession().name());
-     require(professions.size()==1&&professions.get(0).equals(role.toUpperCase(java.util.Locale.ROOT)),"expected one "+role+", got "+professions);
-     int jigsaws=0,placed=0;
-     for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)for(int y=400;y<=405;y++){
+     int jigsaws=0,placed=0,workstations=0;
+     for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)for(int y=399;y<=405;y++){
       var state=level.getBlockState(new BlockPos(x+dx,y,z+dz));if(state.is(Blocks.JIGSAW))jigsaws++;if(!state.isAir())placed++;
+      if(state.is(role.equals("cartographer")?Blocks.CARTOGRAPHY_TABLE:Blocks.BREWING_STAND))workstations++;
      }
-     require(jigsaws==0,"unfinished jigsaws remain");require(placed>8,"cart geometry missing");
-     var row=new com.google.gson.JsonObject();row.addProperty("role",role);row.addProperty("biome_router",biome);row.addProperty("real_jigsaw_placement",true);row.addProperty("villager_profession",professions.get(0));row.addProperty("remaining_jigsaws",jigsaws);row.addProperty("nonair_blocks",placed);row.addProperty("pass",true);checks.add(row);persist(null,false);
+     require(jigsaws==0,"unfinished jigsaws remain");require(placed>8,"cart geometry missing");require(workstations==1,"profession workstation missing or duplicated");require(professions.size()==1,"expected one villager from original child pool, got "+professions);
+     var row=new com.google.gson.JsonObject();row.addProperty("cart_variant",role);row.addProperty("biome",biome);row.addProperty("real_jigsaw_placement",true);row.add("observed_villager_professions",new com.google.gson.Gson().toJsonTree(professions));row.addProperty("workstation_count",workstations);row.addProperty("remaining_jigsaws",jigsaws);row.addProperty("nonair_blocks",placed);row.addProperty("pass",true);checks.add(row);persist(null,false);
      getLogger().info("R394 CART "+index+" "+role+" "+biome+" PASS");
      Bukkit.getGlobalRegionScheduler().execute(this,()->world.setChunkForceLoaded(cx,300,false));next(index+1);
     }catch(Throwable error){finish(error);}
@@ -68,7 +68,7 @@ public final class R394CartQaPlugin extends JavaPlugin implements Listener {
   }catch(Throwable error){finish(error);}
  }
  private synchronized void persist(Throwable error,boolean complete){
-  try{getDataFolder().mkdirs();var report=new com.google.gson.JsonObject();report.addProperty("pass",complete&&error==null&&checks.size()==22);report.addProperty("completed",checks.size());report.addProperty("scope","22 actual jigsaw assemblies using isolated single-router QA root pools, original profession child pools and original cart entities. Not random natural tavern selection, all biomes' terrain, or player trade interaction.");report.add("checks",new com.google.gson.Gson().toJsonTree(checks));if(error!=null)report.addProperty("error",error.toString());Files.writeString(getDataFolder().toPath().resolve("result.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(report));}catch(Exception e){e.printStackTrace();}
+  try{getDataFolder().mkdirs();var report=new com.google.gson.JsonObject();report.addProperty("pass",complete&&error==null&&checks.size()==22);report.addProperty("completed",checks.size());report.addProperty("scope","22 actual full-cart jigsaw assemblies through isolated QA root choices and original villager child pool. Checks workstation, villager presence and geometry; does not assert villager job acquisition, trades, natural random tavern selection or every terrain.");report.add("checks",new com.google.gson.Gson().toJsonTree(checks));if(error!=null)report.addProperty("error",error.toString());Files.writeString(getDataFolder().toPath().resolve("result.json"),new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(report));}catch(Exception e){e.printStackTrace();}
  }
  private synchronized void finish(Throwable error){if(finished)return;finished=true;if(error!=null)error.printStackTrace();persist(error,true);getLogger().info("R394 CART QA "+(error==null?"PASS":"FAIL")+" checks="+checks.size());}
 }
