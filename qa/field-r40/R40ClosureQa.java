@@ -50,6 +50,8 @@ public final class R40ClosureQa extends JavaPlugin implements Listener {
     private static final class FixtureHolder extends GenerationChunkHolder {
         private final ProtoChunk chunk;
         FixtureHolder(ProtoChunk chunk){super(chunk.getPos());this.chunk=chunk;}
+        @Override public int getQueueLevel(){return 0;}
+        @Override public int getTicketLevel(){return 0;}
         @Override public ChunkAccess getChunkIfPresent(ChunkStatus status){return chunk.getPersistedStatus().isOrAfter(status)?chunk:null;}
     }
     private static final class Scene {
