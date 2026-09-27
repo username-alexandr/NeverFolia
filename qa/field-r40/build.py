@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Build old 3x3 and new 5x5 ocean candidates from the SAME R399 binaries.
-Incremental Java 25 build; not a full Gradle build. No saved-world changes.
+"""Build old 3x3, schedule-matched 3x3 and new 5x5 from SAME R399 binaries.
+Incremental Java 25; not full Gradle. Does not edit a user's saved world.
 """
 from pathlib import Path
 import hashlib,importlib.util,io,json,os,shutil,subprocess,zipfile
@@ -22,6 +22,8 @@ def members(raw):
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         require(len(z.namelist())==len(set(z.namelist())) and z.testzip() is None,'Invalid ZIP')
         return {n:z.read(n) for n in z.namelist()}
+def supplies_api(path):
+    with zipfile.ZipFile(path) as z:return 'org/bukkit/Bukkit.class' in z.namelist()
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
     base=(ROOT/'baseline/server.jar').read_bytes();require(sha(base)==BASE,'Wrong R399')
@@ -39,41 +41,41 @@ def main():
             source[full]=z.read(names[0]).decode()
         require(sha(source[LIGHT].encode())=='e3679bc3c336156e16dc9740d1ae16ab19112dfbeb19915f034f46c92250f283','LIGHT drift')
         require(sha(source[PYRAMID].encode())=='24c0e2b6c1cf7f644031126573055a4994f697bc61286e36727b1661da9074f5','Pyramid drift')
-        providers=[p for p in libs.glob('*.jar') if 'org/bukkit/Bukkit.class' in zipfile.ZipFile(p).namelist()]
+        providers=[p for p in libs.glob('*.jar') if supplies_api(p)]
         if not providers:
             found=[]
             for n in z.namelist():
                 if 'folia-api' in n and n.endswith('.jar'):
                     raw=z.read(n)
-                    if 'org/bukkit/Bukkit.class' in zipfile.ZipFile(io.BytesIO(raw)).namelist():found.append(raw)
+                    with zipfile.ZipFile(io.BytesIO(raw)) as a:
+                        if 'org/bukkit/Bukkit.class' in a.namelist():found.append(raw)
             require(len(found)==1,'Missing actual API');(libs/'folia-api.jar').write_bytes(found[0])
         for leaf in ('NewChunkHolder.java','ChunkTaskScheduler.java'):
             for n in z.namelist():
                 if n.endswith('/'+leaf) and '/src/minecraft/java/' in n:
                     text=z.read(n).decode();(OUT/leaf).write_text(text);lines=text.splitlines()
                     for i,l in enumerate(lines):
-                        if 'new ChunkLightTask' in l or 'neverOverworldNeighbours' in l:print('CACHE_CONTRACT',leaf,'\n'.join(lines[max(0,i-8):i+9]),flush=True)
+                        if 'new ChunkLightTask' in l or 'neverOverworldNeighbours' in l:print('CACHE_CONTRACT',leaf,'\n'.join(lines[max(0,i-12):i+10]),flush=True)
     spec=importlib.util.spec_from_file_location('packaging40',ROOT/'qa/field-r395/jar_packaging.py');pkg=importlib.util.module_from_spec(spec);spec.loader.exec_module(pkg)
     run(['python3',str(ROOT/'qa/field-r395/jar_packaging.py')],'zip-tests.log')
     cp=os.pathsep.join(str(p) for p in sorted(libs.glob('*.jar')));(WORK/'classpath.txt').write_text(cp)
     original={p.name:p.read_text() for p in (ROOT/'native/overworld-r395').glob('*.java')}
     require(set(original)=={'OceanConnectivityR395.java','NeverOverworldOceanClosureR395.java'},'Unexpected ocean sources')
     report={'production_accepted':False,'base':BASE,'pack':PACK,'nether':NETHER,'kind':'Incremental javac25, not full Gradle','variants':{}}
-    for variant in ('reference3910','wide40'):
+    for variant in ('reference3910','control3x3','wide40'):
         folder=WORK/variant;src=folder/'src';classes=folder/'classes';src.mkdir(parents=True);classes.mkdir()
         code=dict(original);light=source[LIGHT]
         anchor='                net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);'
-        name='NeverOverworldOceanClosureR395' if variant=='reference3910' else 'NeverOverworldOceanClosureR40'
+        name='NeverOverworldOceanClosureR40' if variant=='wide40' else 'NeverOverworldOceanClosureR395'
         light=replace(light,anchor,f'                net.minecraft.world.level.chunk.{name}.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R395_FINAL_AIR_CLOSURE\n'+anchor)
         if variant=='wide40':
             solver=code.pop('OceanConnectivityR395.java').replace('R395','R40');solver=replace(solver,'count>2_000_000','count>5_000_000')
             adapter=code.pop('NeverOverworldOceanClosureR395.java').replace('R395','R40').replace('r395','r40')
             for old,new,count in [('positive-ocean-proof-v1','positive-ocean-proof-5x5-v1',1),('WIDTH=48','WIDTH=80',1),('new ChunkAccess[9];chunks[4]=owner','new ChunkAccess[25];chunks[12]=owner',1),('for(int dz=-1;dz<=1;dz++)for(int dx=-1;dx<=1;dx++)','for(int dz=-2;dz<=2;dz++)for(int dx=-2;dx<=2;dx++)',1),('(dz+1)*3+dx+1','(dz+2)*5+dx+2',2),('tile<9','tile<25',1),('(tile%3)*16,oz=(tile/3)*16','(tile%5)*16,oz=(tile/5)*16',1),('tile==4','tile==12',1),('(z+16)*WIDTH+x+16','(z+32)*WIDTH+x+32',1),('positive 3D proof','positive 3D proof over 5x5 chunks',1)]:adapter=replace(adapter,old,new,count)
             code={'OceanConnectivityR40.java':solver,'NeverOverworldOceanClosureR40.java':adapter}
-            pyramid=replace(source[PYRAMID],'s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light)', 's -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).addRequirement(ChunkStatus.FEATURES, Boolean.getBoolean("neverfolia.r40OceanClosure") ? 3 : 0).setTask(ChunkStatusTasks::light)')
-            # Radius 3 FEATURES finishes every possible feature writer into the read radius 2.
-            # No global lock, neighbour writes or runtime loads are introduced.
-            code['ChunkPyramid.java']=pyramid
+        if variant!='reference3910':
+            code['ChunkPyramid.java']=replace(source[PYRAMID],'s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light)', 's -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).addRequirement(ChunkStatus.FEATURES, Boolean.getBoolean("neverfolia.r40OceanClosure") ? 3 : 0).setTask(ChunkStatusTasks::light)')
+            # The 3x3 control has exactly the same enlarged FEATURES prerequisites.
         code['ChunkLightTask.java']=light
         for leaf,text in code.items():(src/leaf).write_text(text)
         run(['javac','--release','25','-proc:none','-classpath',cp,'-d',str(classes)]+[str(p) for p in sorted(src.glob('*.java'))],variant+'-javac.log')
