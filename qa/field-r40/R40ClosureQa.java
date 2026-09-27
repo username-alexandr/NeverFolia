@@ -52,6 +52,7 @@ public final class R40ClosureQa extends JavaPlugin implements Listener {
         FixtureHolder(ProtoChunk chunk){super(chunk.getPos());this.chunk=chunk;}
         @Override public int getQueueLevel(){return 0;}
         @Override public int getTicketLevel(){return 0;}
+        @Override protected void addSaveDependency(java.util.concurrent.CompletableFuture<?> sync){throw new UnsupportedOperationException("Detached fixture cannot schedule a save");}
         @Override public ChunkAccess getChunkIfPresent(ChunkStatus status){return chunk.getPersistedStatus().isOrAfter(status)?chunk:null;}
     }
     private static final class Scene {
