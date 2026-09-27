@@ -1,0 +1,41 @@
+name: R395 inspect detail
+on:
+  push:
+    branches: ['fix/neveroverworld-r395-water-ice-enchants']
+    paths: ['.github/workflows/never-r395-inspect-detail.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Read exact implementation
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              requests={'NeverOverworldFlood.java':[(98,148),(510,596)], 'NeverOverworldFloodConnectivityR15.java':[(1,62),(450,720)], 'CreativeModeTabs.java':[], 'EnchantmentTags.java':[], 'NeverOverworldDryMinesR12.java':[(1,200)]}
+              for short,ranges in requests.items():
+                  found=[n for n in z.namelist() if n.endswith('/'+short) and '/src/minecraft/java/' in n]
+                  print('MEMBERS',short,found)
+                  if len(found)!=1:continue
+                  lines=z.read(found[0]).decode().splitlines()
+                  if ranges:
+                      selected={i for lo,hi in ranges for i in range(lo-1,min(hi,len(lines)))}
+                  else:
+                      selected=set()
+                      for i,line in enumerate(lines):
+                          if any(v in line.lower() for v in ('enchant','creative_tab','tooltip_order')):selected.update(range(max(0,i-7),min(len(lines),i+14)))
+                  print('BEGIN',short)
+                  for i in sorted(selected):print(f'{i+1}: {lines[i]}')
+                  print('END',short)
+          PY
