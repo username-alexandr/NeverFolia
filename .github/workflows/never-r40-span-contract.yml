@@ -1,0 +1,62 @@
+name: R40 span connectivity and runtime source contract
+on:
+  push:
+    branches: ['fix/neveroverworld-r40-integrated-worldgen']
+    paths: ['native/overworld-r40/SpanOceanR40.java', 'qa/field-r40/SpanOceanTest.java', '.github/workflows/never-r40-span-contract.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '25'}
+      - name: Compare span solution with independent voxel BFS
+        run: |
+          mkdir -p evidence classes
+          javac --release 25 -d classes native/overworld-r40/SpanOceanR40.java qa/field-r40/SpanOceanTest.java
+          java -Xmx1G -cp classes SpanOceanTest | tee evidence/span-tests.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Retain exact stage entry points and frozen-ocean source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile,urllib.request
+          out=Path('evidence/source');out.mkdir()
+          wanted={'SurfaceSystem.java':['frozenOceanExtension'], 'SnowAndFreezeFeature.java':['shouldFreeze'], 'Biome.java':['coldEnoughToSnow','shouldFreeze','getTemperature','getBaseTemperature'], 'ChunkTaskScheduler.java':['new ChunkLightTask','ChunkStatus.LIGHT'], 'ChunkUpgradeGenericStatusTask.java':['ChunkStatusTasks','apply('], 'ChunkLightTask.java':['WaterAuditR38'], 'NeverOverworldEcologyR15.java':['floodedCavePlant'], 'NeverOverworldFloodConnectivityR15.java':['protectedBox','protectedBoxes','getAllStarts']}
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              manifest={}
+              for leaf,terms in wanted.items():
+                  names=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  print('R40_SOURCE_PATHS',leaf,names)
+                  for index,name in enumerate(names):
+                      raw=z.read(name);(out/(str(index)+'-'+leaf)).write_bytes(raw);manifest[name]=hashlib.sha256(raw).hexdigest()
+                      lines=raw.decode().splitlines();selected=set()
+                      for i,line in enumerate(lines):
+                          if any(t in line for t in terms):selected.update(range(max(0,i-4),min(len(lines),i+65)))
+                      for i in sorted(selected)[:240]:print('R40_CONTRACT',leaf,i+1,lines[i])
+              print('R40_SNOW_SOURCES',[n for n in z.namelist() if n.endswith('.java') and ('Snow' in n or 'Freeze' in n)])
+              (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          for slug in ('dungeons-and-taverns','structory-towers'):
+              req=urllib.request.Request('https://api.modrinth.com/v2/project/'+slug,headers={'User-Agent':'NeverFolia-audit/1'})
+              with urllib.request.urlopen(req,timeout=30) as r:p=json.load(r)
+              print('R40_AUTHOR_SOURCE',slug,json.dumps({k:p.get(k) for k in ('source_url','issues_url','license')}))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R40-SPAN-AND-SOURCE-${{ github.sha }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
