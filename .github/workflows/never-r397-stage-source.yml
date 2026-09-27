@@ -1,0 +1,51 @@
+name: R397 materialized stage contract
+on:
+  push:
+    branches: ['qa/neveroverworld-r397-order-controls']
+    paths: ['.github/workflows/never-r397-stage-source.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: debug
+          merge-multiple: true
+      - name: Inspect exact archived scheduling source without modifying the engine
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          out=Path('source-contract');out.mkdir()
+          found=list(Path('debug').rglob('diagnostics.zip'));assert len(found)==1
+          wanted={'ChunkPyramid.java':['GENERATION_PYRAMID','FEATURES','LIGHT','blockStateWriteRadius'],'ChunkLightTask.java':['neverOverworld','WaterAuditR38','ChunkStatus.FEATURES'],'ChunkStep.java':['directDependencies','accumulatedDependencies','blockStateWriteRadius']}
+          manifest={}
+          with zipfile.ZipFile(found[0]) as z:
+              for leaf,terms in wanted.items():
+                  names=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  assert len(names)==1,(leaf,names)
+                  raw=z.read(names[0]);(out/leaf).write_bytes(raw)
+                  manifest[leaf]={'sha256':hashlib.sha256(raw).hexdigest(),'source':names[0]}
+                  lines=raw.decode().splitlines();indexes=set()
+                  for i,line in enumerate(lines):
+                      if any(term in line for term in terms):indexes.update(range(max(0,i-3),min(len(lines),i+5)))
+                  print('SOURCE',leaf,manifest[leaf]['sha256'])
+                  for i in sorted(indexes)[:140]:print(f'{i+1}: {lines[i]}')
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R397-MATERIALIZED-STAGE-SOURCE-${{ github.sha }}
+          path: source-contract/
+          retention-days: 14
+          if-no-files-found: error

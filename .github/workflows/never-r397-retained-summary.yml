@@ -1,0 +1,43 @@
+name: R397 compact retained voxel evidence
+on:
+  push:
+    branches: ['qa/neveroverworld-r397-order-controls']
+    paths: ['.github/workflows/never-r397-retained-summary.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10933434217'
+          run-id: 36325333604
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: retained
+          merge-multiple: true
+      - name: Summarize observed transitions, preserving the full source
+        run: |
+          python3 - <<'PY'
+          import collections,hashlib,json,os
+          from pathlib import Path
+          found=list(Path('retained').rglob('difference-review.json'))
+          assert len(found)==1,'Expected exact retained report'
+          source=found[0];d=json.loads(source.read_text())
+          assert d['source_run']==36324714489 and d['source_core_sha256']=='8b387b040b9b3b2a1412d364dbc9eaa0bbb763f69b249c7c213b19812da8a4d5'
+          rows=d['differences']
+          summary={'source_artifact':10933434217,'source_report_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'source_run':d['source_run'],'total_differences':d['total_differences'],'truncated':d['truncated'],'transitions':d['difference_counts'],'listed_rows':len(rows),'listed_by_chunk':dict(collections.Counter(str(r['chunk']) for r in rows)),'listed_y_range':[min((r['position'][1] for r in rows),default=None),max((r['position'][1] for r in rows),default=None)],'first_examples':[{k:r[k] for k in ('position','forward','reverse','baseline_forward','in_water_hash_range')} for r in rows[:12]],'proof':[{k:r[k] for k in ('phase','chunk')}|{'reports':[{k:p.get(k) for k in ('added_air_to_water','missing_cache_chunks','snapshot_write_conflicts','visited_witness_cells')} for p in r['reports']]} for r in d['proof_differences']],'ice_totals':{name:sum(r['count'] for r in entries) for name,entries in d['ice_by_phase'].items()},'production_accepted':False}
+          Path('summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('R397_RETAINED_SUMMARY '+json.dumps(summary,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R397-compact-retained-summary-${{ github.sha }}
+          path: summary.json
+          retention-days: 14
+          if-no-files-found: error
