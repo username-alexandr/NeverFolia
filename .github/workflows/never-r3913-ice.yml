@@ -1,0 +1,69 @@
+name: R3913 bounded submerged ice
+on:
+  push:
+    branches: ['fix/neveroverworld-r3913-submerged-ice']
+    paths: ['native/overworld-r3913/**', 'qa/field-r3913/**', '.github/workflows/never-r3913-ice.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Reconstruct pinned GitHub wide-ocean parent without changing local user release
+        run: python3 qa/manual-r3911/build.py
+      - name: Compile bounded ice cleanup and verify inherited byte preservation
+        run: python3 qa/field-r3913/build.py
+      - name: Actual ice fixtures, matched on-off generation and restart
+        run: python3 qa/field-r3913/runtime.py
+      - name: Stage manual test kit only after current bounded checks
+        run: python3 qa/field-r3913/package.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: NeverFolia-R39.13-Ice-TEST-${{ github.sha }}
+          path: ice-kit/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain source and failures without modifying acceptance
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import shutil,json,os
+          from pathlib import Path
+          out=Path('artifacts');src=out/'r3913-source';src.mkdir(parents=True,exist_ok=True)
+          for root in ('qa/field-r3913','native/overworld-r3913'):
+              for p in Path(root).iterdir():
+                  if p.is_file():shutil.copyfile(p,src/p.name)
+          shutil.copyfile('.github/workflows/never-r3913-ice.yml',src/'workflow.yml')
+          (src/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'local_r3911_not_used':True,'production_accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: NeverFolia-R39.13-Ice-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
