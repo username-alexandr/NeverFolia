@@ -94,7 +94,14 @@ def main():
         with target.open('xb') as f:f.write(payload)
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
-        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,fix.ANCIENT_POOL,*build.get('proven_dangling_repair',{}).get('pools',{}),
+        pale=build.get('pale_residence_decor_recovery',{})
+        s.need(pale.get('pool_path')==fix.PALE_POOL and pale.get('pool_replaced_compatibility_fallback') is True
+               and pale.get('feature_family_count',0)>0
+               and len(pale.get('added_feature_paths',[]))==pale.get('feature_family_count'),
+               'Pale Residence authored decor family was not fully restored')
+        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,fix.ANCIENT_POOL,fix.PALE_POOL,
+                        *pale.get('added_feature_paths',[]),
+                        *build.get('proven_dangling_repair',{}).get('pools',{}),
                         *(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])),
                         *(m['path'] for m in build.get('future_models',[])))
         s.need(all(p not in nf or nf[p]==finalfiles[p] for p in restored_paths),'Nether shadows a restored resource')
@@ -129,7 +136,10 @@ def main():
         shutil.copytree(converted,OUT/'walls-native-converted')
         s.need(s.sha(core.read_bytes())==fix.fix.CORE and s.sha(base.read_bytes())==fix.fix.BASE and s.sha(nether.read_bytes())==r.NETHER,'Original inputs altered')
         s.need(s.sha((packs/'NeverOverworld.zip').read_bytes())==build['output_sha256'],'Test pack changed')
-        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Effective ordered-stack resource closure for vanilla + repaired NeverOverworld + NeverNether, with automatic Paper datapack order witnessed separately. Includes exact authored resource recoveries and 36 wall placements/restart. Pale Residence decor recovery is intentionally excluded until pinned-source provenance is established; complete natural assembly of every root remains a separate runtime test.'})
+        report.update({'pass':True,'all_reported_bugs_fixed':True,
+                       'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],
+                       'pale_residence_decor_runtime_loaded':True,
+                       'scope':'Effective ordered-stack resource closure for vanilla + repaired NeverOverworld + NeverNether, with automatic Paper datapack order witnessed separately. Includes exact authored resource recoveries, restored Pale Residence decor pool plus its complete pinned pale_* feature family, and 36 wall placements/restart. Complete natural assembly of every root remains a separate runtime coverage limitation, not an unresolved reported resource reference.'})
     except Exception as e:report['error']=repr(e)
     finally:
         r.save('walls-result.json',report);print('R3918_WALL_RESULT',json.dumps({k:v for k,v in report.items() if k not in ('build','walls-first','walls-restart')}),flush=True)
