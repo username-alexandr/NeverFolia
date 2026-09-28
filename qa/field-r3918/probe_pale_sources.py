@@ -65,8 +65,11 @@ def inspect(label,raw):
     for name,payload in sorted(files.items()):
         for key in feature_names:
             if key in name:
-                feature_candidates[key].append({'path':name,'sha256':hashlib.sha256(payload).hexdigest(),
-                                                'size':len(payload)})
+                item={'path':name,'sha256':hashlib.sha256(payload).hexdigest(),'size':len(payload)}
+                if name.endswith('.json'):
+                    try:item['json']=json.loads(payload)
+                    except Exception as ex:item['json_error']=repr(ex)
+                feature_candidates[key].append(item)
     return {'label':label,'archive_sha256':hashlib.sha256(raw).hexdigest(),
             'pool_present':POOL in files,'pool':pool_obj,'pool_locations':locs,
             'resolved_pool_templates':resolved,'parent_references':refs,
