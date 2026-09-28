@@ -99,8 +99,29 @@ def main():
     report['closure_unresolved_in_checked_versions']=sorted(closure-set(allfound))
     report['complete_inspection']=all(r['status']!='failed' for r in report['versions'])
     (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
+    # Trace the one unresolved vanilla-namespaced template through every
+    # pinned source archive used by the NeverOverworld builder. This decides
+    # which source owns the dangling reference before any repair is attempted.
+    ancient='minecraft:ancient_city/walls/intact_horizontal_wall_stairs_5'
+    builder=s.load('r3918_history_sources',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
+    source_trace=[]
+    for key,meta in builder.SOURCES.items():
+        raw=get(meta['url'],60000000,'cdn.modrinth.com')
+        s.need(s.sha(raw)==meta['sha256'],'Pinned source changed: '+key)
+        refs=[];templates=[]
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for info in z.infolist():
+                ident=resource(info.filename)
+                if ident==ancient:templates.append(info.filename)
+                if info.filename.endswith(('.json','.mcfunction')) and info.file_size<=2000000:
+                    payload=z.read(info)
+                    if ancient.encode() in payload:refs.append(info.filename)
+        source_trace.append({'source':key,'references':sorted(refs),'templates':sorted(templates)})
+    report['ancient_city_trace']=source_trace
+    (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
     print('HISTORICAL_EXACT_CANDIDATES',json.dumps(allfound),flush=True)
     print('UNRESOLVED_ORIGINAL',json.dumps(sorted(missing-set(allfound))),flush=True)
     print('CURRENT_SOURCE_REFERENCES',json.dumps(report['current_source_references'],sort_keys=True),flush=True)
+    print('ANCIENT_CITY_TRACE',json.dumps(source_trace,sort_keys=True),flush=True)
     s.need(report['complete_inspection'],'Some author archive inspections failed; absence is not proven')
 if __name__=='__main__':main()
