@@ -1,0 +1,105 @@
+name: R3915 combined runtime acceptance
+on:
+  push:
+    branches: ['fix/neveroverworld-r3915-combined-runtime']
+    paths: ['qa/field-r3915/**', '.github/workflows/never-r3915-combined-runtime.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3915-combined-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test fresh reports and palette-based jigsaw recognition
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r3915/test_combined.py 2>&1 | tee artifacts/combined-unit-tests.log
+          python3 qa/field-r3915/test_combined_jigsaws.py 2>&1 | tee artifacts/combined-palette-tests.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10967789179'
+          run-id: '36417504719'
+          github-token: ${{ github.token }}
+          path: cart-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: '36419010757'
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: '36308250793'
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compose exact checked deltas and repair NPC connector aliases
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/combine_content.py 2>&1 | tee artifacts/combined-build-command.log
+      - name: Prove intended resource delta and retain all outstanding gaps
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/check_combined_resources.py 2>&1 | tee artifacts/combined-resource-command.log
+      - name: Compile against final kernel and run all five isolated server phases
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/run_combined.py 2>&1 | tee artifacts/combined-runtime-command.log
+      - name: Confirm completed scope without claiming all reported bugs fixed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('artifacts/combined-runtime.json').read_text())
+          assert result['pass'] is True
+          for phase in ('swift_baseline','swift','swift_restart','carts','carts_restart'):
+              assert result[phase]['pass'] is True and result[phase]['exit_code']==0
+          assert result['production_accepted'] is False
+          assert result['all_reported_bugs_fixed'] is False
+          assert json.loads(Path('artifacts/combined-resource-delta.json').read_text())['pass'] is True
+          print('COMBINED_CONTENT_SCOPED_PASS; all-worldgen and remaining missing templates NOT accepted.')
+          PY
+      - name: Preserve source, provenance and failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,shutil
+          out=Path('artifacts');source=out/'source';source.mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3915').iterdir():
+              if p.is_file():shutil.copyfile(p,source/p.name)
+          shutil.copyfile('.github/workflows/never-r3915-combined-runtime.yml',source/'combined-workflow.yml')
+          provenance={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'user_world_changed':False,
+                      'source_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in source.iterdir() if p.is_file()}}
+          (out/'combined-provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3915-COMBINED-RUNTIME-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
