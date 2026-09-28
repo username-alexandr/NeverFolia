@@ -33,15 +33,40 @@ jobs:
           github-token: ${{ github.token }}
           path: r3920-input
           merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: 36419010757
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
       - name: Inventory exact v4.5 Pale feature dependencies
         run: |
           set -o pipefail
           python3 qa/field-r3921/probe_pale_feature_dependencies.py 2>&1 | tee artifacts/pale-feature-probe.log
+      - name: Build exact Pale feature recovery
+        run: |
+          set -o pipefail
+          python3 qa/field-r3921/restore_pale_features.py \
+            --input r3920-input/NeverOverworld-R3920-Effective.zip \
+            --output artifacts/NeverOverworld-R3921-Pale.zip \
+            2>&1 | tee artifacts/pale-feature-build.log
+      - name: Boot Folia and place both restored Pale features
+        run: |
+          set -o pipefail
+          python3 qa/field-r3921/run_pale_feature_smoke.py 2>&1 | tee artifacts/pale-feature-runtime.log
       - name: Preserve probe source
         if: always()
         run: |
           mkdir -p artifacts/source
-          cp qa/field-r3921/probe_pale_feature_dependencies.py artifacts/source/
+          cp qa/field-r3921/*.py artifacts/source/
           cp .github/workflows/never-r3921-pale-feature-recovery.yml artifacts/source/workflow.yml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
