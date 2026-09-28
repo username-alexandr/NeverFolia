@@ -99,6 +99,8 @@ public final class R3921MobQa extends JavaPlugin implements Listener {
         clean();Entity src=create("ghast",8);src.addTag("dnt_ghast_boss");function(src,"ghast_boss_summon_child");
         var rows=entities().stream().filter(e->type(e).equals("minecraft:ghast")&&e.entityTags().contains("dnt_ghast_boss_child")).toList();
         check(rows.size()==1,"ghast boss child spawned");check(src.entityTags().stream().anyMatch(x->x.startsWith("neverfolia.dnt_minions_")),"ghast native minion counter advanced");
+        JsonObject row=new JsonObject();row.addProperty("function","ghast_boss_summon_child");
+        row.addProperty("entity",type(rows.getFirst()));cases.add(row);
     }
     private void runAll(){
         try{
