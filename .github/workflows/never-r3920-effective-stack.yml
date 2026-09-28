@@ -1,0 +1,82 @@
+name: R3920 effective repaired resource stack
+on:
+  push:
+    branches: ['fix/neveroverworld-r3920-effective-stack']
+    paths: ['qa/field-r3918/**', 'scripts/*r3918*', 'scripts/never_resource_stack.py', 'scripts/test_never_resource_stack.py', '.github/workflows/never-r3920-effective-stack.yml']
+  pull_request:
+    branches: ['fix/neveroverworld-r3918-resource-paths']
+    paths: ['qa/field-r3918/**', 'scripts/*r3918*', 'scripts/never_resource_stack.py', 'scripts/test_never_resource_stack.py', '.github/workflows/never-r3920-effective-stack.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3920-effective-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - run: |
+          mkdir -p artifacts
+          printf '%s\n' '${{ github.sha }}' > artifacts/source-commit.txt
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Validate repair and ordered-stack contracts
+        run: |
+          set -o pipefail
+          python3 scripts/test_never_resource_stack.py 2>&1 | tee artifacts/stack-unit-tests.log
+          python3 qa/field-r3918/mansion_reference.py 2>&1 | tee artifacts/unit-tests.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10980264434'
+          run-id: 36446043000
+          github-token: ${{ github.token }}
+          path: integrated-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: 36419010757
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - name: Inspect Pale Residence provenance in pinned author releases
+        run: |
+          set -o pipefail
+          python3 qa/field-r3918/probe_pale_sources.py 2>&1 | tee artifacts/pale-source-probe.log
+      - name: Restore exact author models, audit effective stack and place walls
+        run: |
+          set -o pipefail
+          python3 qa/field-r3918/run_walls.py 2>&1 | tee artifacts/repair-runtime.log
+      - name: Preserve actual source and outcomes
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          dest=Path('artifacts/source');dest.mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3918').iterdir():
+              if p.is_file():shutil.copyfile(p,dest/p.name)
+          shutil.copyfile('.github/workflows/never-r3920-effective-stack.yml',dest/'workflow.yml')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3920-EFFECTIVE-STACK-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
