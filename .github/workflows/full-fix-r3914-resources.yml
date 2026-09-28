@@ -1,0 +1,42 @@
+name: R3914 resource reconstruction
+on:
+  push:
+    branches: ['fix/neveroverworld-r3914-full-fix-work']
+    paths: ['qa/full-fix-r3914/build_resources.py', 'qa/field-r394/build_candidate.py', '.github/workflows/full-fix-r3914-resources.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3914-resource-checkpoint
+  cancel-in-progress: false
+jobs:
+  resources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - name: Build missing carts and require complete geometry equivalence to existing biome variants
+        run: python3 qa/full-fix-r3914/build_resources.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3914-internal-resource-candidate-${{ github.sha }}
+          path: internal-resource-candidate/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3914-resource-evidence-${{ github.sha }}
+          path: resource-evidence/
+          if-no-files-found: error
+          retention-days: 14
