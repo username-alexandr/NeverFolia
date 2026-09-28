@@ -35,6 +35,9 @@ CLOSURE_MODELS=tuple(
 EVENT_POOL='data/nova_structures/worldgen/template_pool/stray_fort_event.json'
 DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
 ANCIENT_POOL='data/minecraft/worldgen/template_pool/ancient_city/walls/no_corners.json'
+PALE_POOL='data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json'
+PALE_FEATURE_PREFIXES=('data/nova_structures/worldgen/configured_feature/pale_',
+                       'data/nova_structures/worldgen/placed_feature/pale_')
 ANCIENT_MISSING='minecraft:ancient_city/walls/intact_horizontal_wall_stairs_5'
 ANCIENT_LOCATIONS=(
     'minecraft:ancient_city/walls/intact_horizontal_wall_1',
@@ -175,6 +178,45 @@ def prune_dangling_pool_elements(files, missing):
     s.need(removed==targets,'Not every proven dangling template reference was removed: '+repr(sorted(targets-removed)))
     return {'targets':sorted(targets),'removed':changed,'pools':touched}
 
+def install_pale_decor_recovery(files,source):
+    """Restore the exact authored Pale Residence decor contract from pinned D&T v4.5.
+
+    D&T 5.3.2/6.0.1 retain NBT jigsaws targeting decor_inside but omit the pool and
+    its feature family.  The pinned v4.5 archive contains the original pool plus the
+    complete namespaced pale_* configured/placed feature family, so these resources
+    are copied byte-for-byte rather than reconstructed.
+    """
+    s.need(PALE_POOL in source,'Pinned v4.5 Pale decor pool disappeared')
+    authored=json.loads(source[PALE_POOL])
+    expected_features={'nova_structures:pale_moss_small','nova_structures:pale_moss_floor'}
+    actual_features={e.get('element',{}).get('feature') for e in authored.get('elements',[])
+                     if isinstance(e,dict) and isinstance(e.get('element'),dict)
+                     and e['element'].get('element_type')=='minecraft:feature_pool_element'}
+    s.need(actual_features==expected_features,'Pinned Pale decor pool contract changed')
+    s.need(authored.get('fallback')=='minecraft:empty','Pinned Pale decor fallback changed')
+    prior=files.get(PALE_POOL)
+    if prior is not None:
+        prior_obj=json.loads(prior)
+        compat={'fallback':'minecraft:empty','elements':[{'element':{'element_type':'minecraft:empty_pool_element'},'weight':1}]}
+        s.need(prior_obj==compat or prior==source[PALE_POOL],'Unexpected current Pale decor pool')
+    files[PALE_POOL]=source[PALE_POOL]
+
+    family=sorted(path for path in source
+                  if path.endswith('.json') and path.startswith(PALE_FEATURE_PREFIXES))
+    s.need(bool(family),'Pinned v4.5 Pale feature family disappeared')
+    added=[];identical=[]
+    for path in family:
+        if path in files:
+            s.need(files[path]==source[path],'Current Pale feature differs from pinned authored resource: '+path)
+            identical.append(path)
+        else:
+            files[path]=source[path];added.append(path)
+    return {'pool_path':PALE_POOL,'pool_source_sha256':s.sha(source[PALE_POOL]),
+            'pool_replaced_compatibility_fallback':prior is not None and prior!=source[PALE_POOL],
+            'feature_family_count':len(family),'added_feature_paths':added,
+            'identical_existing_feature_paths':identical,
+            'feature_hashes':{path:s.sha(source[path]) for path in family}}
+
 def sanitize_exact(ext,raw,ident):
     root=ext._nbt_parse(raw)[2]
     before_foreign=foreign_ids(root)
@@ -207,6 +249,7 @@ def build(base,author,before,author_v6=None):
     files[EVENT_POOL]=(json.dumps(event_pool,indent=2,ensure_ascii=False)+'\n').encode()
     ancient_repair=install_ancient_city_pool_override(files,missing)
     dangling_repair=prune_dangling_pool_elements(files,missing)
+    pale_repair=install_pale_decor_recovery(files,source)
     for model in MODELS:
         path=PREFIX+model+'.nbt';ident='nova_structures:stray_fort/'+model
         s.need(('template',ident) in missing and path not in files and path in source,'Unexpected restoration target '+ident)
@@ -262,15 +305,18 @@ def build(base,author,before,author_v6=None):
     fp=s.load('r3918_wall_fingerprint',ROOT/'scripts/fingerprint-never-overworld-pack.py')
     encoded=(json.dumps(fp.fingerprint_document(files),ensure_ascii=False,indent=2)+'\n').encode()
     for p in s.FP:files[p]=encoded
-    additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}|{ANCIENT_POOL}
+    pale_added=set(pale_repair['added_feature_paths'])
+    if PALE_POOL not in original:pale_added.add(PALE_POOL)
+    additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}|{ANCIENT_POOL}|pale_added
     s.need(set(files)-set(original)==additions and not set(original)-set(files),'Unexpected entry delta')
-    allowed_changes=(*fix.POOLS,EVENT_POOL,*dangling_repair['pools'],*s.FP)
+    allowed_changes=(*fix.POOLS,EVENT_POOL,PALE_POOL,*dangling_repair['pools'],*s.FP)
     s.need(all(files[p]==v for p,v in original.items() if p not in allowed_changes),'Unrelated original content changed')
     output=s.write_zip(files);s.need(s.read_zip(output)==files and output==s.write_zip(files),'Nonrepeatable output')
     return output,{'pass':True,'base_sha256':fix.BASE,'source_url':AUTHOR_URL,'source_archive_sha256':AUTHOR_SHA,
                    'output_sha256':s.sha(output),'mansion_repair':mansion,'models':rows,'closure_models':closure,
                    'future_models':future,'v6_source_url':V6_URL if source_v6 else None,'v6_source_sha256':V6_SHA if source_v6 else None,
                    'proven_dangling_repair':dangling_repair,'ancient_city_pool_repair':ancient_repair,
+                   'pale_residence_decor_recovery':pale_repair,
                    'stray_event_pool_repair':{'path':EVENT_POOL,'removed_location':DANGLING_EVENT,'removed_weight':2,
                                               'upstream_missing_in_checked_releases':True},
                    'restored_templates':len(rows)+len(closure),'existing_entries_preserved':sum(files[p]==v for p,v in original.items()),
