@@ -45,7 +45,7 @@ def main():
     ext=s.load('r3918_history_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
     report={'inspection_only':True,'game_files_modified':False,'all_reported_bugs_fixed':False,'base_pack_sha256':PACK,'versions':[],'metadata':[]}
     selections=[]
-    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','6.')),('j3FONRYr',('1.0.15','1.0.16'))]:
+    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','5.3','6.')),('j3FONRYr',('1.0.15','1.0.16'))]:
         raw=get('https://api.modrinth.com/v2/project/'+project+'/version',5000000,'api.modrinth.com')
         versions=json.loads(raw);s.need(isinstance(versions,list),'Invalid version metadata')
         report['metadata'].append({'project':project,'sha256':s.sha(raw),'records':len(versions)})
@@ -54,9 +54,9 @@ def main():
             if not eligible:
                 report['versions'].append({'project':project,'requested_prefix':prefix,'status':'no_matching_official_release'});continue
             v=max(eligible,key=lambda x:x['date_published']);selections.append((project,prefix,v))
-    s.need(len(selections)<=6,'Inspection scope exceeded')
+    s.need(len(selections)<=7,'Inspection scope exceeded')
     for project,prefix,v in selections:
-        row={'project':project,'version_id':v['id'],'version_number':v['version_number'],'requested_prefix':prefix,'status':'not_finished','matches':[]};report['versions'].append(row)
+        row={'project':project,'version_id':v['id'],'version_number':v['version_number'],'requested_prefix':prefix,'status':'not_finished','matches':[],'event13b_references':[]};report['versions'].append(row)
         try:
             files=[x for x in v['files'] if x.get('primary') is True and x['filename'].endswith('.zip')]
             s.need(len(files)==1,'Missing unique primary datapack')
@@ -69,6 +69,10 @@ def main():
                 s.need(len(z.infolist())<=30000 and sum(n.file_size for n in z.infolist())<=500000000,'Unreviewed decompressed scope')
                 s.need(len(z.namelist())==len(set(z.namelist())),'Duplicate zip entries')
                 for n in z.infolist():
+                    if (n.filename.endswith('.json') or n.filename.endswith('.mcfunction')) and n.file_size<=2000000:
+                        payload=z.read(n)
+                        if b'stray_fort_event_13b' in payload:
+                            row['event13b_references'].append({'entry':n.filename,'sha256':s.sha(payload),'excerpt':payload.decode('utf-8',errors='replace')[:12000]})
                     ident=resource(n.filename)
                     if ident not in targets:continue
                     s.need(n.file_size<=5000000,'Oversized model')
