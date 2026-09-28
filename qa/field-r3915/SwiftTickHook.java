@@ -1,6 +1,7 @@
 import java.lang.classfile.*;
 import java.lang.classfile.instruction.InvokeInstruction;
 import java.lang.constant.*;
+import java.lang.reflect.AccessFlag;
 import java.nio.file.*;
 
 /** Build-time transformer, not a runtime agent. Only the exact static tickEffects
