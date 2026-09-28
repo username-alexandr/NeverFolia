@@ -1,0 +1,62 @@
+name: R3913 inspect saved structure geometry
+on:
+  push:
+    branches: ['fix/neveroverworld-r3913-submerged-ice']
+    paths: ['.github/workflows/inspect-r3913-geometry.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10962397012'
+          run-id: 36405033661
+          github-token: ${{ github.token }}
+          path: evidence
+          merge-multiple: true
+      - name: Read actual Anvil structures and referenced piece boxes
+        run: |
+          python3 - <<'PY'
+          import importlib.util,json
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('nbt','scripts/hash-never-nether-chunks.py');n=importlib.util.module_from_spec(spec);spec.loader.exec_module(n)
+          base=Path('evidence/r3913-phases/candidate/saved')
+          regions=list(base.rglob('overworld/region'))
+          if len(regions)!=1:raise ValueError('No unique Overworld region directory: '+str(regions))
+          region=regions[0];results=[]
+          def coord(v):
+              x=v&0xffffffff;z=(v>>32)&0xffffffff
+              return (x if x<2**31 else x-2**32,z if z<2**31 else z-2**32)
+          for cx,cz in ((-189,-223),(-169,-252),(-169,-253)):
+              root=n.read_chunk_nbt(region,cx,cz)
+              if (root['xPos'],root['zPos'])!=(cx,cz):raise ValueError('Wrong chunk')
+              st=root.get('structures',{});print('STRUCTURE_KEYS',cx,cz,list(st))
+              refs=st.get('References',st.get('references',{}));starts=st.get('starts',st.get('Starts',{}))
+              targets={(cx,cz)}
+              for vals in refs.values():targets.update(coord(v) for v in vals.get('$long_array',[]))
+              row={'owner':[cx,cz],'references':refs,'resolved':[]}
+              for sx,sz in sorted(targets):
+                  try:other=n.read_chunk_nbt(region,sx,sz)
+                  except FileNotFoundError as e:
+                      row['resolved'].append({'chunk':[sx,sz],'status':'unknown','error':str(e)});continue
+                  for key,start in other.get('structures',{}).get('starts',{}).items():
+                      if start.get('id')=='INVALID':continue
+                      boxes=[c.get('BB') for c in start.get('Children',[]) if 'BB' in c]
+                      item={'chunk':[sx,sz],'id':key,'start_id':start.get('id'),'start_keys':list(start),'box':start.get('BB'),'pieces':len(boxes),'boxes':boxes}
+                      row['resolved'].append(item)
+              results.append(row);print('SAVED_GEOMETRY '+json.dumps(row))
+          Path('ice-structure-geometry.json').write_text(json.dumps(results,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3913-saved-structure-geometry-${{ github.sha }}
+          path: ice-structure-geometry.json
+          if-no-files-found: error
+          retention-days: 14
