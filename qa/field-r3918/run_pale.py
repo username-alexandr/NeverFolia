@@ -115,7 +115,9 @@ def phase(name,core,folder,baseline=False,reload=False):
         else:p.need([r['case'] for r in observed['checks']]==[0,1,2,3] and all(r['pass'] for r in observed['checks']),'Cases incomplete')
         proc.stdin.write('stop\n');proc.stdin.flush();result['exit_code']=proc.wait(timeout=120);thread.join(timeout=10)
         p.need(result['exit_code']==0 and not thread.is_alive(),'Unclean shutdown')
-        bad=('Empty or non-existent pool:','Block-attached entity at invalid position','porting_lib:','Failed to load datapacks','R3918 PALE QA FAIL','Exception loading structure')
+        bad=('Failed to load datapacks','Failed to load function','Failed to parse','Unknown registry key','Serialization errors','Failed to decode value',
+             'Empty or non-existent pool:','Block-attached entity at invalid position','porting_lib:','R3918 PALE QA FAIL','Exception loading structure',
+             'NoSuchMethodError','NoClassDefFoundError')
         result['targeted_errors']=[x.strip() for x in lines if any(t in x for t in bad)];p.need(not result['targeted_errors'],'Targeted server errors')
         result['pass']=True
     except Exception as e:
@@ -157,7 +159,7 @@ def main():
             p.need(all(x['before']=='Block{minecraft:air}' for x in diff),'Decoration overwrote source solids')
             p.need(sum('minecraft:white_banner' in x['after'] for x in diff)==1 and sum('minecraft:birch_wall_sign' in x['after'] for x in diff)==1,'Wrong decoration writes')
         report['restart']=phase('pale-restart',core,cand_world,False,True);p.need(report['restart']['pass'],'Saved scene changed')
-        p.need(p.digest(core.read_bytes())==CORE and p.digest(original.read_bytes())==p.BASE and p.digest(nether.read_bytes())==NETHER,'Input modified')
+        p.need(p.digest(core.read_bytes())==CORE and p.digest(original.read_bytes())==build['pre_pale_output_sha256'] and p.digest(candidate.read_bytes())==build['output_sha256'] and p.digest(nether.read_bytes())==NETHER,'Input modified')
         report.update({'pass':True,'core_sha256':CORE,'pack_sha256':build['output_sha256'],'pre_pale_pack_sha256':build['pre_pale_output_sha256'],'source_contexts':4,'added_banners':4,'added_signs':4,'other_block_changes':0,'whole_natural_building_tested':False,'core_changed':False})
     except Exception as e:report['error']=repr(e)
     finally:(OUT/'pale-runtime.json').write_bytes(p.encoded(report))
