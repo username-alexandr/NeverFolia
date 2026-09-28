@@ -35,6 +35,20 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):b.apply({'entities':[]},[('replace',('entities',),[],[1])])
     def test_reencode_preserves_DataVersion(self):
         a=self.root();c=b.encode_model(a,b.semantic(a));self.assertEqual(c['DataVersion'],a['DataVersion']);self.assertEqual(b.semantic(a),b.semantic(c))
+    def test_sparse_mask_is_preserved(self):
+        a=self.root();a['blocks'][1][1].pop(0);model=b.semantic(a);c=b.encode_model(a,model)
+        self.assertEqual(b.placement_mask(c),({(1,0,0)},{(0,0,0)}));self.assertEqual(len(c['blocks'][1][1]),1)
+    def test_sparse_is_not_explicit_air(self):
+        a=self.root();a['blocks'][1][1].pop(0);c=copy.deepcopy(a)
+        c['palette'][1][1].append({'Name':(8,'minecraft:air')});c['blocks'][1][1].append({'pos':(9,(3,[0,0,0])),'state':(3,2)})
+        self.assertNotEqual(b.semantic(a),b.semantic(c));self.assertNotEqual(b.placement_mask(a),b.placement_mask(c))
+    def test_sparse_recipe_deletion_roundtrip(self):
+        root=self.root();a=b.semantic(root);c=copy.deepcopy(a);del c['blocks'][(0,0,0)]
+        rebuilt=b.encode_model(root,b.apply(a,b.diff(a,c)))
+        self.assertEqual(b.semantic(rebuilt),c);self.assertEqual(b.placement_mask(rebuilt)[1],{(0,0,0)})
+    def test_outside_mask_rejected(self):
+        a=self.root();a['blocks'][1][1][0]['pos']=(9,(3,[-1,0,0]))
+        with self.assertRaises(ValueError):b.placement_mask(a)
     def test_zip_deterministic(self):
         a=b.zip_bytes({'b.txt':b'b','a.txt':b'a'});self.assertEqual(a,b.zip_bytes({'a.txt':b'a','b.txt':b'b'}))
         with zipfile.ZipFile(io.BytesIO(a)) as z:self.assertIsNone(z.testzip());self.assertEqual(z.read('b.txt'),b'b')
