@@ -48,8 +48,18 @@ def build(base,author,before):
         s.need(nonair>100 and joints,'Wall lacks geometry/connectors')
         # This existing sanitizer removes only known foreign PortingLib attributes.
         # No blanket entity removal, no manual DataVersion relabel, no loot edit.
-        installed,removed=ext.sanitize_dat_structure_nbt(raw,ident)
+        def foreign_ids(value):
+            if isinstance(value,dict):
+                return sum(foreign_ids(v) for v in value.values())
+            if isinstance(value,(tuple,list)):
+                return sum(foreign_ids(v) for v in value)
+            return int(isinstance(value,str) and value.startswith('porting_lib:'))
+        before_foreign=foreign_ids(root)
+        installed=ext.sanitize_dat_structure_nbt(raw,ident)
         afterroot=ext._nbt_parse(installed)[2]
+        after_foreign=foreign_ids(afterroot)
+        s.need(after_foreign==0 and before_foreign>=after_foreign,'Foreign attribute sanitizer contract changed')
+        removed=before_foreign-after_foreign
         s.need(afterroot['size']==root['size'] and afterroot['DataVersion']==version and afterroot['palette']==root['palette'] and afterroot['blocks']==root['blocks'],'Authored wall geometry changed')
         files[path]=installed
         rows.append({'id':ident,'path':path,'source_sha256':s.sha(raw),'installed_sha256':s.sha(installed),'data_version':version[1],'size':size,'blocks':len(blocks),'nonair':nonair,'jigsaw_count':len(joints),'jigsaws':joints,'foreign_attributes_removed':removed,'byte_identical_to_author':raw==installed})
