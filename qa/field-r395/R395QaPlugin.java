@@ -33,13 +33,19 @@ public final class R395QaPlugin extends JavaPlugin implements Listener {
             if(world.getSeed()!=-4651369264513492755L)throw new AssertionError("Wrong actual seed");
             checkEnchantments();
             int[][] centers={{7,1},{1,-4},{-197,-217},{-169,-250},{-189,-223},{-1699,-769}};
+            int[][] screenshotChunks={
+                {8,1},{6,2},{6,1},{1,0},{3,2},{4,-3},{1,-2},{1,-5},{1,-4},{0,-5},{-3,-3},{-2,5},{6,-1},
+                {-191,-216},{-181,-227},{-183,-229},{-183,-233},{-185,-236},{-1698,-771},{-1701,-766},{-1698,-769},
+                {-196,-216},{-197,-217},{-198,-217},{-199,-219},{-170,-252},{-168,-249},{-161,-239},{-189,-223},{-169,-253}
+            };
             TreeMap<String,int[]> selected=new TreeMap<>();
             for(int[] c:centers)for(int dz=-1;dz<=1;dz++)for(int dx=-1;dx<=1;dx++) {
                 int cx=c[0]+dx,cz=c[1]+dz;selected.put(cx+","+cz,new int[]{cx,cz});
             }
+            for(int[] q:screenshotChunks)selected.put(q[0]+","+q[1],new int[]{q[0],q[1]});
             targets.addAll(selected.values());
             if(Boolean.getBoolean("neverfolia.qaReverse"))Collections.reverse(targets);
-            if(targets.size()!=54)throw new AssertionError("Wrong target count");
+            if(targets.size()!=72)throw new AssertionError("Wrong target count");
             Bukkit.getGlobalRegionScheduler().execute(this,()->next());
         } catch(Throwable error){finish(error);}
     }
@@ -109,7 +115,7 @@ public final class R395QaPlugin extends JavaPlugin implements Listener {
     private synchronized void finish(Throwable error) {
         if(finished)return;finished=true;
         JsonObject result=new JsonObject();result.addProperty("pass",error==null);
-        result.addProperty("scope","54 naturally generated chunks; exact runtime enchant visibility predicates; no player, combat, full closure or screenshot equivalence proof");
+        result.addProperty("scope","72 naturally generated chunks including every recorded screenshot chunk; exact runtime enchant visibility predicates; no player or combat simulation");
         result.addProperty("seed",world==null?0:world.getSeed());result.addProperty("completed_chunks",rows.size());result.add("chunks",rows);result.add("enchantment_visibility",enchants);
         result.addProperty("reverse_order",Boolean.getBoolean("neverfolia.qaReverse"));
         if(error!=null){result.addProperty("error",error.toString());error.printStackTrace();}
