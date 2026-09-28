@@ -22,6 +22,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      - name: Validate narrow repair contracts
+        run: |
+          set -o pipefail
+          python3 qa/field-r3918/mansion_reference.py 2>&1 | tee artifacts/unit-tests.log
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           artifact-ids: '10980264434'
@@ -36,10 +40,28 @@ jobs:
           github-token: ${{ github.token }}
           path: swift-input
           merge-multiple: true
-      - name: Inspect exact paths and native template API
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - name: Repair only verified identifiers and test exact final resource resolution
         run: |
           set -o pipefail
-          python3 scripts/inspect-resource-paths-r3918.py 2>&1 | tee artifacts/compact-inspection.log
+          python3 qa/field-r3918/run_mansion.py 2>&1 | tee artifacts/repair-runtime.log
+      - name: Preserve actual source and outcomes
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          dest=Path('artifacts/source');dest.mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3918').iterdir():
+              if p.is_file():shutil.copyfile(p,dest/p.name)
+          shutil.copyfile('.github/workflows/never-r3918-resources.yml',dest/'workflow.yml')
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
