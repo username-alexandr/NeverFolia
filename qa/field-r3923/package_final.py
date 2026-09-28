@@ -71,6 +71,8 @@ def main():
     mobs=one_json(ROOT/'mob-input','r3921-mobs-summary.json')
     field=one_json(ROOT/'field-input','summary.json')
     need(resource.get('pass') is True,'R3918 resource acceptance failed')
+    need(resource.get('all_reported_bugs_fixed') is True,'Resource candidate explicitly reports unresolved bugs')
+    need(resource.get('production_accepted') is False,'Resource evidence must remain a test candidate until user acceptance')
     need(resource.get('resource_delta',{}).get('full_resource_acceptance') is True,'R3918 graph not closed')
     after=resource['resource_delta']['after']
     need(after.get('missing_pools')==after.get('missing_templates')==after.get('other_missing')==0,
