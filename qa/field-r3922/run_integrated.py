@@ -118,9 +118,12 @@ def phase(name,folder,core,enabled,reverse=False):
            'air_to_water':sum(x.get('added_air_to_water',0) for x in reports if (x['chunk_x'],x['chunk_z']) in wanted),
            'protected_air':sum(x.get('protected_owner_air',0) for x in reports if (x['chunk_x'],x['chunk_z']) in wanted),
            'snapshot_conflicts':sum(x.get('snapshot_write_conflicts',0) for x in reports)}
-        if enabled:
-            need(not result['ocean_proof']['target_missing'],'missing ocean proof for screenshot target')
+        if enabled and name!='restart':
+            need(not result['ocean_proof']['target_missing'],'missing ocean proof for fresh screenshot target')
             need(result['ocean_proof']['snapshot_conflicts']==0,'ocean snapshot conflict')
+        if name=='restart':
+            need(result['ocean_proof']['records']==0 and result['ice_report_files']==0,
+                 'restart unexpectedly re-ran generation-only water/ice repair')
         result['ice_report_files']=len(list(ice.glob('*.json')))
         result['pass']=True
     except Exception as e:result['error']=repr(e)
