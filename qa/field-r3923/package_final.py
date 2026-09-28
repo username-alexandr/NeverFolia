@@ -64,8 +64,13 @@ def main():
         foreign=[n for n in z.namelist() if n.endswith('.nbt') and b'porting_lib:' in z.read(n)]
         need(not foreign,'foreign PortingLib attributes survived in structures: '+repr(foreign[:8]))
         pale='data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json'
-        expected_pale={'fallback':'minecraft:empty','elements':[{'element':{'element_type':'minecraft:empty_pool_element'},'weight':1}]}
-        need(json.loads(z.read(pale))==expected_pale,'Pale Residence compatibility contract drift')
+        pale_obj=json.loads(z.read(pale))
+        pale_features={e.get('element',{}).get('feature') for e in pale_obj.get('elements',[])
+                       if isinstance(e,dict) and isinstance(e.get('element'),dict)
+                       and e['element'].get('element_type')=='minecraft:feature_pool_element'}
+        need(pale_obj.get('fallback')=='minecraft:empty' and
+             pale_features=={'nova_structures:pale_moss_small','nova_structures:pale_moss_floor'},
+             'Pale Residence authored decor contract missing')
 
     resource=one_json(ROOT/'resource-input','walls-result.json')
     mobs=one_json(ROOT/'mob-input','r3921-mobs-summary.json')
@@ -157,7 +162,7 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
 - сохранение защищённых сухих шахт и построек;
 - подводные остатки льда в проверенных проблемных областях;
 - 0 отсутствующих достижимых jigsaw pool/template ресурсов после восстановления;
-- Stray Fort восстановлен из авторских шаблонов;\n- для dangling pale_residence/decor_inside используется валидный empty compatibility pool: в закреплённом исходнике D&T авторского дочернего шаблона для этого коннектора нет;
+- Stray Fort восстановлен из авторских шаблонов;\n- pale_residence/decor_inside восстановлен из закреплённого авторского D&T v4.5 вместе с исходной pale_* feature-семьёй;
 - технические D&T enchant-книги скрываются клиентским дополнением, игровые остаются;
 - Swift Soar работает серверно;
 - native/Folia-safe активация dungeon mob/jockey сценариев;
