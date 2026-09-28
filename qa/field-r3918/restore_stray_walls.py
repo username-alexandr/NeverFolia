@@ -34,6 +34,18 @@ CLOSURE_MODELS=tuple(
 )
 EVENT_POOL='data/nova_structures/worldgen/template_pool/stray_fort_event.json'
 DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
+ANCIENT_POOL='data/minecraft/worldgen/template_pool/ancient_city/walls/no_corners.json'
+ANCIENT_MISSING='minecraft:ancient_city/walls/intact_horizontal_wall_stairs_5'
+ANCIENT_LOCATIONS=(
+    'minecraft:ancient_city/walls/intact_horizontal_wall_1',
+    'minecraft:ancient_city/walls/intact_horizontal_wall_2',
+    'minecraft:ancient_city/walls/intact_horizontal_wall_stairs_1',
+    'minecraft:ancient_city/walls/intact_horizontal_wall_stairs_2',
+    'minecraft:ancient_city/walls/intact_horizontal_wall_stairs_3',
+    'minecraft:ancient_city/walls/intact_horizontal_wall_stairs_4',
+    ANCIENT_MISSING,
+    'minecraft:ancient_city/walls/intact_horizontal_wall_bridge',
+)
 # Exact resource IDs referenced by the current source pools but absent from all
 # reviewed official source releases. These entries can never resolve at runtime.
 # Do not add IDs here unless the historical inventory proves the absence.
@@ -94,6 +106,22 @@ def foreign_ids(value):
     if isinstance(value,(tuple,list)):
         return sum(foreign_ids(v) for v in value)
     return int(isinstance(value,str) and value.startswith('porting_lib:'))
+
+def install_ancient_city_pool_override(files, missing):
+    s.need(('template',ANCIENT_MISSING) in missing,'Pinned vanilla ancient-city gap no longer present')
+    s.need(ANCIENT_POOL not in files,'NeverOverworld unexpectedly already overrides vanilla ancient-city pool')
+    def entry(location):
+        return {'element':{'element_type':'minecraft:single_pool_element','location':location,
+                           'processors':'minecraft:ancient_city_walls_degradation','projection':'rigid'},
+                'weight':1}
+    source={'elements':[entry(x) for x in ANCIENT_LOCATIONS],'fallback':'minecraft:empty'}
+    fixed={'elements':[entry(x) for x in ANCIENT_LOCATIONS if x!=ANCIENT_MISSING],'fallback':'minecraft:empty'}
+    s.need(len(source['elements'])==8 and len(fixed['elements'])==7,'Ancient city compatibility contract changed')
+    payload=(json.dumps(fixed,indent=2,ensure_ascii=False)+'\n').encode()
+    files[ANCIENT_POOL]=payload
+    return {'path':ANCIENT_POOL,'removed_location':ANCIENT_MISSING,'removed_weight':1,
+            'source_variants':8,'remaining_variants':7,'output_sha256':s.sha(payload),
+            'pinned_server_sha256':fix.CORE}
 
 def prune_dangling_pool_elements(files, missing):
     targets=PROVEN_DANGLING & {ident for kind,ident in missing if kind=='template'}
@@ -177,6 +205,7 @@ def build(base,author,before,author_v6=None):
     event_pool['elements']=[entry for entry in event_pool['elements'] if entry is not target_rows[0]]
     s.need(len(event_pool['elements'])==len(before_event['elements'])-1,'Unexpected Stray Fort event-pool edit')
     files[EVENT_POOL]=(json.dumps(event_pool,indent=2,ensure_ascii=False)+'\n').encode()
+    ancient_repair=install_ancient_city_pool_override(files,missing)
     dangling_repair=prune_dangling_pool_elements(files,missing)
     for model in MODELS:
         path=PREFIX+model+'.nbt';ident='nova_structures:stray_fort/'+model
@@ -233,7 +262,7 @@ def build(base,author,before,author_v6=None):
     fp=s.load('r3918_wall_fingerprint',ROOT/'scripts/fingerprint-never-overworld-pack.py')
     encoded=(json.dumps(fp.fingerprint_document(files),ensure_ascii=False,indent=2)+'\n').encode()
     for p in s.FP:files[p]=encoded
-    additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}
+    additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}|{ANCIENT_POOL}
     s.need(set(files)-set(original)==additions and not set(original)-set(files),'Unexpected entry delta')
     allowed_changes=(*fix.POOLS,EVENT_POOL,*dangling_repair['pools'],*s.FP)
     s.need(all(files[p]==v for p,v in original.items() if p not in allowed_changes),'Unrelated original content changed')
@@ -241,7 +270,7 @@ def build(base,author,before,author_v6=None):
     return output,{'pass':True,'base_sha256':fix.BASE,'source_url':AUTHOR_URL,'source_archive_sha256':AUTHOR_SHA,
                    'output_sha256':s.sha(output),'mansion_repair':mansion,'models':rows,'closure_models':closure,
                    'future_models':future,'v6_source_url':V6_URL if source_v6 else None,'v6_source_sha256':V6_SHA if source_v6 else None,
-                   'proven_dangling_repair':dangling_repair,
+                   'proven_dangling_repair':dangling_repair,'ancient_city_pool_repair':ancient_repair,
                    'stray_event_pool_repair':{'path':EVENT_POOL,'removed_location':DANGLING_EVENT,'removed_weight':2,
                                               'upstream_missing_in_checked_releases':True},
                    'restored_templates':len(rows)+len(closure),'existing_entries_preserved':sum(files[p]==v for p,v in original.items()),
