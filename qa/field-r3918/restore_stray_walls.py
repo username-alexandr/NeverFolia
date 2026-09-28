@@ -34,6 +34,41 @@ CLOSURE_MODELS=tuple(
 )
 EVENT_POOL='data/nova_structures/worldgen/template_pool/stray_fort_event.json'
 DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
+# Exact resource IDs referenced by the current source pools but absent from all
+# reviewed official source releases. These entries can never resolve at runtime.
+# Do not add IDs here unless the historical inventory proves the absence.
+PROVEN_DANGLING={
+    'minecraft:village_jungle/jungle_village_path5',
+    'minecraft:village_swamp/swamp_village_big_house1',
+    'minecraft:village_swamp/swamp_village_big_house2',
+    'minecraft:village_swamp/swamp_village_path5',
+    'nova_structures:badlands_miner_outpost/badlands_miner_outpost_path_t_curve_big',
+    'nova_structures:bunker/bunker_underground_hallway_21',
+    'nova_structures:catacomb/hallway/catacomb_path_2_1',
+    'nova_structures:catacomb/hallway/catacomb_path_2_2',
+    'nova_structures:desert_ruin/temple/desert_ruins_temple_main',
+    'nova_structures:lone_citadel/room_content/deko_furnace_shelf',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_bed',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_books',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_crafter',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_golem',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_group_table',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_office',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_smoker',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_table',
+    'nova_structures:lone_citadel/room_content/deko_mirror_center_vault',
+    'nova_structures:lone_citadel/room_content/deko_mirror_furnace_shelf',
+    'nova_structures:pale_residence/residence/pale_residence_main_4_big',
+    'nova_structures:pale_residence/residence/pale_residence_main_4_medium',
+    'nova_structures:pale_residence/residence/pale_residence_main_4_small',
+    'nova_structures:pale_residence/village/house/pale_house_8',
+    'nova_structures:remnant/remnant_creeper_homestead_connect',
+    'nova_structures:toxic_lair/room/small_room_6',
+    'nova_structures:toxic_lair/spawner/spawner_boss_slime',
+    'structory_towers:book/pillager_1',
+    'structory_towers:book/pillager_2',
+    'structory_towers:book/pillager_3',
+}
 
 def pinned_download(url,size,expected):
     req=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-resource-recovery/1.0'})
@@ -52,6 +87,48 @@ def foreign_ids(value):
     if isinstance(value,(tuple,list)):
         return sum(foreign_ids(v) for v in value)
     return int(isinstance(value,str) and value.startswith('porting_lib:'))
+
+def prune_dangling_pool_elements(files, missing):
+    targets=PROVEN_DANGLING & {ident for kind,ident in missing if kind=='template'}
+    changed=[];removed=set()
+    def prune(node,path):
+        nonlocal changed,removed
+        if isinstance(node,list):
+            out=[]
+            for index,item in enumerate(node):
+                # Weighted template-pool entry: remove only a reviewed exact
+                # single/legacy pool element whose location is unresolved.
+                element=item.get('element') if isinstance(item,dict) else None
+                location=element.get('location') if isinstance(element,dict) else None
+                etype=element.get('element_type') if isinstance(element,dict) else None
+                if (etype in ('minecraft:single_pool_element','minecraft:legacy_single_pool_element')
+                        and location in targets):
+                    weight=item.get('weight')
+                    s.need(type(weight) is int and weight>0,'Invalid dangling element weight')
+                    removed.add(location)
+                    changed.append({'json_path':path+[index],'location':location,'weight':weight})
+                    continue
+                out.append(prune(item,path+[index]))
+            return out
+        if isinstance(node,dict):
+            return {k:prune(v,path+[k]) for k,v in node.items()}
+        return node
+    touched={}
+    for path,payload in list(files.items()):
+        if '/worldgen/template_pool/' not in path or not path.endswith('.json'):continue
+        original=json.loads(payload)
+        updated=prune(original,[path])
+        if updated==original:continue
+        elements=updated.get('elements')
+        s.need(isinstance(elements,list) and any(
+            isinstance(e,dict) and type(e.get('weight')) is int and e.get('weight')>0
+            for e in elements),'Dangling repair would empty template pool '+path)
+        encoded=(json.dumps(updated,indent=2,ensure_ascii=False)+'\n').encode()
+        files[path]=encoded
+        touched[path]={'source_sha256':s.sha(payload),'output_sha256':s.sha(encoded),
+                       'remaining_positive_entries':sum(isinstance(e,dict) and type(e.get('weight')) is int and e.get('weight')>0 for e in elements)}
+    s.need(removed==targets,'Not every proven dangling template reference was removed: '+repr(sorted(targets-removed)))
+    return {'targets':sorted(targets),'removed':changed,'pools':touched}
 
 def sanitize_exact(ext,raw,ident):
     root=ext._nbt_parse(raw)[2]
@@ -83,6 +160,7 @@ def build(base,author,before,author_v6=None):
     event_pool['elements']=[entry for entry in event_pool['elements'] if entry is not target_rows[0]]
     s.need(len(event_pool['elements'])==len(before_event['elements'])-1,'Unexpected Stray Fort event-pool edit')
     files[EVENT_POOL]=(json.dumps(event_pool,indent=2,ensure_ascii=False)+'\n').encode()
+    dangling_repair=prune_dangling_pool_elements(files,missing)
     for model in MODELS:
         path=PREFIX+model+'.nbt';ident='nova_structures:stray_fort/'+model
         s.need(('template',ident) in missing and path not in files and path in source,'Unexpected restoration target '+ident)
@@ -140,12 +218,13 @@ def build(base,author,before,author_v6=None):
     for p in s.FP:files[p]=encoded
     additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}
     s.need(set(files)-set(original)==additions and not set(original)-set(files),'Unexpected entry delta')
-    allowed_changes=(*fix.POOLS,EVENT_POOL,*s.FP)
+    allowed_changes=(*fix.POOLS,EVENT_POOL,*dangling_repair['pools'],*s.FP)
     s.need(all(files[p]==v for p,v in original.items() if p not in allowed_changes),'Unrelated original content changed')
     output=s.write_zip(files);s.need(s.read_zip(output)==files and output==s.write_zip(files),'Nonrepeatable output')
     return output,{'pass':True,'base_sha256':fix.BASE,'source_url':AUTHOR_URL,'source_archive_sha256':AUTHOR_SHA,
                    'output_sha256':s.sha(output),'mansion_repair':mansion,'models':rows,'closure_models':closure,
                    'future_models':future,'v6_source_url':V6_URL if source_v6 else None,'v6_source_sha256':V6_SHA if source_v6 else None,
+                   'proven_dangling_repair':dangling_repair,
                    'stray_event_pool_repair':{'path':EVENT_POOL,'removed_location':DANGLING_EVENT,'removed_weight':2,
                                               'upstream_missing_in_checked_releases':True},
                    'restored_templates':len(rows)+len(closure),'existing_entries_preserved':sum(files[p]==v for p,v in original.items()),
