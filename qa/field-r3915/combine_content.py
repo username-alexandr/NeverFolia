@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Compose exact executed artifacts, not filenames or unverified current sources.
-Repair only the authored mangrove/pale/swamp villager connector aliases after
-resolving actual child templates. Never edit return joints, geometry or entities.
+"""Compose exact executed artifacts. Preserve diagnostics on failed contracts.
+No NPC expectation is relaxed merely because a prior attempt did not pass.
 """
 from pathlib import Path
 import copy,hashlib,importlib.util,json,sys
@@ -10,9 +9,6 @@ ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts'
 BASE=s.BASE
 CART='9e0026a8c82c4242b438e06ce016d785aef1bf624d4dad13dea665d9dba20329'
 SWIFT='1e935c1012aa0648b14aa3ab7bf84fd3e0bc43ead8e95ad9060316c428dc1046'
-# Run 36419010757 / artifact 10968482107: SWIFT_KERNEL and SWIFT_LIFECYCLE
-# independently name this exact output. The previous constant described no
-# accepted input in that artifact; do not silently accept whatever is present.
 CORE='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
 PREFIX='data/nova_structures/structure/tavern/tavern_event_trader_car_'
 BIOMES=('acacia','birch','cherry','desert','jungle','mangrove','oak','pale','snowy','spruce','swamp')
@@ -71,24 +67,29 @@ def compose(base,cart,swift):
 
 def main():
     OUT.mkdir(exist_ok=True);report={'pass':False,'production_accepted':False}
+    repaired=[];observed=[];cases=[];inventory=[]
+    report.update({'repaired_templates':repaired,'connector_observations':observed,'cases':cases,'cart_input_inventory':inventory})
     try:
         base=exact('inputs','NeverOverworld.zip',BASE);cart=exact('cart-input','NeverOverworld-R3914.zip',CART);swift=exact('swift-input','NeverOverworld-R3915.zip',SWIFT)
         core=exact('swift-input','server-r3915.jar',CORE)
         before,files,recovered=compose(base,cart,swift)
         reader=s.load('r3915_connector_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
-        repaired=[];observed=[];cases=[]
         for path in sorted(files.copy()):
             if not path.startswith(PREFIX) or not path.endswith('.nbt'):continue
             model_name=path[len(PREFIX):-4];biome=next((b for b in BIOMES if model_name.endswith('_'+b)),None)
             if biome is None:continue
             role=model_name[:-len(biome)-1]
             compressed,name,root=reader._nbt_parse(files[path]);original=copy.deepcopy(root);changes=[]
+            inv={'path':path,'role':role,'biome':biome,'root_keys':sorted(root),'joints':[{'pos':b.get('pos'),'nbt':n} for b,n in joints(root)]}
+            inventory.append(inv)
+            print('CART_INPUT',json.dumps(inv,ensure_ascii=False),flush=True)
             for block,n in joints(root):
                 target=n.get('target',(8,''))[1];pool=n.get('pool',(8,''))[1]
                 if 'tavern_villager' not in target:continue
                 names,rows=pool_names(files,reader,pool)
                 observation={'cart':path,'position':block['pos'][1][1],'target':target,'pool':pool,'available_names':sorted(names),'matches':target in names}
                 observed.append(observation)
+                print('CART_CONNECTOR',json.dumps(observation,ensure_ascii=False),flush=True)
                 if target in names:continue
                 s.need(biome in ('mangrove','pale','swamp') and target in ALIASES,'Unreviewed connector mismatch '+json.dumps(observation))
                 new_pool=pool
@@ -120,6 +121,7 @@ def main():
                     active.append(n['target'][1])
                 s.need(len(active)==1 or (biome=='pale' and not active),'Unexpected NPC connector count')
                 cases.append({'id':'nova_structures:tavern/tavern_event_trader_car_'+model_name,'role':role,'biome':biome,'expected_villagers':len(active),'target':'nova_structures:tavern_trader_car_'+biome,'root_size':root['size'][1][1]})
+        print('CART_SCAN_SUMMARY',json.dumps({'selected':len(inventory),'observed':len(observed),'repaired':len(repaired),'cases':len(cases)}),flush=True)
         s.need(repaired and any(p['path'].endswith('_mangrove.nbt') for p in repaired),'Known mangrove bug not fixed')
         s.need(len(cases)==25,'Missing cart fixture cases')
         fp=s.load('r3915_combined_fingerprint',ROOT/'scripts/fingerprint-never-overworld-pack.py')
@@ -129,8 +131,8 @@ def main():
         allowed={p['path'] for p in repaired}|{s.ENCHANT,*s.FP}
         s.need(all(files[p]==v for p,v in before.items() if p not in allowed),'Unrelated original resource changed')
         (OUT/'NeverOverworld-R3915-Combined.zip').write_bytes(output)
-        report.update({'pass':True,'base_pack_sha256':BASE,'executed_cart_pack_sha256':CART,'swift_pack_sha256':SWIFT,'core_sha256':CORE,'output_sha256':s.sha(output),'repaired_templates':repaired,'connector_observations':observed,'cases':cases,'added_templates':sorted(recovered),'preserved_original_entries':sum(files[p]==v for p,v in before.items()),'scope':'Exact union of two executed deltas plus proven NPC target aliases; not all missing structures or natural spawn acceptance.'})
-        print('COMBINED_CONTENT',json.dumps({k:v for k,v in report.items() if k not in ('connector_observations','cases')},ensure_ascii=False),flush=True)
+        report.update({'pass':True,'base_pack_sha256':BASE,'executed_cart_pack_sha256':CART,'swift_pack_sha256':SWIFT,'core_sha256':CORE,'output_sha256':s.sha(output),'added_templates':sorted(recovered),'preserved_original_entries':sum(files[p]==v for p,v in before.items()),'scope':'Exact union of two executed deltas plus proven NPC target aliases; not all missing structures or natural spawn acceptance.'})
+        print('COMBINED_CONTENT',json.dumps({k:v for k,v in report.items() if k not in ('connector_observations','cases','cart_input_inventory')},ensure_ascii=False),flush=True)
     except Exception as e:report['error']=repr(e);raise
     finally:(OUT/'combined-content.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 if __name__=='__main__':main()
