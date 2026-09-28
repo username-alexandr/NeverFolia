@@ -22,6 +22,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      - name: Test exact input guards and reproducible packaging
+        run: python3 qa/field-r3915/test_restore.py
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           artifact-ids: '10963935012'
@@ -55,13 +57,8 @@ jobs:
           PY
       - name: Resolve exact Java runtime and inspect available controller methods
         run: python3 qa/field-r3915/prepare_runtime.py
-      - name: Real runtime verification when harness has been committed
-        run: |
-          if [ -f qa/field-r3915/run_runtime.py ]; then
-            python3 qa/field-r3915/run_runtime.py
-          else
-            echo 'R3915 runtime not implemented yet; this run is build only, not accepted.'
-          fi
+      - name: Require actual baseline, functional ticks, and current restart
+        run: python3 qa/field-r3915/run_runtime.py
       - name: Preserve own source and all failures
         if: always()
         run: |
@@ -79,5 +76,45 @@ jobs:
         with:
           name: R3915-SWIFT-EVIDENCE-${{ github.sha }}
           path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+  cart-diagnosis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10966478208'
+          run-id: '36414508735'
+          github-token: ${{ github.token }}
+          path: cart-evidence
+          merge-multiple: true
+      - name: Read retained cart failure, do not reclassify it as acceptance
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          out=Path('cart-diagnosis');out.mkdir()
+          selected=[]
+          for p in sorted(Path('cart-evidence').rglob('*')):
+              if not p.is_file() or p.suffix not in ('.log','.json'):continue
+              if not any(t in p.name for t in ('placement','phase','runtime','result')):continue
+              text=p.read_text(errors='replace');rows=text.splitlines()
+              if p.suffix=='.log':
+                  indexes=set()
+                  for i,line in enumerate(rows):
+                      if any(t in line for t in ('AssertionError','R3914 CART','Exception','Caused by')):
+                          indexes.update(range(max(0,i-3),min(len(rows),i+16)))
+                  context='\n'.join(rows[i] for i in sorted(indexes))
+              else:context=text
+              selected.append({'file':p.as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'context':context})
+              print('RETAINED_CART_RESULT',p.as_posix(),context,flush=True)
+          if not selected:raise ValueError('No actual retained cart error found')
+          (out/'failure-context.json').write_text(json.dumps({'historical_failed_run':36414508735,'observations':selected,'runtime_reexecuted':False,'cart_accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3915-CART-DIAGNOSIS-${{ github.sha }}
+          path: cart-diagnosis/
           if-no-files-found: error
           retention-days: 14
