@@ -121,10 +121,10 @@ def phase(name,folder,core,enabled,reverse=False):
         if enabled and name!='restart':
             need(not result['ocean_proof']['target_missing'],'missing ocean proof for fresh screenshot target')
             need(result['ocean_proof']['snapshot_conflicts']==0,'ocean snapshot conflict')
+        result['ice_report_files']=len(list(ice.glob('*.json')))
         if name=='restart':
             need(result['ocean_proof']['records']==0 and result['ice_report_files']==0,
                  'restart unexpectedly re-ran generation-only water/ice repair')
-        result['ice_report_files']=len(list(ice.glob('*.json')))
         result['pass']=True
     except Exception as e:result['error']=repr(e)
     finally:
