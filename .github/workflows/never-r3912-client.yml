@@ -40,75 +40,7 @@ jobs:
       - name: Test byte-identical predicate on real loaded enchantment registry
         run: python3 qa/field-r3912/run_registry.py
       - name: Package client addon without any server or world files
-        run: |
-          python3 - <<'PY'
-          import hashlib,json,os,shutil
-          from pathlib import Path
-          src=Path('client-output');dest=Path('client-delivery');dest.mkdir()
-          build=json.loads((src/'build.json').read_text());runtime=json.loads((src/'registry-runtime.json').read_text())
-          assert build['compile_pass'] and runtime['pass'] and runtime['exit_code']==0
-          assert build['server_unchanged'] and build['datapack_unchanged']
-          for name in build['output_sha256']:
-              assert hashlib.sha256((src/name).read_bytes()).hexdigest()==build['output_sha256'][name]
-              shutil.copyfile(src/name,dest/name)
-          text='''# NeverLand R39.12 — отображение зачарований (клиентское дополнение)
-
-          Это НЕ новое серверное ядро. Оставьте свой комплект NeverFolia R39.11 и его мир без изменений.
-          Ничего из этого архива не помещать в server/plugins или world/datapacks.
-
-          ## Без модов — русские названия
-
-          Поместите NeverLand-Enchantments-RU-26.2-R39.12.zip в папку resourcepacks используемого клиента Minecraft 26.2.
-          Не распаковывайте этот внутренний ZIP. Включите пакет в Настройки → Наборы ресурсов, выше других пакетов,
-          которые задают названия Dungeons & Taverns. Выберите русский язык. Swift Soar отображается как
-          «Стремительный полёт», Wither Coated — «Иссушающее покрытие». Названия остальных игровых зачарований
-          также переведены. Bug Enchant заменяется на «Служебное зачарование»; в английской локали — на пояснение
-          Internal controller (not a survival enchantment).
-
-          Сам ресурс-пак НЕ скрывает книги из творческого инвентаря. Он меняет только текст.
-
-          ## Fabric — дополнительно скрыть служебные книги
-
-          Клиент Minecraft должен быть именно 26.2, с Fabric Loader 0.19.3 или новее и Java 25.
-          Поместите NeverLand-Enchantment-UI-Fabric-26.2-R39.12.jar в папку mods КЛИЕНТА.
-          Не устанавливайте одновременно прежний neverland_enchantment_ui: оставьте одну версию модуля.
-          Отдельный Fabric API этот мод не использует. Перезапустите игру.
-          Мод содержит те же переводы: отдельный ресурс-пак необязателен, но удобен для выбора приоритета перевода.
-
-          Фильтр применяется к генерации книг в творческих категориях и в поиске: исключаются только технические
-          контроллеры Nova, а игровые кастомные и обычные ванильные зачарования остаются.
-          Книги, уже лежащие в инвентаре, не удаляются. Регистрации, эффекты, функции, экипировка и лут не меняются.
-          Без Fabric используйте только ресурс-пак — служебные книги будут подписаны, но останутся видимыми.
-
-          ## Что реально проверено
-
-          Скомпилированы собственные классы на Java 25. У официального клиента 26.2 сверены SHA-1, версия и
-          оба адресуемых метода CreativeModeTabs: в каждом ровно один подходящий вызов HolderLookup.listElements.
-          В отдельном настоящем сервере с исходным NeverOverworld проверен тот же скомпилированный предикат:
-          все служебные записи остаются зарегистрированы, но фильтр их исключает; игровые записи остаются видимы.
-          Это тест реестра/предиката, НЕ запуск графического клиента или реальное применение Mixin.
-          Полный клиентский запуск и совместимость с другими модами требуют ручной проверки.
-
-          ## Проверка вручную и откат
-
-          Откройте вкладку ингредиентов и поиск зачарованных книг. С Fabric служебные Bug Enchant-книги должны
-          исчезнуть из списков; игровые Swift Soar и Wither Coated должны остаться с русскими названиями.
-          Если клиент не запускается, уберите только этот клиентский JAR и сохраните logs/latest.log клиента.
-          Для отката названий выключите ресурс-пак (и мод, если используется). Сервер и мир откатывать не нужно.
-
-          ## Не входит в это изменение
-
-          Нет новых изменений воды, льда, структуры данжей, поведения мобов или недостающих шаблонов.
-          Локальный исполнитель чата не работал; эта сборка выполнена в GitHub Actions без доступа к ПК пользователя.
-          Сборка клиентского дополнения не объявляется исправлением всех багов NeverFolia.
-          '''
-          (dest/'README-RU.md').write_text('\n'.join(line[10:] if line.startswith('          ') else line for line in text.splitlines())+'\n',encoding='utf-8')
-          report={'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'build':build,'registry_test':runtime,
-                  'scope':'Client-only addon; no server binary is included or overwritten. Graphic client/Mixin execution not tested.'}
-          (dest/'REPORT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          (dest/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in sorted(dest.iterdir()) if p.is_file()))
-          print('R3912_DELIVERY',json.dumps({'files':sorted(p.name for p in dest.iterdir()),'checks':len(runtime['fixture']['checks']), 'hidden':runtime['fixture']['hidden_technical'],'server_replaced':False}))
-          PY
+        run: python3 qa/field-r3912/package_client.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: NeverLand-R39.12-Enchantment-Client-TEST-${{ github.sha }}
@@ -118,11 +50,20 @@ jobs:
       - name: Retain own source and diagnostic reports even after failures
         if: always()
         run: |
-          mkdir -p client-evidence/source
-          cp qa/field-r3912/* client-evidence/source/
-          cp client/neverland-enchantment-ui/src/cc/neverland/client/*.java client-evidence/source/
-          cp .github/workflows/never-r3912-client.yml client-evidence/source/
-          find client-output -maxdepth 1 -type f \( -name '*.json' -o -name '*compile.log' -o -name 'registry-server.log' -o -name 'javac-version.log' \) -exec cp '{}' client-evidence/ \; 2>/dev/null || test ! -d client-output
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          out=Path('client-evidence');(out/'source').mkdir(parents=True,exist_ok=True)
+          for folder in (Path('qa/field-r3912'),Path('client/neverland-enchantment-ui/src/cc/neverland/client')):
+              for p in folder.iterdir():
+                  if p.is_file():shutil.copyfile(p,out/'source'/p.name)
+          shutil.copyfile('.github/workflows/never-r3912-client.yml',out/'source/never-r3912-client.yml')
+          src=Path('client-output')
+          if src.exists():
+              for p in src.iterdir():
+                  if p.is_file() and (p.suffix=='.json' or p.name.endswith('compile.log') or p.name in ('registry-server.log','javac-version.log')):
+                      shutil.copyfile(p,out/p.name)
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
