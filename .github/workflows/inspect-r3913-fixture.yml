@@ -1,0 +1,33 @@
+name: Inspect retained R3913 fixture failure
+on:
+  push:
+    branches: ['fix/neveroverworld-r3913-submerged-ice']
+    paths: ['.github/workflows/inspect-r3913-fixture.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10961458082'
+          run-id: 36404343108
+          github-token: ${{ github.token }}
+          path: evidence
+          merge-multiple: true
+      - name: Read exact retained failed fixture log
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          logs=list(Path('evidence').rglob('r3913-phases/fixtures/server.log'))
+          if len(logs)!=1:raise ValueError('Missing exact retained fixture log')
+          print('RETAINED_FAILURE_LOG '+str(logs[0]))
+          lines=logs[0].read_text().splitlines()
+          for i,line in enumerate(lines):
+              if any(x in line for x in ('UnsupportedOperationException','AssertionError','Exception:','R3913 QA FAIL')):
+                  print('\n'.join(lines[max(0,i-3):i+22]))
+          print('FINAL_LOG_TAIL\n'+'\n'.join(lines[-35:]))
+          PY
