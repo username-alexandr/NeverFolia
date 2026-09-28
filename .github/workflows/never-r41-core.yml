@@ -1,0 +1,70 @@
+name: R41 consolidated kernel regression
+on:
+  push:
+    branches: ['fix/neveroverworld-r41-consolidated']
+    paths: ['qa/field-r41/prepare_core.py', '.github/workflows/never-r41-core.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Repair immutable-map misuse only in disposable fixture
+        run: python3 qa/field-r41/prepare_core.py
+      - name: Build wide-ocean parent with inherited hotfixes
+        run: python3 qa/manual-r3911/build.py
+      - name: Compile ice cleanup and current fixture on actual Java 25
+        run: python3 qa/field-r3913/build.py
+      - name: Fixtures and matched natural-generation comparisons
+        run: python3 qa/field-r3913/runtime.py
+      - name: Preserve compiled integration candidate for final packaging
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R41-CORE-INTEGRATION-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Keep evidence including failed checks
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os,shutil,json
+          from pathlib import Path
+          p=Path('artifacts/r41-source');p.mkdir(parents=True,exist_ok=True)
+          for folder in ('qa/field-r3913','qa/field-r41','native/overworld-r3913','native/overworld-r399'):
+              for f in Path(folder).glob('*'):
+                  if f.is_file():
+                      target=p/folder/f.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(f,target)
+          (p/'provenance.json').write_text(json.dumps({'sha':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'consolidated_ready':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R41-CORE-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
