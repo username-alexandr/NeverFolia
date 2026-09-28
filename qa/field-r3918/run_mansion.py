@@ -58,7 +58,10 @@ def phase(name,core,folder):
         checks=observed.get('checks',[]);s.need(len(checks)==len(expected) and {x['name'] for x in checks}==expected and all(x.get('pass') is True for x in checks),'Missing/failed registry checks')
         proc.stdin.write('stop\n');proc.stdin.flush();report['exit_code']=proc.wait(timeout=120);reader.join(timeout=15)
         s.need(report['exit_code']==0 and not reader.is_alive(),'Unclean shutdown')
-        bad=('Failed to load datapacks','Overworld settings missing','Unable to read or access the world gen settings','Empty or non-existent pool:','Block-attached entity at invalid position','porting_lib:','Exception loading structure')
+        bad=('Failed to load datapacks','Overworld settings missing','Unable to read or access the world gen settings',
+             'Failed to load function','Failed to parse','Unknown registry key','Serialization errors','Failed to decode value',
+             'Empty or non-existent pool:','Block-attached entity at invalid position','porting_lib:','Exception loading structure',
+             'NoSuchMethodError','NoClassDefFoundError')
         report['targeted_errors']=[x.strip() for x in lines if any(t in x for t in bad)]
         s.need(not report['targeted_errors'],'Targeted server errors');report['pass']=True
     except Exception as e:report['error']=repr(e)
