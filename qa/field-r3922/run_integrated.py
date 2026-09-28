@@ -10,7 +10,10 @@ OW_SHA='9daf27e23300d6687e8cc93cf82c7e6db91f69e4fe605382c6947521f0855590'
 NN_SHA='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 SEED=-4651369264513492755
 CENTERS=((7,1),(1,-4),(-197,-217),(-169,-250),(-189,-223),(-1699,-769))
-TARGETS=frozenset((cx+dx,cz+dz) for cx,cz in CENTERS for dx in (-1,0,1) for dz in (-1,0,1))
+SCREENSHOT_CHUNKS=((8,1),(6,2),(6,1),(1,0),(3,2),(4,-3),(1,-2),(1,-5),(1,-4),(0,-5),(-3,-3),(-2,5),(6,-1),
+    (-191,-216),(-181,-227),(-183,-229),(-183,-233),(-185,-236),(-1698,-771),(-1701,-766),(-1698,-769),
+    (-196,-216),(-197,-217),(-198,-217),(-199,-219),(-170,-252),(-168,-249),(-161,-239),(-189,-223),(-169,-253))
+TARGETS=frozenset((cx+dx,cz+dz) for cx,cz in CENTERS for dx in (-1,0,1) for dz in (-1,0,1)) | frozenset(SCREENSHOT_CHUNKS)
 AIR={'minecraft:air','minecraft:cave_air','minecraft:void_air'}
 ICE={'minecraft:ice','minecraft:packed_ice','minecraft:blue_ice'}
 WATER={'Name':'minecraft:water','Properties':{'level':'0'}}
@@ -102,7 +105,7 @@ def phase(name,folder,core,enabled,reverse=False):
             if 'R395 NATURAL QA FAIL' in line:raise ValueError('field plugin failed')
             if 'R395 NATURAL QA PASS' in line:done=True;break
         need(done and resultfile.is_file(),'field generation did not finish')
-        doc=json.loads(resultfile.read_text());need(doc.get('pass') is True and doc.get('seed')==SEED and doc.get('completed_chunks')==54,'bad field result')
+        doc=json.loads(resultfile.read_text());need(doc.get('pass') is True and doc.get('seed')==SEED and doc.get('completed_chunks')==len(TARGETS),'bad field result')
         got={(x['chunk_x'],x['chunk_z']) for x in doc['chunks']};need(got==TARGETS,'target coverage drift')
         p.stdin.write('stop\n');p.stdin.flush();code=p.wait(timeout=180);t.join(timeout=20)
         need(code==0 and not t.is_alive(),'unclean server stop')
