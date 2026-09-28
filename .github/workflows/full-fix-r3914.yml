@@ -1,0 +1,43 @@
+name: R3914 integrated fix work
+on:
+  push:
+    branches: ['fix/neveroverworld-r3914-full-fix-work']
+    paths: ['qa/full-fix-r3914/**', '.github/workflows/full-fix-r3914.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3914-full-fix-work
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10962397012'
+          run-id: 36405033661
+          github-token: ${{ github.token }}
+          path: prior-ice
+          merge-multiple: true
+      - name: Resolve possible missing templates against exact official 26.2 resources
+        run: python3 qa/full-fix-r3914/inventory.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3914-work-evidence-${{ github.sha }}
+          path: full-fix-evidence/
+          if-no-files-found: error
+          retention-days: 14
