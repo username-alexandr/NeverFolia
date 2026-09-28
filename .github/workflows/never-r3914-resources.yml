@@ -10,7 +10,7 @@ permissions:
 jobs:
   resources:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -30,11 +30,16 @@ jobs:
         run: |
           set -o pipefail
           python3 qa/field-r3914/inspect_resources.py 2>&1 | tee inventory-command.log
+      - name: Stage proved biome reconstruction and inspect remaining geometry
+        run: |
+          set -o pipefail
+          python3 qa/field-r3914/prepare_repairs.py 2>&1 | tee repair-command.log
       - name: Retain audit even when it identifies missing content
         if: always()
         run: |
           mkdir -p resource-evidence/source
           cp inventory-command.log resource-evidence/ 2>/dev/null || true
+          cp repair-command.log resource-evidence/ 2>/dev/null || true
           cp qa/field-r3914/*.py resource-evidence/source/
           cp .github/workflows/never-r3914-resources.yml resource-evidence/source/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
