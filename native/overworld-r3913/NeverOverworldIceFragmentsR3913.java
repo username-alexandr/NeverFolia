@@ -64,7 +64,7 @@ public final class NeverOverworldIceFragmentsR3913 {
         for(var entry:owner.getAllReferences().entrySet()) {
             if(entry.getValue()==null||entry.getValue().isEmpty())continue;
             for(long packed:entry.getValue()) {
-                ChunkPos at=new ChunkPos(packed);ChunkAccess source=null;
+                ChunkPos at=new ChunkPos((int)packed,(int)(packed >>> 32));ChunkAccess source=null;
                 if(at.equals(owner.getPos()))source=owner;
                 else if(cache!=null&&cache.contains(at.x(),at.z())) {
                     GenerationChunkHolder holder=cache.get(at.x(),at.z());
