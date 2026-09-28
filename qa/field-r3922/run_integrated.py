@@ -185,15 +185,17 @@ def main():
     folders={};phases={}
     folders['off']=setup('off',plugin,ow,nn);phases['off']=phase('off',folders['off'],core,False)
     folders['candidate']=setup('candidate',plugin,ow,nn);phases['candidate']=phase('candidate',folders['candidate'],core,True)
+    folders['candidate_first']=WORK/'candidate-first'
+    shutil.copytree(folders['candidate']/'world',folders['candidate_first']/'world')
     phases['restart']=phase('restart',folders['candidate'],core,True)
     folders['reverse']=setup('reverse',plugin,ow,nn);phases['reverse']=phase('reverse',folders['reverse'],core,True,True)
     comparisons={
-      'off_vs_candidate':compare('off',folders['off'],phases['off']['observed']['chunks'],'candidate',folders['candidate'],phases['candidate']['observed']['chunks'],True),
-      'candidate_vs_restart':compare('candidate',folders['candidate'],phases['candidate']['observed']['chunks'],'restart',folders['candidate'],phases['restart']['observed']['chunks'],False),
-      'candidate_vs_reverse':compare('candidate',folders['candidate'],phases['candidate']['observed']['chunks'],'reverse',folders['reverse'],phases['reverse']['observed']['chunks'],False),
+      'off_vs_candidate':compare('off',folders['off'],phases['off']['observed']['chunks'],'candidate',folders['candidate_first'],phases['candidate']['observed']['chunks'],True),
+      'candidate_vs_restart':compare('candidate',folders['candidate_first'],phases['candidate']['observed']['chunks'],'restart',folders['candidate'],phases['restart']['observed']['chunks'],False),
+      'candidate_vs_reverse':compare('candidate',folders['candidate_first'],phases['candidate']['observed']['chunks'],'reverse',folders['reverse'],phases['reverse']['observed']['chunks'],False),
     }
-    # candidate/restart read the same stopped world, so compare is necessarily persisted-state stable;
-    # the plugin water hashes separately prove the restart observation saw the same state.
+    # Candidate MCA files are copied before restart; persisted comparison is independent
+    # of the later restart save, while live water hashes check the observations too.
     candidate_hash={f"{x['chunk_x']},{x['chunk_z']}":x['water_sha256'] for x in phases['candidate']['observed']['chunks']}
     restart_hash={f"{x['chunk_x']},{x['chunk_z']}":x['water_sha256'] for x in phases['restart']['observed']['chunks']}
     reverse_hash={f"{x['chunk_x']},{x['chunk_z']}":x['water_sha256'] for x in phases['reverse']['observed']['chunks']}
