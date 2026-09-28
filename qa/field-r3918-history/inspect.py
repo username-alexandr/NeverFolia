@@ -134,7 +134,9 @@ def main():
         for info in vanilla.infolist():
             if info.filename.endswith('.json') and info.file_size<=2000000:
                 payload=vanilla.read(info)
-                if needle in payload:vanilla_trace['references'].append(info.filename)
+                if needle in payload:
+                    vanilla_trace['references'].append(info.filename)
+                    vanilla_trace.setdefault('reference_payloads',{})[info.filename]=json.loads(payload)
     report['ancient_city_vanilla_trace']=vanilla_trace
     (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
     print('ANCIENT_CITY_VANILLA_TRACE',json.dumps(vanilla_trace,sort_keys=True),flush=True)
