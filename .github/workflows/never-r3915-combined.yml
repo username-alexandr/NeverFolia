@@ -1,0 +1,82 @@
+name: R3915 combined content and NPC repair
+on:
+  push:
+    branches: ['fix/neveroverworld-r3915-functional-content']
+    paths: ['qa/field-r3915/combine_content.py', 'qa/field-r3915/run_combined.py', 'qa/field-r3915/R3915CartQa.java', '.github/workflows/never-r3915-combined.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3915-combined-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10967789179'
+          run-id: '36417504719'
+          github-token: ${{ github.token }}
+          path: cart-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968153799'
+          run-id: '36419010757'
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: '36308250793'
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compose checked deltas and repair only proven NPC connector names
+        run: python3 qa/field-r3915/combine_content.py
+      - name: Compile runtime harness against exact engine libraries
+        run: python3 qa/field-r3915/prepare_runtime.py
+      - name: Run strict combined behavior checks when committed
+        run: |
+          if [ -f qa/field-r3915/run_combined.py ]; then
+            python3 qa/field-r3915/run_combined.py
+          else
+            echo 'Combined runtime harness not present yet. Build-only; no user kit or acceptance.'
+          fi
+      - name: Preserve executed source and all errors
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,shutil
+          out=Path('artifacts');(out/'source').mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3915').iterdir():
+              if p.is_file():shutil.copyfile(p,out/'source'/p.name)
+          shutil.copyfile('.github/workflows/never-r3915-combined.yml',out/'source/combined-workflow.yml')
+          (out/'combined-provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'user_world_changed':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3915-COMBINED-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
