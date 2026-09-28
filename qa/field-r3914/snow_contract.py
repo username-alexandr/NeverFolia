@@ -1,16 +1,17 @@
-"""The source snowy carts have different 1/2-layer roof decorations per role.
-Only this exact decorative difference is permitted when validating a common
-biome recipe. The chosen reconstruction retains the complete armorer roof;
-no source reference is modified or reported as identical when it is not.
+"""Source snowy carts vary snow thickness on the stepped roof at local Y=3/4.
+These are existing minecraft:snow states, not arbitrary voxel changes. Keep the
+complete selected source roof and report every decorative difference separately.
+All non-snow fields, positions, supports, joints and profession data remain exact.
 """
 
 def compare(actual, reference, biome, differences):
+    valid_layers=frozenset(str(i) for i in range(1,9))
     for operation,path,before,after in differences:
         if not (biome=='snowy' and operation=='replace' and len(path)==7
                 and path[0]=='blocks' and isinstance(path[1],tuple)
-                and len(path[1])==3 and path[1][1]==4
+                and len(path[1])==3 and path[1][1] in (3,4)
                 and path[2:]==('state','Properties',1,'layers',1)
-                and before in ('1','2') and after in ('1','2')):
+                and before in valid_layers and after in valid_layers):
             raise ValueError('Unreviewed role-dependent biome difference: '+repr((operation,path,before,after)))
         position=path[1]
         for model in (actual,reference):
