@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
+"""Read-only cross-check of actual missing resources against pinned author archives.
+Never chooses approximate geometry and never modifies a game archive.
+"""
 from pathlib import Path
-import hashlib,json,sys,subprocess,difflib
+from collections import Counter
+import json,sys,urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'qa/field-r3915'))
 import restore_swift as s
@@ -15,33 +19,31 @@ inner=[n for n in core if n.startswith('META-INF/versions/') and n.endswith('/fo
 engine=s.read_zip(core[inner[0]]);files={**engine,**pack}
 ps=list(Path('integrated-input').rglob('combined-resource-after.json'));s.need(len(ps)==1,'audit')
 prior=json.loads(ps[0].read_text());s.need(prior['inputs']['pack_sha256']==P,'wrong audit')
-allnbt=sorted(n for n in files if n.startswith('data/') and '/structure/' in n and n.endswith('.nbt'))
-reader=s.load('r3918_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
+ext=s.load('r3918_ext',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
+sources={};metadata={}
+for key in ('dat','towers'):
+    spec=ext.SOURCES[key]
+    s.need(spec['url'].startswith('https://cdn.modrinth.com/data/'),'Unexpected source URL')
+    with urllib.request.urlopen(spec['url'],timeout=60) as response:raw=response.read(60000000)
+    s.need(s.sha(raw)==spec['sha256'],'Wrong pinned author bytes '+key)
+    sources[key]=ext.flatten_zip(raw);metadata[key]={'sha256':s.sha(raw),'entries':len(sources[key])}
+    print('AUTHOR_INPUT',key,json.dumps(metadata[key]),flush=True)
+    print('AUTHOR_TEXT_TEMPLATES',key,json.dumps([n for n in sources[key] if '/structure/' in n and not n.endswith('.nbt')]),flush=True)
 report=[]
 for r in prior['missing']:
-    s.need(r['kind']=='template','unexpected missing family')
-    ns,local=r['id'].split(':',1);path='data/'+ns+'/structure/'+local+'.nbt';s.need(path not in files,'stale gap')
-    exactleaf=[n for n in allnbt if Path(n).name==Path(path).name]
-    close=difflib.get_close_matches(path,[n for n in allnbt if n.startswith('data/'+ns+'/')],n=3,cutoff=.55)
-    candidates=[]
-    for n in dict.fromkeys(exactleaf+close):
-        root=reader._nbt_parse(files[n])[2]
-        candidates.append({'path':n,'size':root['size'][1][1],'sha256':s.sha(files[n]),'exact_leaf':n in exactleaf})
-    item={'missing':r['id'],'origins':r['origins'],'roots':r['roots'],'candidates':candidates};report.append(item)
-    print('PATH_CANDIDATE',r['id'],json.dumps(candidates),flush=True)
-Path('artifacts/resource-paths.json').write_text(json.dumps(report,indent=2)+'\n')
-for n in sorted(files):
-    if '/pale_residence/' not in n or not n.endswith('.nbt'):continue
-    root=reader._nbt_parse(files[n])[2]
-    joints=[{'pos':b.get('pos'),'nbt':b.get('nbt',(10,{}))[1]} for b in root.get('blocks',(9,(10,[])))[1][1] if 'pool' in b.get('nbt',(10,{}))[1]]
-    inside=[b for b in joints if b['nbt'].get('pool')==(8,'nova_structures:pale_residence/decor_inside')]
-    if inside:print('PALE_INSIDE_CONNECTOR',n,json.dumps({'size':root.get('size'),'joints':inside}),flush=True)
-    if '/decor/' in n:print('PALE_DECOR',n,json.dumps({'size':root.get('size'),'joints':joints}),flush=True)
-libs=Path('.work/r3918-api');libs.mkdir(parents=True,exist_ok=False)
-for i,n in enumerate(core):
-    if n.endswith('.jar') and n.startswith(('META-INF/libraries/','META-INF/versions/')):(libs/(str(i)+'-'+Path(n).name)).write_bytes(core[n])
-cp=':'.join(str(p) for p in libs.glob('*.jar'))
-for cls in ('net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate','net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings','net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager'):
-    proc=subprocess.run(['javap','-p','-classpath',cp,cls],capture_output=True,text=True,timeout=30)
-    s.need(proc.returncode==0,'javap '+cls);print('RUNTIME_API',proc.stdout,flush=True)
-print('COMPACT_INSPECTION_PASS')
+    ns,local=r['id'].split(':',1);path='data/'+ns+'/structure/'+local+'.nbt'
+    row={'id':r['id'],'origins':r['origins'],'exact_source':[],'same_leaf':[],'other_formats':[]}
+    for key,source in sources.items():
+        if path in source:row['exact_source'].append({'source':key,'sha256':s.sha(source[path])})
+        row['same_leaf'] += [key+':'+n for n in source if Path(n).name==Path(path).name and n!=path]
+    row['other_formats']=[n for n in files if n.startswith(path[:-4]+'.') and n!=path]
+    report.append(row);print('AUTHOR_GAP',json.dumps(row),flush=True)
+for key,source in sources.items():
+    print('AUTHOR_WALL_NAMES',key,json.dumps([n for n in source if 'stray_fort_wall' in n and not n.endswith('.json')]),flush=True)
+    print('AUTHOR_BOOK_NAMES',key,json.dumps([n for n in source if 'pillager' in n and 'book' in n]),flush=True)
+print('PACK_TEXT_TEMPLATES',json.dumps([n for n in files if '/structure/' in n and n.endswith(('.snbt','.json'))]),flush=True)
+for n in sorted(pack):
+    if n.endswith('.json') and b'minecraft/empty' in pack[n]:print('EMPTY_SENTINEL_REFERENCE',n,pack[n].decode(),flush=True)
+print('MINECRAFT_EMPTY_MODEL',json.dumps(ext._nbt_parse(files['data/minecraft/structure/empty.nbt'])[2]),flush=True)
+Path('artifacts/author-gap-check.json').write_text(json.dumps({'inputs':metadata,'gaps':report,'game_files_modified':False,'complete_fix':False},indent=2)+'\n')
+print('AUTHOR_GAP_INSPECTION_COMPLETE')
