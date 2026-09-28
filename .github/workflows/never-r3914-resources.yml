@@ -1,7 +1,7 @@
 name: R3914 resource recovery
 on:
   push:
-    branches: ['fix/neveroverworld-r3914-resource-recovery']
+    branches: ['fix/neveroverworld-r3914-resource-recovery', 'fix/neveroverworld-r3915-functional-content']
     paths: ['qa/field-r3914/**', '.github/workflows/never-r3914-resources.yml']
   workflow_dispatch:
 permissions:
