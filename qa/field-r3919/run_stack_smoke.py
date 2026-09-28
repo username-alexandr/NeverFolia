@@ -28,7 +28,7 @@ BAD = ('Failed to load datapacks', 'Failed to load registries', 'Failed to load 
 def main():
     report = {'pass': False, 'runtime_order_verified': False, 'production_accepted': False,
               'all_reported_bugs_fixed': False, 'worldgen_acceptance': False,
-              'scope': 'One isolated fresh-world startup, clean save and persisted enabled-pack order only'}
+              'scope': 'One isolated fresh-world startup, clean save and persisted enabled-pack order. The automatic Paper datapack is witnessed separately from the static two-file stack audit.'}
     proc = None
     reader = None
     lines = []
@@ -36,7 +36,11 @@ def main():
     try:
         manifest = s.decode_json((OUT / 'stack-after-manifest.json').read_bytes())
         expected = ['vanilla'] + [p['id'] for p in manifest['packs']]
+        automatic = ['paper']
+        expected_runtime = expected + automatic
         report['expected_order'] = expected
+        report['runtime_automatic_packs'] = automatic
+        report['expected_runtime_order'] = expected_runtime
         s.need(expected == ['vanilla', 'file/NeverOverworld.zip', 'file/NeverNether.zip'], 'Unexpected QA input order')
         kernel = Path(manifest['server']['path'])
         s.pinned_bytes(manifest['server'], 'server')
@@ -107,8 +111,11 @@ def main():
         shutil.copyfile(level, OUT / 'stack-smoke-level.dat')
         report['targeted_errors'] = [line.strip() for line in lines if any(b in line for b in BAD)]
         report['datapack_console_lines'] = [line.strip() for line in lines if 'data pack' in line.lower() or 'datapack' in line.lower()]
-        s.need(observed == expected, 'Runtime enabled stack differs from audited manifest; no packs silently ignored')
+        s.need(observed == expected_runtime, 'Runtime enabled stack differs from audited packs plus the reviewed automatic Paper pack')
+        s.need(any('Found new data pack paper, loading it automatically' in line for line in report['datapack_console_lines']),
+               'Automatic Paper datapack was not explicitly witnessed in the server log')
         report['runtime_order_verified'] = True
+        report['static_audit_excludes_runtime_automatic_packs'] = True
         for record in manifest['packs']:
             s.need(s.digest((packs / record['id'].removeprefix('file/')).read_bytes()) == record['sha256'], 'Runtime datapack changed')
         for record in [manifest['server'], *manifest['packs']]:

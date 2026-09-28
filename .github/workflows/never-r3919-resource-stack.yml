@@ -79,12 +79,15 @@ jobs:
           smoke=json.loads((out/'stack-smoke.json').read_text())
           assert delta['pass'] is True and delta['isolated_delta_preserved'] is True
           assert smoke['pass'] is True and smoke['runtime_order_verified'] is True
-          assert smoke['observed_saved_order']==delta['order_low_to_high']
+          assert smoke['runtime_automatic_packs']==['paper']
+          assert smoke['observed_saved_order']==delta['order_low_to_high']+smoke['runtime_automatic_packs']
+          assert smoke['static_audit_excludes_runtime_automatic_packs'] is True
           assert smoke['input_hashes']['server']==delta['server_sha256']
           assert smoke['input_hashes']['packs']['file/NeverOverworld.zip']==delta['overworld_sha256']
           assert smoke['input_hashes']['packs']['file/NeverNether.zip']==delta['nether_sha256']
-          result={'pass':True,'scope':'resource precedence regression and one clean startup',
-                  'runtime_order_verified':True,'full_resource_acceptance':delta['full_resource_acceptance'],
+          result={'pass':True,'scope':'resource precedence regression and one clean startup; automatic Paper datapack observed separately',
+                  'runtime_order_verified':True,'runtime_automatic_packs':smoke['runtime_automatic_packs'],
+                  'full_resource_acceptance':delta['full_resource_acceptance'],
                   'production_accepted':False,'all_reported_bugs_fixed':False,'user_kit_published':False}
           (out/'stack-acceptance.json').write_text(json.dumps(result,indent=2)+'\n')
           print('STACK_SCOPED_ACCEPTANCE',json.dumps(result))
