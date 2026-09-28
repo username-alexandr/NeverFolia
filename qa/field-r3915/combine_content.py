@@ -10,7 +10,9 @@ ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts'
 BASE=s.BASE
 CART='9e0026a8c82c4242b438e06ce016d785aef1bf624d4dad13dea665d9dba20329'
 SWIFT='1e935c1012aa0648b14aa3ab7bf84fd3e0bc43ead8e95ad9060316c428dc1046'
-CORE='9790997413d631a76ca08d9f52ed1373c5a258f62f3b5d11dc7e30b70b35928'
+# Completed lifecycle run 36419010757 / artifact 10968482107.
+# The prior constant referenced a different, untested intermediate build.
+CORE='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
 PREFIX='data/nova_structures/structure/tavern/tavern_event_trader_car_'
 BIOMES=('acacia','birch','cherry','desert','jungle','mangrove','oak','pale','snowy','spruce','swamp')
 ALIASES={'nova_structures:tavern_villager_'+b for b in ('mangrove','pale','swamp')}
