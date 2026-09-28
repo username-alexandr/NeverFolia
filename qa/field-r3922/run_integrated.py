@@ -13,7 +13,9 @@ CENTERS=((7,1),(1,-4),(-197,-217),(-169,-250),(-189,-223),(-1699,-769))
 SCREENSHOT_CHUNKS=((8,1),(6,2),(6,1),(1,0),(3,2),(4,-3),(1,-2),(1,-5),(1,-4),(0,-5),(-3,-3),(-2,5),(6,-1),
     (-191,-216),(-181,-227),(-183,-229),(-183,-233),(-185,-236),(-1698,-771),(-1701,-766),(-1698,-769),
     (-196,-216),(-197,-217),(-198,-217),(-199,-219),(-170,-252),(-168,-249),(-161,-239),(-189,-223),(-169,-253))
-TARGETS=frozenset((cx+dx,cz+dz) for cx,cz in CENTERS for dx in (-1,0,1) for dz in (-1,0,1)) | frozenset(SCREENSHOT_CHUNKS)
+PROOF_TARGETS=frozenset((cx+dx,cz+dz) for cx,cz in CENTERS for dx in (-1,0,1) for dz in (-1,0,1))
+TARGETS=PROOF_TARGETS | frozenset(SCREENSHOT_CHUNKS)
+TRACKED_ICE={( -3022,62,-3564),(-2701,63,-4040)}
 AIR={'minecraft:air','minecraft:cave_air','minecraft:void_air'}
 ICE={'minecraft:ice','minecraft:packed_ice','minecraft:blue_ice'}
 WATER={'Name':'minecraft:water','Properties':{'level':'0'}}
@@ -116,7 +118,7 @@ def phase(name,folder,core,enabled,reverse=False):
         need(not result['targeted_errors'],'targeted console regression')
         result['observed']=doc
         reports=[json.loads(x.read_text()) for x in proof.glob('*.json')]
-        wanted=TARGETS;seen={(x['chunk_x'],x['chunk_z']) for x in reports}
+        wanted=PROOF_TARGETS;seen={(x['chunk_x'],x['chunk_z']) for x in reports}
         result['ocean_proof']={'records':len(reports),'target_missing':sorted(wanted-seen),
            'air_to_water':sum(x.get('added_air_to_water',0) for x in reports if (x['chunk_x'],x['chunk_z']) in wanted),
            'protected_air':sum(x.get('protected_owner_air',0) for x in reports if (x['chunk_x'],x['chunk_z']) in wanted),
@@ -182,6 +184,30 @@ def compare(left_name,left_folder,left_rows,right_name,right_folder,right_rows,a
 def isolated(doc,key):
     return sum(x[key] for x in doc['chunks'])
 
+def tracked(doc):
+    out={}
+    for chunk in doc['chunks']:
+        for p in chunk.get('tracked_points',[]):
+            out[(p['x'],p['y'],p['z'])]=p['block']
+    return out
+
+def tracked_acceptance(off,candidate):
+    a,b=tracked(off),tracked(candidate)
+    need(set(a)==set(b) and len(a)==24,'tracked screenshot point coverage drift')
+    rows=[];unfixed=[]
+    for pos in sorted(a):
+        before,after=a[pos],b[pos]
+        is_ice=pos in TRACKED_ICE
+        observed=(before in ICE) if is_ice else (before in AIR)
+        fixed=(after not in ICE) if is_ice else (after not in AIR)
+        row={'pos':pos,'kind':'ice' if is_ice else 'air','before':before,'after':after,
+             'baseline_defect_observed':observed,'candidate_fixed_if_observed':(not observed) or fixed}
+        rows.append(row)
+        if observed and not fixed:unfixed.append(row)
+    need(not unfixed,'exact screenshot defect coordinate remains: '+repr(unfixed[:8]))
+    return {'pass':True,'points':rows,'baseline_defects_observed':sum(x['baseline_defect_observed'] for x in rows),
+            'unfixed':unfixed}
+
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
     core=exact(ROOT/'swift-input','server-r3915.jar',CORE_SHA)
@@ -212,7 +238,8 @@ def main():
       'isolated_air':{k:isolated(v['observed'],'single_air_with_six_aquatic_neighbours') for k,v in phases.items()},
       'isolated_ice':{k:isolated(v['observed'],'single_ice_with_six_aquatic_neighbours') for k,v in phases.items()},
       'air_to_water':phases['candidate']['ocean_proof']['air_to_water'],
-      'ice_report_files':phases['candidate']['ice_report_files']}
+      'ice_report_files':phases['candidate']['ice_report_files'],
+      'tracked_points':tracked_acceptance(phases['off']['observed'],phases['candidate']['observed'])}
     need(comparisons['off_vs_candidate']['pass'] and comparisons['off_vs_candidate']['changed']>0,'candidate made unsafe/no worldgen changes')
     need(comparisons['candidate_vs_restart']['pass'] and comparisons['candidate_vs_restart']['changed']==0,'restart mutated saved target state')
     need(comparisons['candidate_vs_reverse']['pass'] and comparisons['candidate_vs_reverse']['changed']==0,'target load order changes final blocks')
