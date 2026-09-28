@@ -1,4 +1,4 @@
-name: Inspect retained R3913 fixture failure
+name: Inspect R3913 residual ice
 on:
   push:
     branches: ['fix/neveroverworld-r3913-submerged-ice']
@@ -9,25 +9,61 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '10961458082'
-          run-id: 36404343108
+          artifact-ids: '10962397012'
+          run-id: 36405033661
           github-token: ${{ github.token }}
           path: evidence
           merge-multiple: true
-      - name: Read exact retained failed fixture log
+      - name: Explain retained components without changing a saved block
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          logs=list(Path('evidence').rglob('r3913-phases/fixtures/server.log'))
-          if len(logs)!=1:raise ValueError('Missing exact retained fixture log')
-          print('RETAINED_FAILURE_LOG '+str(logs[0]))
-          lines=logs[0].read_text().splitlines()
-          for i,line in enumerate(lines):
-              if any(x in line for x in ('UnsupportedOperationException','AssertionError','Exception:','R3913 QA FAIL')):
-                  print('\n'.join(lines[max(0,i-3):i+22]))
-          print('FINAL_LOG_TAIL\n'+'\n'.join(lines[-35:]))
+          import importlib.util,json,collections
+          spec=importlib.util.spec_from_file_location('iceqa','qa/field-r3913/runtime.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          base=Path('evidence/r3913-phases/candidate');traces={}
+          for p in (base/'ice-traces').glob('*.json'):
+              r=json.loads(p.read_text());traces.setdefault((r['chunk_x'],r['chunk_z']),[]).append(r)
+          def block(s):return s.split('}',1)[0].removeprefix('Block{')
+          ice={'minecraft:ice','minecraft:packed_ice','minecraft:blue_ice'}
+          water={'minecraft:water','minecraft:bubble_column','minecraft:kelp','minecraft:kelp_plant','minecraft:seagrass','minecraft:tall_seagrass'}
+          result=[]
+          for cx,cz in m.TARGETS:
+              states=m.blocks(base/'observed'/f'{cx}_{cz}.blocks.gz',(cx,cz))
+              ids={i for i,s in enumerate(states) if block(s) in ice and -511<=-512+(i>>8)<=128}
+              if not ids:continue
+              row={'chunk':[cx,cz],'traces':traces.get((cx,cz),[]),'components':[]};seen=set()
+              for first in sorted(ids):
+                  if first in seen:continue
+                  q=[first];seen.add(first);reasons=collections.Counter();magma=0;points=[]
+                  for i in q:
+                      x=i&15;z=(i>>4)&15;y=-512+(i>>8);points.append([cx*16+x,y,cz*16+z])
+                      if y>=112:reasons['surface_buffer']+=1
+                      for face,(dx,dy,dz) in enumerate(((-1,0,0),(1,0,0),(0,0,-1),(0,0,1),(0,-1,0),(0,1,0))):
+                          nx=x+dx;ny=y+dy;nz=z+dz
+                          if not(0<=nx<16 and 0<=nz<16 and -511<=ny<=128):reasons['unknown_boundary']+=1;continue
+                          n=((ny+512)<<8)|(nz<<4)|nx;b=block(states[n])
+                          if n in ids:
+                              if n not in seen:seen.add(n);q.append(n)
+                          elif b in water:pass
+                          elif face==5 and b=='minecraft:magma_block':magma+=1
+                          else:reasons[b]+=1
+                  if len(q)>64:reasons['component_over_64']+=1
+                  component={'size':len(q),'blocked_faces':dict(reasons),'magma_top_faces':magma,'points':points[:100]}
+                  row['components'].append(component)
+              result.append(row);print('ICE_RETAINED '+json.dumps(row))
+          Path('residual-ice.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('RESIDUAL_ANALYSIS_ONLY: no server/pack/world mutation; not an acceptance test')
           PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3913-residual-component-analysis-${{ github.sha }}
+          path: residual-ice.json
+          retention-days: 14
+          if-no-files-found: error
