@@ -118,7 +118,26 @@ def main():
                     if ancient.encode() in payload:refs.append(info.filename)
         source_trace.append({'source':key,'references':sorted(refs),'templates':sorted(templates)})
     report['ancient_city_trace']=source_trace
+    core_paths=list((ROOT/'core-input').rglob('server-r3915.jar'))
+    s.need(len(core_paths)==1,'Pinned core input missing for vanilla trace')
+    core=core_paths[0]
+    s.need(s.sha(core.read_bytes())=='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40','Pinned core changed')
+    vanilla_trace={'outer_sha256':s.sha(core.read_bytes()),'references':[],'templates':[]}
+    with zipfile.ZipFile(core) as outer:
+        nested=[n for n in outer.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
+        s.need(len(nested)==1,'Pinned nested Folia jar missing')
+        nested_raw=outer.read(nested[0]);vanilla_trace['nested_sha256']=s.sha(nested_raw)
+    with zipfile.ZipFile(io.BytesIO(nested_raw)) as vanilla:
+        target='data/minecraft/structure/ancient_city/walls/intact_horizontal_wall_stairs_5.nbt'
+        if target in vanilla.namelist():vanilla_trace['templates'].append(target)
+        needle=ancient.encode()
+        for info in vanilla.infolist():
+            if info.filename.endswith('.json') and info.file_size<=2000000:
+                payload=vanilla.read(info)
+                if needle in payload:vanilla_trace['references'].append(info.filename)
+    report['ancient_city_vanilla_trace']=vanilla_trace
     (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
+    print('ANCIENT_CITY_VANILLA_TRACE',json.dumps(vanilla_trace,sort_keys=True),flush=True)
     print('HISTORICAL_EXACT_CANDIDATES',json.dumps(allfound),flush=True)
     print('UNRESOLVED_ORIGINAL',json.dumps(sorted(missing-set(allfound))),flush=True)
     print('CURRENT_SOURCE_REFERENCES',json.dumps(report['current_source_references'],sort_keys=True),flush=True)

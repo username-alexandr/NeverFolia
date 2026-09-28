@@ -23,6 +23,13 @@ jobs:
           github-token: ${{ github.token }}
           path: integrated-input
           merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: 36419010757
+          github-token: ${{ github.token }}
+          path: core-input
+          merge-multiple: true
       - name: Read verified published models without altering the current datapack
         run: |
           set -o pipefail
