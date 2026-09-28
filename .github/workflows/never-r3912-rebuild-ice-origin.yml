@@ -35,11 +35,11 @@ jobs:
           github-token: ${{ github.token }}
           path: debug
           merge-multiple: true
-      - name: Inspect actual ice and submerged-weathering implementation
+      - name: Inspect existing weathering source and actual ice bytecode
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib,json,zipfile
+          import hashlib,json,zipfile,io,subprocess
           paths=list(Path('debug').rglob('diagnostics.zip'))
           if len(paths)!=1: raise ValueError('Missing or ambiguous pinned diagnostics')
           out=Path('rebuild-evidence');out.mkdir()
@@ -51,19 +51,53 @@ jobs:
             'IceSpikeFeature.java': ['getSeaLevel','origin','setBlock'],
           }
           report={}
-          with zipfile.ZipFile(paths[0]) as z:
-              for name,terms in wanted.items():
-                  hits=[n for n in z.namelist() if n.endswith('/'+name) and '/src/minecraft/java/' in n]
-                  if len(hits)!=1: raise ValueError('Missing/ambiguous materialized source: '+name)
-                  raw=z.read(hits[0]);lines=raw.decode('utf-8').splitlines();indexes=set()
-                  for i,line in enumerate(lines):
-                      if any(t.lower() in line.lower() for t in terms):
-                          indexes.update(range(max(0,i-10),min(len(lines),i+18)))
-                  selected=[{'line':i+1,'text':lines[i]} for i in sorted(indexes)]
-                  report[name]={'source':hits[0],'sha256':hashlib.sha256(raw).hexdigest(),'context':selected}
-                  print('ICE_SOURCE '+name+' '+report[name]['sha256'])
-                  for row in selected: print(str(row['line'])+': '+row['text'])
-          (out/'ice-source-context.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          try:
+              with zipfile.ZipFile(paths[0]) as z:
+                  for name,terms in wanted.items():
+                      hits=[n for n in z.namelist() if n.endswith('/'+name) and '/src/minecraft/java/' in n]
+                      if not hits and name!='NeverOverworldFlood.java':
+                          report[name]={'status':'not_in_diagnostic_source_archive','source_inspected':False}
+                          print('ICE_SOURCE_UNAVAILABLE '+name)
+                          continue
+                      if len(hits)!=1: raise ValueError('Missing/ambiguous materialized source: '+name)
+                      raw=z.read(hits[0]);lines=raw.decode('utf-8').splitlines();indexes=set()
+                      digest=hashlib.sha256(raw).hexdigest()
+                      if name=='NeverOverworldFlood.java' and digest!='e9a68ef34c78988f1d584cbf14889f312872cc9f04b53aa9b44c744157d6bc27':
+                          raise ValueError('Unexpected materialized flood source')
+                      for i,line in enumerate(lines):
+                          if any(t.lower() in line.lower() for t in terms):
+                              indexes.update(range(max(0,i-10),min(len(lines),i+18)))
+                      selected=[{'line':i+1,'text':lines[i]} for i in sorted(indexes)]
+                      report[name]={'status':'source_context_read','source':hits[0],'sha256':digest,'context':selected}
+                      print('ICE_SOURCE '+name+' '+digest)
+                      for row in selected: print(str(row['line'])+': '+row['text'])
+              # The DEBUG archive does not contain every vanilla source. Inspect
+              # bytecode from the exact actual runtime instead; never invent source.
+              bases=list(Path('inputs').rglob('server.jar'))
+              if len(bases)!=1: raise ValueError('Missing exact input server')
+              if hashlib.sha256(bases[0].read_bytes()).hexdigest()!='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67':
+                  raise ValueError('Wrong input server')
+              with zipfile.ZipFile(bases[0]) as outer:
+                  names=[n for n in outer.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
+                  if len(names)!=1: raise ValueError('Wrong bundled server')
+                  inner=outer.read(names[0])
+              scratch=Path('.work/ice-inspection');scratch.mkdir(parents=True,exist_ok=False)
+              jar=scratch/'engine.jar';jar.write_bytes(inner)
+              with zipfile.ZipFile(io.BytesIO(inner)) as z:
+                  for name in wanted:
+                      if name=='NeverOverworldFlood.java':continue
+                      leaf=name[:-5]+'.class';matches=[n for n in z.namelist() if n.endswith('/'+leaf)]
+                      if len(matches)!=1:raise ValueError('Missing/ambiguous runtime feature '+name)
+                      path=matches[0];result=subprocess.run(['javap','-c','-p','-classpath',str(jar),path[:-6].replace('/','.')],text=True,capture_output=True,timeout=30)
+                      if result.returncode:raise ValueError(result.stderr)
+                      (out/(name[:-5]+'.javap.txt')).write_text(result.stdout)
+                      report[name].update({'runtime_class':path,'runtime_sha256':hashlib.sha256(z.read(path)).hexdigest(),'bytecode_inspected':True})
+                      print('ICE_BYTECODE '+name+' '+report[name]['runtime_sha256'])
+                      # Small entry-point excerpt; complete bytecode stays in evidence.
+                      lines=result.stdout.splitlines();i=next((i for i,s in enumerate(lines) if 'boolean place(' in s),0)
+                      print('\n'.join(lines[i:i+115]))
+          finally:
+              (out/'ice-source-context.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
           PY
       - name: Recompile official client targets and own addon
         run: python3 qa/field-r3912/build_client.py
