@@ -1,0 +1,124 @@
+name: R3912 independent rebuild and ice source
+on:
+  push:
+    branches: ['qa/neverfolia-r3912-rebuild-ice-origin']
+    paths: ['.github/workflows/never-r3912-rebuild-ice-origin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test client build inputs
+        run: python3 qa/field-r3912/test_client.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Inspect actual ice and submerged-weathering implementation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile
+          paths=list(Path('debug').rglob('diagnostics.zip'))
+          if len(paths)!=1: raise ValueError('Missing or ambiguous pinned diagnostics')
+          out=Path('rebuild-evidence');out.mkdir()
+          wanted={
+            'NeverOverworldFlood.java': ['isDrownedFrozenOverlay','weatherSubmerged','reweatherSubmerged','drowned surface weathering','isDrownedSurfaceOverlay'],
+            'FreezeTopLayerFeature.java': ['getHeight','shouldFreeze','setBlock','SEA_LEVEL'],
+            'BlueIceFeature.java': ['getSeaLevel','origin','setBlock'],
+            'IcebergFeature.java': ['getSeaLevel','context.origin','setBlock'],
+            'IceSpikeFeature.java': ['getSeaLevel','origin','setBlock'],
+          }
+          report={}
+          with zipfile.ZipFile(paths[0]) as z:
+              for name,terms in wanted.items():
+                  hits=[n for n in z.namelist() if n.endswith('/'+name) and '/src/minecraft/java/' in n]
+                  if len(hits)!=1: raise ValueError('Missing/ambiguous materialized source: '+name)
+                  raw=z.read(hits[0]);lines=raw.decode('utf-8').splitlines();indexes=set()
+                  for i,line in enumerate(lines):
+                      if any(t.lower() in line.lower() for t in terms):
+                          indexes.update(range(max(0,i-10),min(len(lines),i+18)))
+                  selected=[{'line':i+1,'text':lines[i]} for i in sorted(indexes)]
+                  report[name]={'source':hits[0],'sha256':hashlib.sha256(raw).hexdigest(),'context':selected}
+                  print('ICE_SOURCE '+name+' '+report[name]['sha256'])
+                  for row in selected: print(str(row['line'])+': '+row['text'])
+          (out/'ice-source-context.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          PY
+      - name: Recompile official client targets and own addon
+        run: python3 qa/field-r3912/build_client.py
+      - name: Execute actual registry predicate on a fresh server
+        run: python3 qa/field-r3912/run_registry.py
+      - name: Package client addon
+        run: python3 qa/field-r3912/package_client.py
+      - name: Compare independent build with previously verified bytes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          expected={
+            'NeverLand-Enchantment-UI-Fabric-26.2-R39.12.jar':'da556d6f79c53f741f319ca215b09bceb5b74a6b46ac657878ffaca766b9b53d',
+            'NeverLand-Enchantments-RU-26.2-R39.12.zip':'831b4cba0af3bbdad507f1c1c355b5e05a2787560fd990bee30f8c3423d98196',
+          }
+          rows=[]
+          for name,want in expected.items():
+              matches=list(Path('client-delivery').rglob(name))
+              if len(matches)!=1: raise ValueError('Missing/ambiguous rebuilt file: '+name)
+              actual=hashlib.sha256(matches[0].read_bytes()).hexdigest()
+              row={'file':name,'sha256':actual,'expected':want,'equal':actual==want};rows.append(row)
+              print('INDEPENDENT_REBUILD '+json.dumps(row))
+          report={'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'files':rows,
+                  'independent_recompile_equal':all(r['equal'] for r in rows),
+                  'client_rendering_tested':False,'mixin_execution_tested':False,
+                  'server_worldgen_changed':False,'production_accepted':False}
+          Path('rebuild-evidence/independent-rebuild.json').write_text(json.dumps(report,indent=2)+'\n')
+          if not report['independent_recompile_equal']: raise ValueError('Independent build differs; do not relabel as identical')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: NeverLand-R39.12-Verified-Client-${{ github.sha }}
+          path: client-delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Keep current logs and provenance
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,json,os
+          out=Path('rebuild-evidence');out.mkdir(exist_ok=True)
+          source=Path('client-output')
+          if source.exists():
+              for p in source.iterdir():
+                  if p.is_file() and (p.suffix=='.json' or p.name.endswith('compile.log') or p.name in ('registry-server.log','javac-version.log')):
+                      shutil.copyfile(p,out/p.name)
+          shutil.copyfile('.github/workflows/never-r3912-rebuild-ice-origin.yml',out/'workflow.yml')
+          (out/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'server_unchanged':True,'ice_source_only':True},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: NeverLand-R3912-Rebuild-Ice-Evidence-${{ github.sha }}
+          path: rebuild-evidence/
+          if-no-files-found: error
+          retention-days: 14
