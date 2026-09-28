@@ -70,10 +70,19 @@ def inspect(label,raw):
                     try:item['json']=json.loads(payload)
                     except Exception as ex:item['json_error']=repr(ex)
                 feature_candidates[key].append(item)
+    pale_feature_family=[]
+    for name,payload in sorted(files.items()):
+        if (name.startswith('data/nova_structures/worldgen/configured_feature/pale_')
+                or name.startswith('data/nova_structures/worldgen/placed_feature/pale_')) and name.endswith('.json'):
+            item={'path':name,'sha256':hashlib.sha256(payload).hexdigest(),'size':len(payload)}
+            try:item['json']=json.loads(payload)
+            except Exception as ex:item['json_error']=repr(ex)
+            pale_feature_family.append(item)
     return {'label':label,'archive_sha256':hashlib.sha256(raw).hexdigest(),
             'pool_present':POOL in files,'pool':pool_obj,'pool_locations':locs,
             'resolved_pool_templates':resolved,'parent_references':refs,
-            'candidate_paths':candidates,'feature_candidates':feature_candidates}
+            'candidate_paths':candidates,'feature_candidates':feature_candidates,
+            'pale_feature_family':pale_feature_family}
 
 def main():
     OUT.mkdir(exist_ok=True)
@@ -91,7 +100,8 @@ def main():
             'resolved_pool_templates':row['resolved_pool_templates'],
             'parent_references':row['parent_references'],
             'candidate_paths':row['candidate_paths'],
-            'feature_candidates':row['feature_candidates']},ensure_ascii=False),flush=True)
+            'feature_candidates':row['feature_candidates'],
+            'pale_feature_family_count':len(row['pale_feature_family'])},ensure_ascii=False),flush=True)
 
 if __name__=='__main__':
     main()
