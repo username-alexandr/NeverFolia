@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Current-process fixtures and matched natural block-state comparisons.
-All worlds are disposable loopback CI worlds; never touches a user world.
-"""
+"""Disposable loopback server tests; fresh results and full block snapshots."""
 from pathlib import Path
-import collections,gzip,hashlib,json,os,queue,secrets,shutil,struct,subprocess,threading,time
+import collections,gzip,hashlib,json,queue,secrets,shutil,struct,subprocess,threading,time
 ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts';WORK=ROOT/'.work/r3913-runtime';SEED=-4651369264513492755
 TARGETS=sorted({(cx+dx,cz+dz) for cx,cz in ((-189,-223),(-169,-253),(-197,-217)) for dx in (-1,0,1) for dz in (-1,0,1)},key=lambda c:f'{c[0]},{c[1]}')
 def need(ok,why):
@@ -48,7 +46,7 @@ def phase(name,jar,folder,enabled,fixtures=False):
         need(done and passed,'Current server never completed fresh QA')
         observed=json.loads(result.read_text());need(observed.get('pass') is True and observed.get('nonce')==nonce and observed.get('seed')==SEED,'Wrong fresh result')
         need(observed.get('fixtures') is fixtures,'Wrong QA mode')
-        if fixtures:need(len(observed['rows'])==19 and all(x.get('pass') is True for x in observed['rows']),'Incomplete fixture coverage')
+        if fixtures:need(len(observed['rows'])==21 and all(x.get('pass') is True for x in observed['rows']),'Incomplete fixture coverage')
         else:need([(x['chunk_x'],x['chunk_z']) for x in observed['rows']]==TARGETS,'Wrong ordered natural targets')
         p.stdin.write('stop\n');p.stdin.flush();r['exit_code']=p.wait(timeout=120);thread.join(timeout=15)
         need(r['exit_code']==0 and not thread.is_alive(),'Unclean stop')
@@ -59,6 +57,8 @@ def phase(name,jar,folder,enabled,fixtures=False):
             saved=dest/'saved';saved.mkdir()
             for region in (folder/'world').rglob('*.mca'):
                 target=saved/region.relative_to(folder/'world');target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(region,target)
+            for ext in (folder/'world').rglob('*.mcc'):
+                target=saved/ext.relative_to(folder/'world');target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ext,target)
             for dat in (folder/'world').rglob('level.dat'):
                 target=saved/dat.relative_to(folder/'world');target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(dat,target)
         r['pass']=True
@@ -97,27 +97,32 @@ def compare(left,right,allow_ice):
             if before==after:continue
             changed+=1;transitions[before+' -> '+after]+=1
             allowed=allow_ice and before in ('Block{minecraft:ice}','Block{minecraft:packed_ice}','Block{minecraft:blue_ice}') and after=='Block{minecraft:water}[level=0]'
-            if not allowed:
-                bad+=1
-                if len(examples)<8:examples.append({'x':cx*16+(i&15),'y':-512+(i>>8),'z':cz*16+((i>>4)&15),'before':before,'after':after})
+            if not allowed:bad+=1
+            if len(examples)<64:examples.append({'x':cx*16+(i&15),'y':-512+(i>>8),'z':cz*16+((i>>4)&15),'before':before,'after':after,'allowed':allowed})
         result['changed']+=changed;result['unexpected']+=bad;result['chunks'].append({'x':cx,'z':cz,'changed':changed,'unexpected':bad,'examples':examples})
-    result['pass']=result['unexpected']==0;result['transitions']=dict(transitions);result['scope']='Full live block snapshots, Name/Properties, at requested completed chunks. Saved MCA files retained separately; block-entity NBT is not compared by this check.'
+    result['pass']=result['unexpected']==0;result['transitions']=dict(transitions)
+    result['scope']='Complete live block snapshots. Independent saved-MCA check is a separate required stage.'
     return result
 
 def main():
     WORK.mkdir(parents=True,exist_ok=False);build=json.loads((OUT/'r3913-build.json').read_text());jar=ROOT/'candidate/server.jar';need(sha(jar)==build['candidate_core_sha256'],'Wrong candidate')
     report={'pass':False,'production_accepted':False,'seed':str(SEED),'phases':{}}
     try:
-        report['phases']['fixtures']=phase('fixtures',jar,setup('fixtures'),True,True)
-        need(report['phases']['fixtures']['pass'],'Fixture failure')
+        report['phases']['fixtures']=phase('fixtures',jar,setup('fixtures'),True,True);need(report['phases']['fixtures']['pass'],'Fixture failure')
         for name,binary,enabled in (('parent',ROOT/'control/server.jar',False),('off',jar,False),('candidate',jar,True)):
-            report['phases'][name]=phase(name,binary,setup(name),enabled)
-            need(report['phases'][name]['pass'],'Natural phase failed: '+name)
+            report['phases'][name]=phase(name,binary,setup(name),enabled);need(report['phases'][name]['pass'],'Natural phase failed: '+name)
         report['phases']['restart']=phase('restart',jar,WORK/'candidate',True);need(report['phases']['restart']['pass'],'Restart failed')
         report['comparisons']={'parent_vs_off':compare('parent','off',False),'off_vs_candidate':compare('off','candidate',True),'candidate_vs_restart':compare('candidate','restart',False)}
-        report['pass']=all(p['pass'] for p in report['phases'].values()) and all(p['pass'] for p in report['comparisons'].values())
+        need(all(p['pass'] for p in report['comparisons'].values()),'Unexpected state changes')
+        # A safe no-op is NOT field acceptance. The independent saved-world stage
+        # additionally checks the exact naturally observed ice-sheet witness.
+        need(report['comparisons']['off_vs_candidate']['changed']>0,'No natural ice was fixed; do not issue an ineffective release')
         need(sha(jar)==build['candidate_core_sha256'],'Candidate bytes changed')
+        for phase_name in ('fixtures','parent','off','candidate'):
+            for filename,field in (('NeverOverworld.zip','pack_sha256'),('NeverNether.zip','nether_sha256')):
+                need(sha(WORK/phase_name/'world/datapacks'/filename)==build[field],'Input pack changed')
         report['final_candidate_ice_blocks']=sum(row['ice_blocks'] for row in report['phases']['candidate']['observed']['rows'])
+        report['pass']=True
     except Exception as e:report['error']=repr(e)
     finally:save(OUT/'r3913-runtime.json',report)
     brief={'pass':report['pass'],'error':report.get('error'),'comparisons':{k:{key:v[key] for key in ('pass','changed','unexpected','transitions')} for k,v in report.get('comparisons',{}).items()}}

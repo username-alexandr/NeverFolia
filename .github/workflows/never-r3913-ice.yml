@@ -33,13 +33,15 @@ jobs:
           github-token: ${{ github.token }}
           path: debug
           merge-multiple: true
-      - name: Reconstruct pinned GitHub wide-ocean parent without changing local user release
+      - name: Reconstruct pinned GitHub wide-ocean parent without replacing local release
         run: python3 qa/manual-r3911/build.py
-      - name: Compile bounded ice cleanup and verify inherited byte preservation
+      - name: Compile piece-scoped ice cleanup and prove inherited byte preservation
         run: python3 qa/field-r3913/build.py
-      - name: Actual ice fixtures, matched on-off generation and restart
+      - name: Real ice fixtures, matched on-off generation and restart
         run: python3 qa/field-r3913/runtime.py
-      - name: Stage manual test kit only after current bounded checks
+      - name: Independently decode saved MCA and require the actual natural ice witness
+        run: python3 qa/field-r3913/verify_saved.py
+      - name: Stage manual test kit only after positive field regression
         run: python3 qa/field-r3913/package.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -57,6 +59,8 @@ jobs:
           for root in ('qa/field-r3913','native/overworld-r3913'):
               for p in Path(root).iterdir():
                   if p.is_file():shutil.copyfile(p,src/p.name)
+          for p in ('scripts/hash-never-nether-chunks.py','scripts/probe-never-overworld-trees-villages-r1.py','qa/manual-r3911/build.py','qa/field-r395/jar_packaging.py'):
+              target=src/'reference'/p;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,target)
           shutil.copyfile('.github/workflows/never-r3913-ice.yml',src/'workflow.yml')
           (src/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'local_r3911_not_used':True,'production_accepted':False},indent=2)+'\n')
           PY

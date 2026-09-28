@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Add only an opt-in ice-fragment pass to the freshly rebuilt GitHub R3911.
-The separately distributed LOCAL R3911 is not available as an input here and is
-not represented as byte-identical. No user server, world or Library is edited.
-"""
+"""Add opt-in ice policy to the pinned GitHub R3911, never replace local R3911 silently."""
 from pathlib import Path
 import hashlib,importlib.util,io,json,os,shutil,subprocess,zipfile
 ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts';WORK=ROOT/'.work/r3913';CAND=ROOT/'candidate'
@@ -29,7 +26,7 @@ def main():
     source=OUT/'compiled-source'/(LIGHT+'.java');text=source.read_text()
     anchor='                net.minecraft.world.level.chunk.NeverOverworldOceanClosureR399.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R3911_MANUAL_WIDE_OCEAN'
     need(text.count(anchor)==1,'Unknown actual LIGHT hook')
-    text=text.replace(anchor,anchor+'\n                net.minecraft.world.level.chunk.NeverOverworldIceFragmentsR3913.apply(task.world, task.fromChunk); // R3913_ICE_FRAGMENTS',1)
+    text=text.replace(anchor,anchor+'\n                net.minecraft.world.level.chunk.NeverOverworldIceFragmentsR3913.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R3913_ICE_FRAGMENTS',1)
     src=WORK/'src';light=src/(LIGHT+'.java');light.parent.mkdir(parents=True);light.write_text(text)
     helper=src/'NeverOverworldIceFragmentsR3913.java';shutil.copyfile(ROOT/'native/overworld-r3913/NeverOverworldIceFragmentsR3913.java',helper)
     cp=str(ROOT/'.work/manual-r3911/classes')+os.pathsep+(ROOT/'.work/manual-r3911/classpath.txt').read_text()
@@ -53,17 +50,19 @@ def main():
     result=mod.rewrite_zip(raw,{nested:patched,'META-INF/versions.list':('\n'.join(versions)+'\n').encode()})
     after=members(patched);need(set(after)==set(inner)|{HELPER},'Unexpected entry membership')
     need(all(inner[n]==after[n] for n in inner if n not in changes),'Unrelated class changed')
-    guards={n:sha_ for n,sha_ in inherited['preserved_hotfix_classes'].items()}
+    guards=dict(inherited['preserved_hotfix_classes'])
     need(all(digest(after[n])==s for n,s in guards.items()),'Lost a snow/dry-mine fix')
     source_jar.write_bytes(result)
     qa=WORK/'R3913IceQa.java';q=(ROOT/'qa/field-r3913/R3913IceQa.java').read_text()
-    q=q.replace('if(NeverOverworldIceFragmentsR3913.ice(states[i]))ice++;','if(states[i].is(Blocks.ICE)||states[i].is(Blocks.PACKED_ICE)||states[i].is(Blocks.BLUE_ICE))ice++;')
+    marker='if(NeverOverworldIceFragmentsR3913.ice(states[i]))ice++;'
+    need(q.count(marker)==1,'Unexpected natural observer')
+    q=q.replace(marker,'if(states[i].is(Blocks.ICE)||states[i].is(Blocks.PACKED_ICE)||states[i].is(Blocks.BLUE_ICE))ice++;')
     qa.write_text(q);qa_classes=WORK/'qa-classes';qa_classes.mkdir()
     run(['javac','--release','25','-proc:none','-cp',str(classes)+os.pathsep+cp,'-d',str(qa_classes),str(qa)],'ice-qa-javac.log')
     with zipfile.ZipFile(WORK/'R3913IceQa.jar','w',zipfile.ZIP_DEFLATED) as z:
         for p in qa_classes.rglob('*.class'):z.write(p,p.relative_to(qa_classes).as_posix())
-        z.writestr('plugin.yml',"name: R3913IceQa\nversion: '1'\nmain: R3913IceQa\napi-version: '26.2'\nfolia-supported: true\n")
-    report={'build_pass':True,'version':'R39.13-ICE-TEST','kind':'Incremental javac 25, GitHub R3911 reconstruction plus bounded ice cleanup; NOT full Gradle',
+        z.writestr('plugin.yml',"name: R3913IceQa\nversion: '2'\nmain: R3913IceQa\napi-version: '26.2'\nfolia-supported: true\n")
+    report={'build_pass':True,'version':'R39.13-ICE-TEST-v2','kind':'Incremental javac 25, GitHub R3911 plus piece-scoped bounded ice cleanup; NOT full Gradle',
         'parent_github_r3911_sha256':digest(raw),'candidate_core_sha256':digest(result),'local_r3911_not_used':True,
         'known_local_r3911_sha256':'c326e2818343c4798792784ad3877422d9e89213c282dd073dc7089b576f2daf',
         'pack_sha256':inherited['pack_sha256'],'nether_sha256':inherited['nether_sha256'],'preserved_hotfix_classes':guards,
