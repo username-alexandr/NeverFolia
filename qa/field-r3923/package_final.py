@@ -67,8 +67,17 @@ def main():
     after=resource['resource_delta']['after']
     need(after.get('missing_pools')==after.get('missing_templates')==after.get('other_missing')==0,
          'R3918 still has missing jigsaw resources')
+    stacks=resource.get('effective_resource_stacks',{})
+    need(set(stacks)=={'overworld_then_nether','nether_then_overworld'},
+         'R3918 effective two-pack stack evidence missing')
+    for label,row in stacks.items():
+        counts=row.get('counts',{})
+        need(counts.get('missing_pools')==counts.get('missing_templates')==counts.get('other_missing')==0,
+             'R3918 effective stack not closed: '+label)
     need(mobs.get('pass') is True and mobs.get('phases')==2 and min(mobs.get('case_counts',[0]))>=14,
          'R3921 mob acceptance failed')
+    need(mobs.get('core_sha256')==CORE_SHA and mobs.get('overworld_sha256')==OW_SHA and
+         mobs.get('nether_sha256')==NN_SHA,'R3921 tested different binaries')
     need(field.get('pass') is True and field.get('targets')==54,'R3922 field acceptance failed')
     need(field.get('candidate_restart_water_hash_equal') is True and
          field.get('candidate_reverse_water_hash_equal') is True,'R3922 persistence/order acceptance failed')
