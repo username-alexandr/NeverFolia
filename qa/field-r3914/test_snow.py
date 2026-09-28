@@ -11,12 +11,16 @@ class SnowContractTests(unittest.TestCase):
     def test_allowed_decoration_not_labeled_identical(self):
         a=self.model('1');b=self.model('2');r=self.check(a,b)
         self.assertFalse(r['exact_serialized_model_equal']);self.assertEqual(len(r['roof_snow_layer_variations']),1)
+    def test_observed_stepped_roof_is_recorded(self):
+        r=self.check(self.model('1',3),self.model('3',3))
+        self.assertFalse(r['exact_serialized_model_equal']);self.assertEqual(r['roof_snow_layer_variations'][0]['reference_layers'],'3')
     def test_no_model_mutation(self):
         a=self.model('1');b=self.model('2');snap=(copy.deepcopy(a),copy.deepcopy(b));self.check(a,b);self.assertEqual((a,b),snap)
-    def test_three_layers_rejected(self):
-        with self.assertRaises(ValueError):self.check(self.model('1'),self.model('3'))
+    def test_invalid_layer_rejected(self):
+        for layers in ('0','9','-1','invalid'):
+            with self.subTest(layers=layers),self.assertRaises(ValueError):self.check(self.model('1'),self.model(layers))
     def test_lower_snow_rejected(self):
-        with self.assertRaises(ValueError):self.check(self.model('1',3),self.model('2',3))
+        with self.assertRaises(ValueError):self.check(self.model('1',2),self.model('2',2))
     def test_other_biome_rejected(self):
         with self.assertRaises(ValueError):self.check(self.model('1'),self.model('2'),'pale')
     def test_non_snow_rejected(self):
