@@ -1,0 +1,35 @@
+name: R3911 retained wide startup diagnosis
+on:
+  push:
+    branches: ['build/neverfolia-r3911-manual-test']
+    paths: ['.github/workflows/never-r3911-retained-wide-check.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10938749250'
+          run-id: 36339622694
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: retained
+          merge-multiple: true
+      - name: Read retained startup failures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('retained')
+          print('FILES',[str(p.relative_to(root)) for p in root.rglob('*') if p.is_file()])
+          for p in sorted(root.rglob('*.log')):
+              if 'source' in p.parts:continue
+              text=p.read_text(errors='replace');lines=text.splitlines()
+              if any(word in p.name for word in ('control','candidate','runtime')):
+                  print('\nLOG',p,'LINES',len(lines))
+                  for line in lines[-110:]:print(line)
+          PY
