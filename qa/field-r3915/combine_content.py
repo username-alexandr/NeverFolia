@@ -10,7 +10,10 @@ ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts'
 BASE=s.BASE
 CART='9e0026a8c82c4242b438e06ce016d785aef1bf624d4dad13dea665d9dba20329'
 SWIFT='1e935c1012aa0648b14aa3ab7bf84fd3e0bc43ead8e95ad9060316c428dc1046'
-CORE='9790997413d631a76ca08d9f52ed1373c5a258f62f3b5d11dc7e30b70b35928'
+# Run 36419010757 / artifact 10968482107: SWIFT_KERNEL and SWIFT_LIFECYCLE
+# independently name this exact output. The previous constant described no
+# accepted input in that artifact; do not silently accept whatever is present.
+CORE='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
 PREFIX='data/nova_structures/structure/tavern/tavern_event_trader_car_'
 BIOMES=('acacia','birch','cherry','desert','jungle','mangrove','oak','pale','snowy','spruce','swamp')
 ALIASES={'nova_structures:tavern_villager_'+b for b in ('mangrove','pale','swamp')}
@@ -20,7 +23,8 @@ CANONICAL_POOL='nova_structures:tavern/tavern_villager_swamp'
 def exact(folder,name,want):
     found=[p for p in Path(folder).rglob(name) if p.is_file()]
     s.need(len(found)==1,'Ambiguous input '+name)
-    raw=found[0].read_bytes();s.need(s.sha(raw)==want,'Wrong executed input '+name)
+    raw=found[0].read_bytes();actual=s.sha(raw)
+    s.need(actual==want,'Wrong executed input '+name+' expected='+want+' actual='+actual)
     return raw
 
 def resource(kind,ident,suffix):
@@ -94,8 +98,6 @@ def main():
                 s.need(CANONICAL in names,'Canonical swamp connector absent')
                 compatible=[r for r in rows if CANONICAL in r['names']]
                 s.need(compatible,'No matching NPC template')
-                # The alias is justified by actual authored swamp villagers,
-                # not merely by spelling similarity or empty pool substitution.
                 for row in compatible:
                     entities=row['entities'];s.need(entities and entities[0]==9,'Missing NPC entities')
                     payloads=[e.get('nbt',(10,{}))[1] for e in entities[1][1]]
@@ -103,8 +105,6 @@ def main():
                 changes.append({'position':block['pos'][1][1],'old_target':target,'new_target':CANONICAL,'old_pool':pool,'new_pool':new_pool,'compatible_children':[r['template'] for r in compatible]})
                 n['target']=(8,CANONICAL);n['pool']=(8,new_pool)
             if changes:
-                # Reverse only explicitly recorded string changes and compare
-                # the COMPLETE typed NBT: no geometry, entities or return edits.
                 restored=copy.deepcopy(root)
                 for change in changes:
                     matches=[n for b,n in joints(restored) if b['pos'][1][1]==change['position']]
