@@ -25,6 +25,14 @@ public final class R395QaPlugin extends JavaPlugin implements Listener {
     private int index;
     private boolean started,finished;
     private static final int LOW=-511,HIGH=128;
+    private static final int[][] TRACKED_POINTS={
+        {135,62,24},{106,62,32},{105,62,31},{17,86,-66},{16,86,-63},{1,101,-74},{96,105,-6},
+        {-3041,63,-3455},{-3041,62,-3454},{-2895,64,-3623},{-2913,65,-3657},{-2920,67,-3715},{-2958,64,-3766},
+        {-27167,87,-12324},{-27212,61,-12255},{-27159,66,-12292},
+        {-3136,68,-3456},{-3140,68,-3457},{-3154,59,-3471},{-3173,75,-3494},
+        {-2710,63,-4032},{-2675,63,-3984},
+        {-3022,62,-3564},{-2701,63,-4040}
+    };
     @Override public void onEnable(){Bukkit.getPluginManager().registerEvents(this,this);}
     @EventHandler public void loaded(ServerLoadEvent event) {
         if(started)return;started=true;
@@ -102,8 +110,15 @@ public final class R395QaPlugin extends JavaPlugin implements Listener {
                 }
             }
         }
+        JsonArray tracked=new JsonArray();
+        for(int[] p:TRACKED_POINTS) {
+            if(Math.floorDiv(p[0],16)!=cx||Math.floorDiv(p[2],16)!=cz)continue;
+            JsonObject point=new JsonObject();point.addProperty("x",p[0]);point.addProperty("y",p[1]);point.addProperty("z",p[2]);
+            point.addProperty("block",snapshot.getBlockType(Math.floorMod(p[0],16),p[1],Math.floorMod(p[2],16)).getKey().toString());
+            tracked.add(point);
+        }
         types.forEach(counts::addProperty);row.addProperty("chunk_x",cx);row.addProperty("chunk_z",cz);
-        row.addProperty("min_y",LOW);row.addProperty("max_y",HIGH);row.add("block_counts",counts);
+        row.addProperty("min_y",LOW);row.addProperty("max_y",HIGH);row.add("block_counts",counts);row.add("tracked_points",tracked);
         row.addProperty("water_sha256",HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(water)));
         row.addProperty("single_air_with_six_aquatic_neighbours",isolatedAir);row.add("air_examples",airExamples);
         row.addProperty("ice_blocks",ice);row.addProperty("single_ice_with_six_aquatic_neighbours",isolatedIce);row.add("ice_examples",iceExamples);
