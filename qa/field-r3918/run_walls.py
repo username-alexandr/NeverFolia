@@ -41,7 +41,7 @@ def main():
         with target.open('xb') as f:f.write(payload)
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
-        restored_paths=(*fix.fix.POOLS,*(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])))
+        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,*(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])))
         s.need(all(p not in nf or nf[p]==finalfiles[p] for p in restored_paths),'Nether shadows a restored resource')
         audit=s.load('r3918_walls_audit',ROOT/'scripts/audit-neveroverworld-r39-resources.py')
         after=audit.audit_files(core,target);r.save('walls-resource-after.json',after)
@@ -62,7 +62,7 @@ def main():
         shutil.copytree(converted,OUT/'walls-native-converted')
         s.need(s.sha(core.read_bytes())==fix.fix.CORE and s.sha(base.read_bytes())==fix.fix.BASE and s.sha(nether.read_bytes())==r.NETHER,'Original inputs altered')
         s.need(s.sha((packs/'NeverOverworld.zip').read_bytes())==build['output_sha256'],'Test pack changed')
-        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Exact 36 authored legacy walls plus two mansion references. Actual template loading and direct placements; restart reruns scenes, not saved-entity identity or complete natural fort assembly.'})
+        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Exact 36 authored legacy walls, 33 exact authored closure templates, one proven dangling upstream event_13b pool entry removed, plus two mansion references. Actual wall loading/direct placement; restart reruns scenes, not complete natural fort assembly.'})
     except Exception as e:report['error']=repr(e)
     finally:
         r.save('walls-result.json',report);print('R3918_WALL_RESULT',json.dumps({k:v for k,v in report.items() if k not in ('build','walls-first','walls-restart')}),flush=True)

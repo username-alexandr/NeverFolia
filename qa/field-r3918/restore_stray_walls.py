@@ -19,9 +19,11 @@ MODELS=tuple(sorted('stray_fort_wall_'+part+str(i) for part in ('','back_','back
 # resource audit could not report them until the walls were restored.
 CLOSURE_MODELS=tuple(
     [f'stray_fort_event_{i}' for i in range(1,16)]
-    + [f'stray_fort_event_{i}b' for i in range(1,16)]
+    + [f'stray_fort_event_{i}b' for i in range(1,16) if i != 13]
     + [f'stray_fort_path_{i}' for i in range(1,5)]
 )
+EVENT_POOL='data/nova_structures/worldgen/template_pool/stray_fort_event.json'
+DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
 
 def author_bytes():
     req=urllib.request.Request(AUTHOR_URL,headers={'User-Agent':'NeverFolia-resource-recovery/1.0'})
@@ -56,6 +58,16 @@ def build(base,author,before):
     missing={(x['kind'],x['id']) for x in before['missing']}
     corrected,mansion=fix.build(base);files=s.read_zip(corrected);original=s.read_zip(base);source=s.read_zip(author)
     ext=s.load('r3918_authored_walls',ROOT/'scripts/build-never-overworld-external-structures-r19.py');rows=[]
+    event_pool=json.loads(files[EVENT_POOL])
+    before_event=json.loads(json.dumps(event_pool))
+    target_rows=[entry for entry in event_pool.get('elements',[])
+                 if isinstance(entry,dict) and isinstance(entry.get('element'),dict)
+                 and entry['element'].get('location')==DANGLING_EVENT]
+    s.need(len(target_rows)==1 and target_rows[0].get('weight')==2,
+           'Dangling event_13b source reference no longer matches reviewed upstream')
+    event_pool['elements']=[entry for entry in event_pool['elements'] if entry is not target_rows[0]]
+    s.need(len(event_pool['elements'])==len(before_event['elements'])-1,'Unexpected Stray Fort event-pool edit')
+    files[EVENT_POOL]=(json.dumps(event_pool,indent=2,ensure_ascii=False)+'\n').encode()
     for model in MODELS:
         path=PREFIX+model+'.nbt';ident='nova_structures:stray_fort/'+model
         s.need(('template',ident) in missing and path not in files and path in source,'Unexpected restoration target '+ident)
@@ -93,15 +105,18 @@ def build(base,author,before):
         closure.append({'id':ident,'path':path,'source_sha256':s.sha(raw),'installed_sha256':s.sha(installed),
                         'data_version':version[1],'size':size,'foreign_attributes_removed':removed,
                         'byte_identical_to_author':raw==installed})
-    s.need(len(closure)==34 and len({r['id'] for r in closure})==34,'Incomplete exact closure family')
+    s.need(len(closure)==33 and len({r['id'] for r in closure})==33,'Incomplete exact closure family')
     fp=s.load('r3918_wall_fingerprint',ROOT/'scripts/fingerprint-never-overworld-pack.py')
     encoded=(json.dumps(fp.fingerprint_document(files),ensure_ascii=False,indent=2)+'\n').encode()
     for p in s.FP:files[p]=encoded
     additions={r['path'] for r in rows}|{r['path'] for r in closure}
     s.need(set(files)-set(original)==additions and not set(original)-set(files),'Unexpected entry delta')
-    s.need(all(files[p]==v for p,v in original.items() if p not in (*fix.POOLS,*s.FP)),'Unrelated original content changed')
+    allowed_changes=(*fix.POOLS,EVENT_POOL,*s.FP)
+    s.need(all(files[p]==v for p,v in original.items() if p not in allowed_changes),'Unrelated original content changed')
     output=s.write_zip(files);s.need(s.read_zip(output)==files and output==s.write_zip(files),'Nonrepeatable output')
     return output,{'pass':True,'base_sha256':fix.BASE,'source_url':AUTHOR_URL,'source_archive_sha256':AUTHOR_SHA,
                    'output_sha256':s.sha(output),'mansion_repair':mansion,'models':rows,'closure_models':closure,
+                   'stray_event_pool_repair':{'path':EVENT_POOL,'removed_location':DANGLING_EVENT,'removed_weight':2,
+                                              'upstream_missing_in_checked_releases':True},
                    'restored_templates':len(rows)+len(closure),'existing_entries_preserved':sum(files[p]==v for p,v in original.items()),
                    'old_pack_installed':False,'all_reported_bugs_fixed':False,'production_accepted':False}
