@@ -56,6 +56,34 @@ def main():
         s.need(not after['errors'] and after['pass'] is True and not after.get('missing')
                and a-b==expected and not b-a,'Resource graph is not fully closed after reviewed restoration')
         s.need({x['id'] for x in before['roots']}=={x['id'] for x in after['roots']},'Root coverage changed')
+
+        # Audit the actual two-pack resource universe as well.  The standalone
+        # NeverOverworld audit above proves this repair's exact delta; these two
+        # merged views prove that NeverNether cannot re-introduce a missing
+        # holder/template regardless of pack priority.  pack.mcmeta is metadata
+        # only here; all data/* resources participate in the effective view.
+        def effective_stack(low_files,high_files):
+            merged=dict(low_files);meta=merged.get('pack.mcmeta')
+            for path,payload in high_files.items():
+                if path!='pack.mcmeta':merged[path]=payload
+            s.need(meta is not None,'Base pack metadata missing')
+            merged['pack.mcmeta']=meta
+            return s.write_zip(merged)
+        stack_reports={}
+        for label,low,high in (
+            ('overworld_then_nether',finalfiles,nf),
+            ('nether_then_overworld',nf,finalfiles),
+        ):
+            stack_payload=effective_stack(low,high)
+            stack_path=OUT/('NeverFolia-R3918-effective-'+label+'.zip')
+            with stack_path.open('xb') as stream:stream.write(stack_payload)
+            stack_audit=audit.audit_files(core,stack_path)
+            r.save('walls-resource-'+label+'.json',stack_audit)
+            s.need(not stack_audit['errors'] and stack_audit['pass'] is True and not stack_audit.get('missing'),
+                   'Effective resource stack is not closed: '+label)
+            stack_reports[label]={'sha256':s.sha(stack_payload),'counts':stack_audit['counts'],
+                                  'root_count':len(stack_audit.get('roots',[]))}
+        report['effective_resource_stacks']=stack_reports
         plugin=compile_plugin(core,build['models']);folder=WORK/'server';packs=folder/'world/datapacks';packs.mkdir(parents=True);(folder/'plugins').mkdir()
         shutil.copyfile(target,packs/'NeverOverworld.zip');shutil.copyfile(nether,packs/'NeverNether.zip');shutil.copyfile(plugin,folder/'plugins/WallsQa.jar')
         (folder/'eula.txt').write_text('eula=true\n')
@@ -67,7 +95,7 @@ def main():
         shutil.copytree(converted,OUT/'walls-native-converted')
         s.need(s.sha(core.read_bytes())==fix.fix.CORE and s.sha(base.read_bytes())==fix.fix.BASE and s.sha(nether.read_bytes())==r.NETHER,'Original inputs altered')
         s.need(s.sha((packs/'NeverOverworld.zip').read_bytes())==build['output_sha256'],'Test pack changed')
-        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Full static jigsaw resource closure: exact authored recoveries, proven dangling source entries removed, one exact vanilla 26.2 ancient-city dangling variant overridden, plus mansion references. Actual wall loading/direct placement and restart included; complete natural assembly of every root remains a separate runtime test.'})
+        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Full static jigsaw resource closure for NeverOverworld and both NeverOverworld/NeverNether overlay directions: exact authored recoveries, proven dangling source entries removed, one exact vanilla 26.2 ancient-city dangling variant overridden, plus mansion references. Actual wall loading/direct placement and restart included; complete natural assembly of every repaired root remains a separate runtime test.'})
     except Exception as e:report['error']=repr(e)
     finally:
         r.save('walls-result.json',report);print('R3918_WALL_RESULT',json.dumps({k:v for k,v in report.items() if k not in ('build','walls-first','walls-restart')}),flush=True)
