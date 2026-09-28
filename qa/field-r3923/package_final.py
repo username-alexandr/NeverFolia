@@ -59,6 +59,14 @@ def main():
     client_mod=exact(ROOT/'client-input','NeverLand-Enchantment-UI-Fabric-26.2-R39.12.jar',CLIENT_MOD_SHA)
     client_rp=exact(ROOT/'client-input','NeverLand-Enchantments-RU-26.2-R39.12.zip',CLIENT_RP_SHA)
 
+    with zipfile.ZipFile(ow) as z:
+        need(z.testzip() is None,'NeverOverworld ZIP CRC failure')
+        foreign=[n for n in z.namelist() if n.endswith('.nbt') and b'porting_lib:' in z.read(n)]
+        need(not foreign,'foreign PortingLib attributes survived in structures: '+repr(foreign[:8]))
+        pale='data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json'
+        expected_pale={'fallback':'minecraft:empty','elements':[{'element':{'element_type':'minecraft:empty_pool_element'},'weight':1}]}
+        need(json.loads(z.read(pale))==expected_pale,'Pale Residence compatibility contract drift')
+
     resource=one_json(ROOT/'resource-input','walls-result.json')
     mobs=one_json(ROOT/'mob-input','r3921-mobs-summary.json')
     field=one_json(ROOT/'field-input','summary.json')
