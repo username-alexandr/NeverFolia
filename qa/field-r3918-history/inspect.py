@@ -36,6 +36,12 @@ def main():
     paths=list((ROOT/'integrated-input').rglob('combined-resource-after.json'));s.need(len(paths)==1,'Previous audit absent')
     prior=json.loads(paths[0].read_text());s.need(prior['inputs']['pack_sha256']==PACK,'Wrong prior audit')
     missing={r['id'] for r in prior['missing'] if r['kind']=='template'}
+    closure={
+        *('nova_structures:stray_fort/stray_fort_event_'+str(i) for i in range(1,16)),
+        *('nova_structures:stray_fort/stray_fort_event_'+str(i)+'b' for i in range(1,16)),
+        *('nova_structures:stray_fort/stray_fort_path_'+str(i) for i in range(1,5)),
+    }
+    targets=missing|closure
     ext=s.load('r3918_history_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
     report={'inspection_only':True,'game_files_modified':False,'all_reported_bugs_fixed':False,'base_pack_sha256':PACK,'versions':[],'metadata':[]}
     selections=[]
@@ -64,7 +70,7 @@ def main():
                 s.need(len(z.namelist())==len(set(z.namelist())),'Duplicate zip entries')
                 for n in z.infolist():
                     ident=resource(n.filename)
-                    if ident not in missing:continue
+                    if ident not in targets:continue
                     s.need(n.file_size<=5000000,'Oversized model')
                     payload=z.read(n);root=ext._nbt_parse(payload)[2]
                     row['matches'].append({'id':ident,'entry':n.filename,'sha256':s.sha(payload),'size':root.get('size'),'data_version':root.get('DataVersion')})
@@ -75,6 +81,8 @@ def main():
     allfound=sorted({m['id'] for r in report['versions'] if r['status']=='checked' for m in r['matches']})
     report['exact_candidate_ids']=allfound
     report['unresolved_in_checked_versions']=sorted(missing-set(allfound))
+    report['closure_target_ids']=sorted(closure)
+    report['closure_unresolved_in_checked_versions']=sorted(closure-set(allfound))
     report['complete_inspection']=all(r['status']!='failed' for r in report['versions'])
     (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
     print('HISTORICAL_EXACT_CANDIDATES',json.dumps(allfound),flush=True)
