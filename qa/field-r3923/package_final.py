@@ -78,7 +78,7 @@ def main():
          'R3921 mob acceptance failed')
     need(mobs.get('core_sha256')==CORE_SHA and mobs.get('overworld_sha256')==OW_SHA and
          mobs.get('nether_sha256')==NN_SHA,'R3921 tested different binaries')
-    need(field.get('pass') is True and field.get('targets')==54,'R3922 field acceptance failed')
+    need(field.get('pass') is True and field.get('targets')==72,'R3922 72-chunk field acceptance failed')
     need(field.get('candidate_restart_water_hash_equal') is True and
          field.get('candidate_reverse_water_hash_equal') is True,'R3922 persistence/order acceptance failed')
     need(field.get('isolated_air',{}).get('candidate')==0,'R3922 isolated ocean air remains')
