@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Reconstruct two missing profession-cart families from their actual source models.
-A biome recipe is accepted only if it reproduces every voxel and typed NBT of
-all eleven existing profession variants. No nearest-name substitutions, pool
-weight changes, registry changes, or edits to existing structure templates.
+A biome recipe is accepted only if it reproduces every serialized voxel, omitted
+position and typed NBT of all eleven existing profession variants. No nearest-name
+substitutions, pool weight changes, or edits to existing structure templates.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -20,17 +20,20 @@ def need(ok,message):
 def sha(raw): return hashlib.sha256(raw).hexdigest()
 def load(name,path):
     s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);sys.modules[name]=m;s.loader.exec_module(m);return m
+
 def semantic(root):
     need('palettes' not in root,'Multiple palettes require a separate review')
     need(root.get('DataVersion',(0,))[0]==3,'Missing original DataVersion')
-    palette=root['palette']; need(palette[0]==9 and palette[1][0]==10,'Invalid palette')
+    palette=root['palette'];need(palette[0]==9 and palette[1][0]==10,'Invalid palette')
     blocks=root['blocks'];need(blocks[0]==9 and blocks[1][0]==10,'Invalid blocks')
     value={k:copy.deepcopy(v) for k,v in root.items() if k not in ('DataVersion','palette','blocks')};value['blocks']={}
     for block in blocks[1][1]:
+        need(block.get('pos',(0,))[0]==9 and block['pos'][1][0]==3,'Invalid position tag')
         pos=tuple(block['pos'][1][1]);i=block['state'][1]
         need(len(pos)==3 and pos not in value['blocks'],'Duplicate/invalid position')
         need(block['state'][0]==3 and 0<=i<len(palette[1][1]),'Invalid state index')
-        record={k:copy.deepcopy(v) for k,v in block.items() if k!='pos'};record['state']=copy.deepcopy(palette[1][1][i]);value['blocks'][pos]=record
+        record={k:copy.deepcopy(v) for k,v in block.items() if k!='pos'}
+        record['state']=copy.deepcopy(palette[1][1][i]);value['blocks'][pos]=record
     return value
 
 def diff(a,b,path=()):
@@ -47,12 +50,10 @@ def diff(a,b,path=()):
 
 def edit(value,operation,path,before,after):
     if not path:
-        need(operation=='replace' and value==before,'Recipe source mismatch')
-        return copy.deepcopy(after)
+        need(operation=='replace' and value==before,'Recipe source mismatch');return copy.deepcopy(after)
     key=path[0]
     if len(path)==1 and operation in ('add','remove'):
-        need(isinstance(value,dict),'Recipe inserts/removes dictionary entries only')
-        result=copy.deepcopy(value)
+        need(isinstance(value,dict),'Recipe inserts/removes dictionary entries only');result=copy.deepcopy(value)
         if operation=='add':
             need(key not in result,'Recipe insertion would overwrite a field');result[key]=copy.deepcopy(after)
         else:
@@ -73,28 +74,37 @@ def apply(value,ops):
     for op,path,before,after in reversed(ops):
         inverse={'add':'remove','remove':'add','replace':'replace'}[op]
         restored=edit(restored,inverse,path,after,before)
-    need(restored==value,'Recipe is not reversible')
-    return out
+    need(restored==value,'Recipe is not reversible');return out
 
 def encode_model(original,model):
     root=copy.deepcopy(original);palette=[];blocks=[]
     for k,v in model.items():
         if k!='blocks':root[k]=copy.deepcopy(v)
+    # Omitted source coordinates remain omitted: they are not equivalent to AIR.
     for pos,record in sorted(model['blocks'].items(),key=lambda x:(x[0][1],x[0][2],x[0][0])):
         item=copy.deepcopy(record);state=item.pop('state')
         if state not in palette:palette.append(state)
         item['state']=(3,palette.index(state));item['pos']=(9,(3,list(pos)));blocks.append(item)
     root['palette']=(9,(10,palette));root['blocks']=(9,(10,blocks))
     need(root['DataVersion']==original['DataVersion'],'Original DataVersion lost')
-    need(semantic(root)==model,'Encoded model differs')
-    return root
+    need(semantic(root)==model,'Encoded model differs');return root
 
-def validate(root,biome=None):
-    size=root['size'][1][1]; expected=[5,5,5] if biome=='snowy' else [5,4,5]
+def placement_mask(root):
+    size=root['size'][1][1];obj=semantic(root)
+    need(len(size)==3 and all(type(s) is int and s>0 for s in size),'Invalid template dimensions')
+    actual=set(obj['blocks'])
+    need(actual and all(all(0<=p[i]<size[i] for i in range(3)) for p in actual),'Empty/out-of-bounds placement mask')
+    all_positions={(x,y,z) for x in range(size[0]) for y in range(size[1]) for z in range(size[2])}
+    return actual,all_positions-actual
+
+def validate(root,biome=None,expected_mask=None):
+    size=root['size'][1][1];expected=[5,5,5] if biome=='snowy' else [5,4,5]
     need(size==expected,'Unexpected cart envelope: '+repr((biome,size)))
     need(root.get('entities',(9,(10,[])))[1][1]==[],'Unexpected direct cart entities')
-    obj=semantic(root);need(len(obj['blocks'])==size[0]*size[1]*size[2],'Cart voxel coverage incomplete')
-    need(all(all(0<=p[i]<size[i] for i in range(3)) for p in obj['blocks']),'Out-of-bounds cart voxel')
+    actual,omitted=placement_mask(root)
+    if biome is None:need(not omitted,'Generic profession source must retain full authored coverage')
+    if expected_mask is not None:need(actual==expected_mask,'Biome placement mask mismatch')
+    obj=semantic(root)
     joints={p:r['nbt'][1] for p,r in obj['blocks'].items() if r.get('nbt',(10,{}))[1].get('id')==(8,'minecraft:jigsaw')}
     expected_positions={(4,0,0)} if biome=='pale' else {(4,0,0),(2,1,1)}
     need(set(joints)==expected_positions,'Unreviewed jigsaw geometry: '+repr((biome,list(joints))))
@@ -126,22 +136,25 @@ def build(source,output):
     source_models={role:b._nbt_parse(original[PREFIX+role+'.nbt']) for role in ROLES+RECOVER}
     for role in RECOVER:
         need(sha(original[PREFIX+role+'.nbt'])==BASE_SHA[role],'Changed profession source');validate(source_models[role][2])
-    files=original.copy();proof=[];added=[];recipes={}
+    files=original.copy();proof=[];added=[];recipes={};masks={}
     for biome in BIOMES:
         donor=b._nbt_parse(original[PREFIX+'armorer_'+biome+'.nbt'])[2];validate(donor,biome)
+        mask,omitted=placement_mask(donor)
+        masks[biome]={'serialized_count':len(mask),'omitted_coordinates':sorted(omitted)}
+        print('AUTHORED_CART_MASK',biome,json.dumps(masks[biome]),flush=True)
         recipe=diff(semantic(source_models['armorer'][2]),semantic(donor));recipes[biome]=recipe
         for role in ROLES:
             wanted=b._nbt_parse(original[PREFIX+role+'_'+biome+'.nbt'])[2]
             actual=apply(semantic(source_models[role][2]),recipe)
             if actual!=semantic(wanted):
                 raise ValueError('Biome recipe is not role-independent: '+role+'_'+biome+' '+repr(diff(actual,semantic(wanted))[:4]))
-            validate(encode_model(source_models[role][2],actual),biome)
-            proof.append({'role':role,'biome':biome,'all_voxels_and_typed_NBT_equal':True,'reference_sha256':sha(original[PREFIX+role+'_'+biome+'.nbt'])})
+            validate(encode_model(source_models[role][2],actual),biome,mask)
+            proof.append({'role':role,'biome':biome,'all_serialized_voxels_omissions_and_typed_NBT_equal':True,'reference_sha256':sha(original[PREFIX+role+'_'+biome+'.nbt'])})
         for role in RECOVER:
             path=PREFIX+role+'_'+biome+'.nbt';need(path not in original,'Existing template cannot be overwritten')
-            compression,name,base=source_models[role];root=encode_model(base,apply(semantic(base),recipe));validate(root,biome)
+            compression,name,base=source_models[role];root=encode_model(base,apply(semantic(base),recipe));validate(root,biome,mask)
             payload=b._nbt_encode(compression,name,root);need(b._nbt_parse(payload)==(compression,name,root),'NBT roundtrip mismatch')
-            files[path]=payload;row={'path':path,'role':role,'biome':biome,'source_sha256':BASE_SHA[role],'sha256':sha(payload),'size':root['size'][1][1],'DataVersion':root['DataVersion'][1],'recipe_operations':len(recipe)};added.append(row)
+            files[path]=payload;row={'path':path,'role':role,'biome':biome,'source_sha256':BASE_SHA[role],'sha256':sha(payload),'size':root['size'][1][1],'DataVersion':root['DataVersion'][1],'recipe_operations':len(recipe),'serialized_voxels':len(mask),'omitted_coordinates':sorted(omitted)};added.append(row)
             print('RECONSTRUCTED_CART',json.dumps(row),flush=True)
     need(len(proof)==121 and len(added)==22,'Incomplete recipe validation')
     doc=fp.fingerprint_document(files);encoded=(json.dumps(doc,ensure_ascii=False,indent=2)+'\n').encode()
@@ -154,7 +167,7 @@ def build(source,output):
     output.parent.mkdir(parents=True,exist_ok=True)
     with output.open('xb') as stream:stream.write(raw)
     need(source.read_bytes()==data,'Input modified')
-    return {'pass':True,'original_pack_sha256':PACK_SHA,'output_sha256':sha(raw),'added_templates':added,'existing_variants':proof,'recipes':recipes,'fingerprint':doc,'preserved_original_files':8005,'changed_original_files':list(FINGERPRINTS),'scope':'Reconstructed missing carts using biome transformations validated on every existing profession. Not author-restored originals; runtime placement/spawn validation separate.','production_accepted':False}
+    return {'pass':True,'original_pack_sha256':PACK_SHA,'output_sha256':sha(raw),'added_templates':added,'existing_variants':proof,'recipes':recipes,'authored_masks':masks,'fingerprint':doc,'preserved_original_files':8005,'changed_original_files':list(FINGERPRINTS),'scope':'Reconstructed missing carts using biome transformations validated on every existing profession. Missing serialized positions stay omitted, never invented as AIR. Not author-restored originals; runtime placement/spawn validation separate.','production_accepted':False}
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--report',type=Path,required=True);a=p.parse_args()
