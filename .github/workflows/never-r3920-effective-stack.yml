@@ -3,6 +3,9 @@ on:
   push:
     branches: ['fix/neveroverworld-r3920-effective-stack']
     paths: ['qa/field-r3918/**', 'scripts/*r3918*', 'scripts/never_resource_stack.py', 'scripts/test_never_resource_stack.py', '.github/workflows/never-r3920-effective-stack.yml']
+  pull_request:
+    branches: ['fix/neveroverworld-r3918-resource-paths']
+    paths: ['qa/field-r3918/**', 'scripts/*r3918*', 'scripts/never_resource_stack.py', 'scripts/test_never_resource_stack.py', '.github/workflows/never-r3920-effective-stack.yml']
   workflow_dispatch:
 permissions:
   contents: read
