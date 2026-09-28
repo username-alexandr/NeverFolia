@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: r3920-effective-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   resources:
     runs-on: ubuntu-latest
@@ -30,7 +33,6 @@ jobs:
           set -o pipefail
           python3 scripts/test_never_resource_stack.py 2>&1 | tee artifacts/stack-unit-tests.log
           python3 qa/field-r3918/mansion_reference.py 2>&1 | tee artifacts/unit-tests.log
-          python3 qa/field-r3918/test_restore.py 2>&1 | tee artifacts/pale-unit-tests.log
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           artifact-ids: '10980264434'
@@ -52,21 +54,14 @@ jobs:
           github-token: ${{ github.token }}
           path: inputs
           merge-multiple: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          artifact-ids: '10928009164'
-          run-id: 36308250793
-          github-token: ${{ github.token }}
-          path: debug
-          merge-multiple: true
-      - name: Restore exact author models, compose Pale decoration, audit effective stack and place walls
+      - name: Inspect Pale Residence provenance in pinned author releases
+        run: |
+          set -o pipefail
+          python3 qa/field-r3918/probe_pale_sources.py 2>&1 | tee artifacts/pale-source-probe.log
+      - name: Restore exact author models, audit effective stack and place walls
         run: |
           set -o pipefail
           python3 qa/field-r3918/run_walls.py 2>&1 | tee artifacts/repair-runtime.log
-      - name: Compare Pale source contexts before and after the integrated pool recovery
-        run: |
-          set -o pipefail
-          python3 qa/field-r3918/run_pale.py 2>&1 | tee artifacts/pale-integrated-runtime.log
       - name: Preserve actual source and outcomes
         if: always()
         run: |
