@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import unittest
+import copy,unittest
 import combine_content as c
 
 class PaletteTests(unittest.TestCase):
@@ -21,4 +21,24 @@ class PaletteTests(unittest.TestCase):
     def test_multiple_palettes_refused(self):
         root=self.root();root['palettes']=(9,(9,[]))
         with self.assertRaises(ValueError):list(c.joints(root))
+
+class ChildTests(unittest.TestCase):
+    def setUp(self):
+        self.target='nova_structures:tavern_villager_mangrove'
+        self.rows=[{'template':'authored-child.nbt','names':[self.target],
+                    'entities':(9,(10,[{'nbt':(10,{'id':(8,'minecraft:villager')})}]))}]
+    def test_already_valid_target_requires_no_edit(self):
+        before=copy.deepcopy(self.rows)
+        self.assertEqual(c.validate_compatibility(self.target,{self.target},self.rows),['authored-child.nbt'])
+        self.assertEqual(self.rows,before)
+    def test_missing_target_is_not_silently_replaced(self):
+        with self.assertRaises(ValueError):c.validate_compatibility('nova_structures:missing',{self.target},self.rows)
+    def test_empty_matching_template_rejected(self):
+        self.rows[0]['entities']=(9,(10,[]))
+        with self.assertRaises(ValueError):c.validate_compatibility(self.target,{self.target},self.rows)
+    def test_wrong_entity_rejected(self):
+        self.rows[0]['entities'][1][1][0]['nbt'][1]['id']=(8,'minecraft:pig')
+        with self.assertRaises(ValueError):c.validate_compatibility(self.target,{self.target},self.rows)
+    def test_name_union_without_corresponding_row_rejected(self):
+        with self.assertRaises(ValueError):c.validate_compatibility(self.target,{self.target},[])
 if __name__=='__main__':unittest.main(verbosity=2)
