@@ -85,8 +85,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import json,os,shutil,subprocess
-          core=Path(os.environ['CORE'])
-          ow=Path(os.environ['OVERWORLD']); nn=Path(os.environ['NETHER'])
+          core=Path(os.environ['CORE']).resolve()
+          ow=Path(os.environ['OVERWORLD']).resolve(); nn=Path(os.environ['NETHER']).resolve()
           root=Path('.work/r3921-mobs/server')
           packs=root/'world/datapacks'; plugins=root/'plugins'
           packs.mkdir(parents=True); plugins.mkdir()
