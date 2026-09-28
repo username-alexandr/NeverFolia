@@ -1,7 +1,7 @@
 name: R3918 resource recovery
 on:
   push:
-    branches: ['fix/neveroverworld-r3918-resource-paths']
+    branches: ['fix/neveroverworld-r3918-resource-paths', 'fix/neverfolia-r3921-effective-stack']
     paths: ['qa/field-r3918/**', 'scripts/*r3918*', '.github/workflows/never-r3918-resources.yml']
   workflow_dispatch:
 permissions:
