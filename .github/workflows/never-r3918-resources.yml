@@ -47,10 +47,10 @@ jobs:
           github-token: ${{ github.token }}
           path: inputs
           merge-multiple: true
-      - name: Repair only verified identifiers and test exact final resource resolution
+      - name: Restore exact author models, audit dependencies and place them on a real region
         run: |
           set -o pipefail
-          python3 qa/field-r3918/run_mansion.py 2>&1 | tee artifacts/repair-runtime.log
+          python3 qa/field-r3918/run_walls.py 2>&1 | tee artifacts/repair-runtime.log
       - name: Preserve actual source and outcomes
         if: always()
         run: |
