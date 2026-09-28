@@ -144,6 +144,7 @@ class ResourceStack:
         self.providers = {}
         self.overrides = []
         self.tag_contributors = {}
+        self.non_resource_markers = []
         self.order = []
 
     def add(self, pack_id, entries):
@@ -152,9 +153,13 @@ class ResourceStack:
         for name, raw in sorted(entries.items()):
             if not name.startswith('data/'):
                 continue
+            provider = {'pack': pack_id, 'sha256': digest(raw)}
+            if name == 'data/.mcassetsroot':
+                # Exact marker observed in the pinned engine; not a namespaced resource.
+                self.non_resource_markers.append({'path': name, **provider})
+                continue
             parts = PurePosixPath(name).parts
             need(len(parts) >= 4, 'Invalid data path: ' + name)
-            provider = {'pack': pack_id, 'sha256': digest(raw)}
             if parts[2] == 'tags':
                 self.tag_contributors.setdefault(name, []).append(provider)
                 continue
@@ -221,6 +226,7 @@ def audit_resources(stack, graph, parse_nbt):
         'non_tag_providers': stack.providers,
         'overrides': stack.overrides,
         'tag_contributors_not_merged': stack.tag_contributors,
+        'non_resource_markers': stack.non_resource_markers,
     }
     report['production_accepted'] = False
     report['runtime_tested_by_this_audit'] = False

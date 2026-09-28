@@ -97,9 +97,12 @@ def main():
             return {'schema': 1, 'server': record(kernel, c.CORE),
                     'packs': [record(pack, sha, expected[1]), record(nether, swift.NETHER, expected[2])]}
         manifests = {'before': manifest(base, c.BASE), 'after': manifest(fixed, build['output_sha256'])}
-        results = {}
+        # Publish both checked input identities first. The independent startup
+        # witness must still run when a static decoder encounters a blocker.
         for label, value in manifests.items():
             save('stack-' + label + '-manifest.json', value)
+        results = {}
+        for label, value in manifests.items():
             result = s.audit_manifest(value)
             save('stack-' + label + '-resources.json', result)
             results[label] = result

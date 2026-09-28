@@ -27,6 +27,7 @@ jobs:
           mkdir -p artifacts
           set -o pipefail
           python3 scripts/test_never_resource_stack.py 2>&1 | tee artifacts/stack-unit-tests.log
+          python3 qa/field-r3919/test_marker.py 2>&1 | tee artifacts/stack-marker-and-alias-tests.log
           python3 qa/field-r3915/test_combined.py 2>&1 | tee artifacts/previous-content-tests.log
           python3 qa/field-r3915/test_combined_jigsaws.py 2>&1 | tee artifacts/previous-jigsaw-tests.log
           python3 qa/field-r3915/apply_authored_npc_contract.py 2>&1 | tee artifacts/authored-transform.log
