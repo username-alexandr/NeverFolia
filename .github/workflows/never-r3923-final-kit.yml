@@ -3,7 +3,6 @@ on:
   push:
     branches: ['fix/neverfolia-r3921-effective-stack']
     paths:
-      - 'qa/field-r3923/**'
       - '.github/workflows/never-r3923-final-kit.yml'
   workflow_dispatch:
 permissions:
