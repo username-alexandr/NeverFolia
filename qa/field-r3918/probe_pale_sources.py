@@ -60,10 +60,17 @@ def inspect(label,raw):
     candidates=sorted(name for name in files if 'pale_residence' in name and
                       ('decor_inside' in name or '/decor/' in name or 'banner' in name.lower()
                        or 'sign' in name.lower() or name.endswith('/pale_house_2.nbt')))
+    feature_names=('pale_moss_small','pale_moss_floor')
+    feature_candidates={key:[] for key in feature_names}
+    for name,payload in sorted(files.items()):
+        for key in feature_names:
+            if key in name:
+                feature_candidates[key].append({'path':name,'sha256':hashlib.sha256(payload).hexdigest(),
+                                                'size':len(payload)})
     return {'label':label,'archive_sha256':hashlib.sha256(raw).hexdigest(),
             'pool_present':POOL in files,'pool':pool_obj,'pool_locations':locs,
             'resolved_pool_templates':resolved,'parent_references':refs,
-            'candidate_paths':candidates}
+            'candidate_paths':candidates,'feature_candidates':feature_candidates}
 
 def main():
     OUT.mkdir(exist_ok=True)
@@ -80,7 +87,8 @@ def main():
             'pool_present':row['pool_present'],'pool_locations':row['pool_locations'],
             'resolved_pool_templates':row['resolved_pool_templates'],
             'parent_references':row['parent_references'],
-            'candidate_paths':row['candidate_paths']},ensure_ascii=False),flush=True)
+            'candidate_paths':row['candidate_paths'],
+            'feature_candidates':row['feature_candidates']},ensure_ascii=False),flush=True)
 
 if __name__=='__main__':
     main()
