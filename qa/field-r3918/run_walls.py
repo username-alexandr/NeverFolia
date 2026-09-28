@@ -41,7 +41,8 @@ def main():
         with target.open('xb') as f:f.write(payload)
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
-        s.need(all(p not in nf or nf[p]==finalfiles[p] for p in (*fix.fix.POOLS,*(m['path'] for m in build['models']))),'Nether shadows a restored resource')
+        restored_paths=(*fix.fix.POOLS,*(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])))
+        s.need(all(p not in nf or nf[p]==finalfiles[p] for p in restored_paths),'Nether shadows a restored resource')
         audit=s.load('r3918_walls_audit',ROOT/'scripts/audit-neveroverworld-r39-resources.py')
         after=audit.audit_files(core,target);r.save('walls-resource-after.json',after)
         a={(x['kind'],x['id']) for x in before['missing']};b={(x['kind'],x['id']) for x in after['missing']}
