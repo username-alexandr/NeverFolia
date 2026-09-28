@@ -35,70 +35,6 @@ jobs:
           github-token: ${{ github.token }}
           path: debug
           merge-multiple: true
-      - name: Inspect existing weathering source and actual ice bytecode
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib,json,zipfile,io,subprocess
-          paths=list(Path('debug').rglob('diagnostics.zip'))
-          if len(paths)!=1: raise ValueError('Missing or ambiguous pinned diagnostics')
-          out=Path('rebuild-evidence');out.mkdir()
-          wanted={
-            'NeverOverworldFlood.java': ['isDrownedFrozenOverlay','weatherSubmerged','reweatherSubmerged','drowned surface weathering','isDrownedSurfaceOverlay'],
-            'FreezeTopLayerFeature.java': ['getHeight','shouldFreeze','setBlock','SEA_LEVEL'],
-            'BlueIceFeature.java': ['getSeaLevel','origin','setBlock'],
-            'IcebergFeature.java': ['getSeaLevel','context.origin','setBlock'],
-            'IceSpikeFeature.java': ['getSeaLevel','origin','setBlock'],
-          }
-          report={}
-          try:
-              with zipfile.ZipFile(paths[0]) as z:
-                  for name,terms in wanted.items():
-                      hits=[n for n in z.namelist() if n.endswith('/'+name) and '/src/minecraft/java/' in n]
-                      if not hits and name!='NeverOverworldFlood.java':
-                          report[name]={'status':'not_in_diagnostic_source_archive','source_inspected':False}
-                          print('ICE_SOURCE_UNAVAILABLE '+name)
-                          continue
-                      if len(hits)!=1: raise ValueError('Missing/ambiguous materialized source: '+name)
-                      raw=z.read(hits[0]);lines=raw.decode('utf-8').splitlines();indexes=set()
-                      digest=hashlib.sha256(raw).hexdigest()
-                      if name=='NeverOverworldFlood.java' and digest!='e9a68ef34c78988f1d584cbf14889f312872cc9f04b53aa9b44c744157d6bc27':
-                          raise ValueError('Unexpected materialized flood source')
-                      for i,line in enumerate(lines):
-                          if any(t.lower() in line.lower() for t in terms):
-                              indexes.update(range(max(0,i-10),min(len(lines),i+18)))
-                      selected=[{'line':i+1,'text':lines[i]} for i in sorted(indexes)]
-                      report[name]={'status':'source_context_read','source':hits[0],'sha256':digest,'context':selected}
-                      print('ICE_SOURCE '+name+' '+digest)
-                      for row in selected: print(str(row['line'])+': '+row['text'])
-              # The DEBUG archive does not contain every vanilla source. Inspect
-              # bytecode from the exact actual runtime instead; never invent source.
-              bases=list(Path('inputs').rglob('server.jar'))
-              if len(bases)!=1: raise ValueError('Missing exact input server')
-              if hashlib.sha256(bases[0].read_bytes()).hexdigest()!='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67':
-                  raise ValueError('Wrong input server')
-              with zipfile.ZipFile(bases[0]) as outer:
-                  names=[n for n in outer.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
-                  if len(names)!=1: raise ValueError('Wrong bundled server')
-                  inner=outer.read(names[0])
-              scratch=Path('.work/ice-inspection');scratch.mkdir(parents=True,exist_ok=False)
-              jar=scratch/'engine.jar';jar.write_bytes(inner)
-              with zipfile.ZipFile(io.BytesIO(inner)) as z:
-                  for name in wanted:
-                      if name=='NeverOverworldFlood.java':continue
-                      leaf=name[:-5]+'.class';matches=[n for n in z.namelist() if n.endswith('/'+leaf)]
-                      if len(matches)!=1:raise ValueError('Missing/ambiguous runtime feature '+name)
-                      path=matches[0];result=subprocess.run(['javap','-c','-p','-classpath',str(jar),path[:-6].replace('/','.')],text=True,capture_output=True,timeout=30)
-                      if result.returncode:raise ValueError(result.stderr)
-                      (out/(name[:-5]+'.javap.txt')).write_text(result.stdout)
-                      report[name].update({'runtime_class':path,'runtime_sha256':hashlib.sha256(z.read(path)).hexdigest(),'bytecode_inspected':True})
-                      print('ICE_BYTECODE '+name+' '+report[name]['runtime_sha256'])
-                      # Small entry-point excerpt; complete bytecode stays in evidence.
-                      lines=result.stdout.splitlines();i=next((i for i,s in enumerate(lines) if 'boolean place(' in s),0)
-                      print('\n'.join(lines[i:i+115]))
-          finally:
-              (out/'ice-source-context.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
-          PY
       - name: Recompile official client targets and own addon
         run: python3 qa/field-r3912/build_client.py
       - name: Execute actual registry predicate on a fresh server
@@ -110,6 +46,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib,json,os
+          out=Path('rebuild-evidence');out.mkdir(exist_ok=True)
           expected={
             'NeverLand-Enchantment-UI-Fabric-26.2-R39.12.jar':'da556d6f79c53f741f319ca215b09bceb5b74a6b46ac657878ffaca766b9b53d',
             'NeverLand-Enchantments-RU-26.2-R39.12.zip':'831b4cba0af3bbdad507f1c1c355b5e05a2787560fd990bee30f8c3423d98196',
@@ -117,7 +54,7 @@ jobs:
           rows=[]
           for name,want in expected.items():
               matches=list(Path('client-delivery').rglob(name))
-              if len(matches)!=1: raise ValueError('Missing/ambiguous rebuilt file: '+name)
+              if len(matches)!=1:raise ValueError('Missing/ambiguous rebuilt file: '+name)
               actual=hashlib.sha256(matches[0].read_bytes()).hexdigest()
               row={'file':name,'sha256':actual,'expected':want,'equal':actual==want};rows.append(row)
               print('INDEPENDENT_REBUILD '+json.dumps(row))
@@ -125,8 +62,8 @@ jobs:
                   'independent_recompile_equal':all(r['equal'] for r in rows),
                   'client_rendering_tested':False,'mixin_execution_tested':False,
                   'server_worldgen_changed':False,'production_accepted':False}
-          Path('rebuild-evidence/independent-rebuild.json').write_text(json.dumps(report,indent=2)+'\n')
-          if not report['independent_recompile_equal']: raise ValueError('Independent build differs; do not relabel as identical')
+          (out/'independent-rebuild.json').write_text(json.dumps(report,indent=2)+'\n')
+          if not report['independent_recompile_equal']:raise ValueError('Independent build differs')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -134,6 +71,61 @@ jobs:
           path: client-delivery/
           if-no-files-found: error
           retention-days: 14
+      - name: Inspect known weathering source and discover actual ice classes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile,io,subprocess
+          paths=list(Path('debug').rglob('diagnostics.zip'))
+          if len(paths)!=1:raise ValueError('Missing/ambiguous pinned diagnostics')
+          out=Path('rebuild-evidence');out.mkdir(exist_ok=True)
+          wanted={'NeverOverworldFlood.java':'e9a68ef34c78988f1d584cbf14889f312872cc9f04b53aa9b44c744157d6bc27',
+                  'BlueIceFeature.java':'9d6e5635ca18677101f72e88711d8212eeb9840ddf0bcee9c0410c3f32532224',
+                  'IcebergFeature.java':'bb9f52ee12da31b2f98e8010fa81c82daa1ba132985708f2d60a20ac79b27756'}
+          terms=('isDrownedFrozenOverlay','weatherSubmerged','getSeaLevel','shouldFreeze','origin','isDrownedSurfaceOverlay')
+          report={'sources':{},'classes':{},'worldgen_changed':False}
+          try:
+              with zipfile.ZipFile(paths[0]) as z:
+                  for name,expected in wanted.items():
+                      hits=[n for n in z.namelist() if n.endswith('/'+name) and '/src/minecraft/java/' in n]
+                      if len(hits)!=1:raise ValueError('Missing/ambiguous known source '+name)
+                      raw=z.read(hits[0]);digest=hashlib.sha256(raw).hexdigest()
+                      if digest!=expected:raise ValueError('Known source changed '+name)
+                      lines=raw.decode().splitlines();indexes=set()
+                      for i,line in enumerate(lines):
+                          if any(t.lower() in line.lower() for t in terms):indexes.update(range(max(0,i-5),min(len(lines),i+18)))
+                      selected=[{'line':i+1,'text':lines[i]} for i in sorted(indexes)]
+                      report['sources'][name]={'source':hits[0],'sha256':digest,'context':selected}
+                      print('ICE_SOURCE '+name+' '+digest)
+                      for row in selected:print(str(row['line'])+': '+row['text'])
+              bases=list(Path('inputs').rglob('server.jar'))
+              if len(bases)!=1 or hashlib.sha256(bases[0].read_bytes()).hexdigest()!='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67':
+                  raise ValueError('Wrong input server')
+              with zipfile.ZipFile(bases[0]) as outer:
+                  names=[n for n in outer.namelist() if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
+                  if len(names)!=1:raise ValueError('Wrong bundled server')
+                  inner=outer.read(names[0])
+              scratch=Path('.work/ice-inspection');scratch.mkdir(parents=True,exist_ok=False)
+              jar=scratch/'engine.jar';jar.write_bytes(inner)
+              with zipfile.ZipFile(io.BytesIO(inner)) as z:
+                  actual=sorted(n for n in z.namelist() if n.startswith('net/minecraft/world/level/levelgen/feature/')
+                      and '/' not in n.split('/feature/',1)[1] and n.endswith('Feature.class') and '$' not in n
+                      and any(t in Path(n).name.lower() for t in ('ice','snow','freez')))
+                  if not actual or len(actual)>20:raise ValueError('Unexpected feature discovery scope')
+                  print('ACTUAL_ICE_FEATURES '+json.dumps(actual))
+                  report['discovered_runtime_classes']=actual
+                  for path in actual:
+                      result=subprocess.run(['javap','-c','-p','-classpath',str(jar),path[:-6].replace('/','.')],text=True,capture_output=True,timeout=30)
+                      if result.returncode:raise ValueError(result.stderr)
+                      name=Path(path).stem
+                      (out/(name+'.javap.txt')).write_text(result.stdout)
+                      report['classes'][path]={'sha256':hashlib.sha256(z.read(path)).hexdigest(),'bytecode_inspected':True}
+                      print('ICE_BYTECODE '+name+' '+report['classes'][path]['sha256'])
+                      lines=result.stdout.splitlines();i=next((i for i,s in enumerate(lines) if 'boolean place(' in s),0)
+                      print('\n'.join(lines[i:i+90]))
+          finally:
+              (out/'ice-source-context.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          PY
       - name: Keep current logs and provenance
         if: always()
         run: |
@@ -144,8 +136,7 @@ jobs:
           source=Path('client-output')
           if source.exists():
               for p in source.iterdir():
-                  if p.is_file() and (p.suffix=='.json' or p.name.endswith('compile.log') or p.name in ('registry-server.log','javac-version.log')):
-                      shutil.copyfile(p,out/p.name)
+                  if p.is_file() and (p.suffix=='.json' or p.name.endswith('compile.log') or p.name in ('registry-server.log','javac-version.log')):shutil.copyfile(p,out/p.name)
           shutil.copyfile('.github/workflows/never-r3912-rebuild-ice-origin.yml',out/'workflow.yml')
           (out/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'server_unchanged':True,'ice_source_only':True},indent=2)+'\n')
           PY
