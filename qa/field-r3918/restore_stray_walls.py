@@ -194,8 +194,8 @@ def adapt_pale_features_26_2(files, family):
         def rewrite(node):
             if isinstance(node,dict):
                 for k,v in list(node.items()):
-                    if v=='minecraft:small_dripleaf_placeable':
-                        node[k]='minecraft:supports_small_dripleaf';tag_rewrites.append(path)
+                    if v in ('minecraft:small_dripleaf_placeable','#minecraft:small_dripleaf_placeable'):
+                        node[k]=('#' if v.startswith('#') else '')+'minecraft:supports_small_dripleaf';tag_rewrites.append(path)
                     else:rewrite(v)
             elif isinstance(node,list):
                 for v in node:rewrite(v)
