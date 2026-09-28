@@ -1,0 +1,117 @@
+name: R3915 Swift lifecycle cleanup
+on:
+  push:
+    branches: ['fix/neveroverworld-r3915-functional-content']
+    paths: ['qa/field-r3915/SwiftTickHook.java', 'qa/field-r3915/NeverFoliaSwiftLifecycleR3915.java', 'qa/field-r3915/build_kernel.py', 'qa/field-r3915/run_lifecycle.py', '.github/workflows/never-r3915-lifecycle.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3915-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Test datapack integrity guards
+        run: python3 qa/field-r3915/test_restore.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: '36308250793'
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10965768659'
+          run-id: '36414825586'
+          github-token: ${{ github.token }}
+          path: author
+          merge-multiple: true
+      - name: Restore the same verified author function graph
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,sys
+          base=list(Path('inputs').rglob('NeverOverworld.zip'));author=list(Path('author').rglob('original.zip'))
+          if len(base)!=len(author) or len(base)!=1:raise ValueError('Ambiguous input')
+          subprocess.run([sys.executable,'qa/field-r3915/restore_swift.py','--base',str(base[0]),'--original',str(author[0]),'--out','artifacts/NeverOverworld-R3915.zip','--report','artifacts/swift-build.json'],check=True)
+          PY
+      - name: Resolve exact runtime classpath
+        run: python3 qa/field-r3915/prepare_runtime.py
+      - name: Compile owned cleanup and enforce single-method kernel delta
+        run: python3 qa/field-r3915/build_kernel.py
+      - name: Real loopback mount, enchantment tiers, dismount, harness removal and restart
+        run: python3 qa/field-r3915/run_lifecycle.py
+      - name: Preserve complete current evidence and own source
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,shutil
+          out=Path('artifacts');(out/'source').mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3915').iterdir():
+              if p.is_file():shutil.copyfile(p,out/'source'/p.name)
+          shutil.copyfile('.github/workflows/never-r3915-lifecycle.yml',out/'source/lifecycle-workflow.yml')
+          (out/'lifecycle-provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'user_world_changed':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3915-LIFECYCLE-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+  cart-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10967789179'
+          run-id: '36417504719'
+          github-token: ${{ github.token }}
+          path: cart-evidence
+          merge-multiple: true
+      - name: Show new strict cart failure with live NPC identities
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          out=Path('cart-observation');out.mkdir();seen=[]
+          for p in sorted(Path('cart-evidence').rglob('*')):
+              if not p.is_file() or p.suffix not in ('.json','.log') or not any(s in p.name for s in ('placement','runtime','result')):continue
+              rows=p.read_text(errors='replace').splitlines()
+              if p.suffix=='.log':
+                  indexes=set()
+                  for i,line in enumerate(rows):
+                      if any(t in line for t in ('AssertionError','R3914 NPC','Caused by','Exception')):indexes.update(range(max(0,i-2),min(len(rows),i+12)))
+                  text='\n'.join(rows[i] for i in sorted(indexes))
+              else:text='\n'.join(rows)
+              seen.append({'path':p.as_posix(),'text':text});print('CART_ACTUAL',p.as_posix(),text)
+          if not seen:raise ValueError('No evidence')
+          (out/'cart-failure.json').write_text(json.dumps({'source_run':36417504719,'evidence':seen,'accepted':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3915-CART-NEW-OBSERVATION-${{ github.sha }}
+          path: cart-observation/
+          if-no-files-found: error
+          retention-days: 14
