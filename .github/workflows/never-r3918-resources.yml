@@ -2,7 +2,7 @@ name: R3918 resource recovery
 on:
   push:
     branches: ['fix/neveroverworld-r3918-resource-paths']
-    paths: ['qa/field-r3918/**', '.github/workflows/never-r3918-resources.yml']
+    paths: ['qa/field-r3918/**', 'qa/resource_paths_inspect_r3918.py', '.github/workflows/never-r3918-resources.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,56 +33,18 @@ jobs:
           github-token: ${{ github.token }}
           path: swift-input
           merge-multiple: true
-      - name: Inspect exact integrated content without mutations
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10981888711'
+          run-id: 36450508420
+          github-token: ${{ github.token }}
+          path: candidate-input
+          merge-multiple: true
+      - name: Inspect exact paths and native template API
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import sys,json,hashlib,zipfile,io,difflib
-          sys.path.insert(0,'qa/field-r3915')
-          import restore_swift as s
-          def exact(folder,name,digest):
-              paths=list(Path(folder).rglob(name))
-              if len(paths)!=1:raise ValueError('Missing/ambiguous '+name)
-              raw=paths[0].read_bytes()
-              if hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('Wrong '+name)
-              return raw
-          pack=s.read_zip(exact('integrated-input','NeverOverworld-R3915-Combined.zip','0e747781b9ea875631f1453903c0ac912d49f14a3a46ad48bbf604148532c621'))
-          outer=s.read_zip(exact('swift-input','server-r3915.jar','845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'))
-          names=[n for n in outer if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
-          if len(names)!=1:raise ValueError('Wrong bundled engine')
-          vanilla=s.read_zip(outer[names[0]])
-          files={**vanilla,**pack}
-          ps=list(Path('integrated-input').rglob('combined-resource-after.json'))
-          if len(ps)!=1:raise ValueError('Missing previous audit')
-          prior=json.loads(ps[0].read_text())
-          if prior['inputs']['pack_sha256']!='0e747781b9ea875631f1453903c0ac912d49f14a3a46ad48bbf604148532c621':raise ValueError('Wrong audit input')
-          reader=s.load('r3918_reader',Path('scripts/build-never-overworld-external-structures-r19.py'))
-          allnbt=sorted(n for n in files if n.startswith('data/') and '/structure/' in n and n.endswith('.nbt'))
-          out=Path('artifacts');out.mkdir(exist_ok=True)
-          report=[]
-          for row in prior['missing']:
-              if row['kind']!='template':raise ValueError('Unexpected missing family')
-              ns,local=row['id'].split(':',1);path='data/'+ns+'/structure/'+local+'.nbt'
-              if path in files:raise ValueError('Stale missing report')
-              exactleaf=[n for n in allnbt if Path(n).name==Path(path).name]
-              close=difflib.get_close_matches(path,[n for n in allnbt if n.startswith('data/'+ns+'/')],n=3,cutoff=.55)
-              candidates=[]
-              for n in dict.fromkeys(exactleaf+close):
-                  root=reader._nbt_parse(files[n])[2]
-                  joints=[]
-                  for b in root.get('blocks',(9,(10,[])))[1][1]:
-                      nb=b.get('nbt',(10,{}))[1]
-                      if 'pool' in nb:joints.append({k:nb.get(k) for k in ('name','target','pool')})
-                  candidates.append({'path':n,'sha256':hashlib.sha256(files[n]).hexdigest(),'size':root.get('size'),'joints':joints[:6],'exact_leaf':n in exactleaf})
-              item={'missing':row['id'],'origins':row['origins'],'roots':row['roots'],'candidates':candidates}
-              report.append(item)
-              print('RESOURCE_CANDIDATES '+json.dumps(item),flush=True)
-          for n,raw in sorted(pack.items()):
-              if n.endswith('.json') and '/pale_residence/' in n and '/template_pool/' in n:
-                  print('PALE_POOL '+n+' '+raw.decode(),flush=True)
-          (out/'resource-candidates.json').write_text(json.dumps(report,indent=2)+'\n')
-          (out/'status.json').write_text(json.dumps({'inspection_only':True,'game_files_changed':False,'all_reported_bugs_fixed':False})+'\n')
-          PY
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/resource_paths_inspect_r3918.py 2>&1 | tee artifacts/compact-inspection.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
