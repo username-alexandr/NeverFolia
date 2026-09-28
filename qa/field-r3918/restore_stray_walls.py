@@ -12,7 +12,17 @@ s=fix.s;ROOT=fix.ROOT
 AUTHOR_URL='https://cdn.modrinth.com/data/tpehi7ww/versions/8o3mS993/Dungeons%20and%20Taverns%20v4.5.zip'
 AUTHOR_SHA='c48fd3ddf4999cdaa7513e8ea676b5c8f527ae1f28a0e4a72ad0272502c69979'
 AUTHOR_SIZE=14032193
+V6_URL='https://cdn.modrinth.com/data/tpehi7ww/versions/bipfLkEE/Dungeons%20and%20Taverns%20v6.0.1.zip'
+V6_SHA='78baaa07653eb618be42da7a7fb705b14c72f72351061b5190d635c3c0493345'
+V6_SIZE=21700737
 PREFIX='data/nova_structures/structure/stray_fort/'
+FUTURE_MODELS={
+    'nova_structures:illager_hideout/illager_hideout_path_short_sb':'3167defa36170b1f09a074caf7d892f62c8be9c4bcd52b81fdd253727330e3a2',
+    'nova_structures:ruin_town/ruin_town_house_small_5':'28b06ea03d05916484a9fe980c169662bf368a8f9688e9739de2b5645ecec228',
+    'nova_structures:ruin_town/ruin_town_tower_house_5':'b0b4a0a1344a7150862547bdc5e57f92ec0618c5d1732c2bd4d1799c1a44df29',
+    'nova_structures:stray_fort/road/stray_fort_path_t-cross':'fdc060d1b28add786a5be07ad95fdb701ba11dfb96cc81b32d7156d762e7e5ba',
+    'nova_structures:toxic_lair/funiture/toxic_surface_deco_2_r':'549e24bbb5d8c4df6c61905274e7229a3948edd8f6cede03dfadf30cb9f8a8f7',
+}
 MODELS=tuple(sorted('stray_fort_wall_'+part+str(i) for part in ('','back_','back_left_','back_right_','front_','front_left_','front_right_','gate_','gate_back_','gate_front_','gate_short_','short_') for i in (1,2,3)))
 # These exact v4.5 templates are the one-hop children exposed by the restored
 # wall jigsaws. They were not reachable in the broken pack, so the earlier
@@ -25,13 +35,16 @@ CLOSURE_MODELS=tuple(
 EVENT_POOL='data/nova_structures/worldgen/template_pool/stray_fort_event.json'
 DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
 
-def author_bytes():
-    req=urllib.request.Request(AUTHOR_URL,headers={'User-Agent':'NeverFolia-resource-recovery/1.0'})
+def pinned_download(url,size,expected):
+    req=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-resource-recovery/1.0'})
     with urllib.request.urlopen(req,timeout=60) as r:
         s.need(urlparse(r.url).scheme=='https' and urlparse(r.url).hostname=='cdn.modrinth.com','Unexpected author redirect')
-        raw=r.read(AUTHOR_SIZE+1)
-    s.need(len(raw)==AUTHOR_SIZE and s.sha(raw)==AUTHOR_SHA,'Wrong exact historical author archive')
+        raw=r.read(size+1)
+    s.need(len(raw)==size and s.sha(raw)==expected,'Wrong exact historical author archive')
     return raw
+
+def author_bytes():return pinned_download(AUTHOR_URL,AUTHOR_SIZE,AUTHOR_SHA)
+def author_v6_bytes():return pinned_download(V6_URL,V6_SIZE,V6_SHA)
 
 def foreign_ids(value):
     if isinstance(value,dict):
@@ -52,11 +65,13 @@ def sanitize_exact(ext,raw,ident):
            and afterroot.get('blocks')==root.get('blocks'),'Authored structure geometry changed')
     return root,installed,before_foreign-after_foreign
 
-def build(base,author,before):
+def build(base,author,before,author_v6=None):
     s.need(s.sha(base)==fix.BASE and s.sha(author)==AUTHOR_SHA,'Wrong pinned inputs')
+    if author_v6 is not None:s.need(s.sha(author_v6)==V6_SHA,'Wrong pinned v6 input')
     s.need(before['inputs']['pack_sha256']==fix.BASE,'Wrong reference audit')
     missing={(x['kind'],x['id']) for x in before['missing']}
     corrected,mansion=fix.build(base);files=s.read_zip(corrected);original=s.read_zip(base);source=s.read_zip(author)
+    source_v6=s.read_zip(author_v6) if author_v6 is not None else {}
     ext=s.load('r3918_authored_walls',ROOT/'scripts/build-never-overworld-external-structures-r19.py');rows=[]
     event_pool=json.loads(files[EVENT_POOL])
     before_event=json.loads(json.dumps(event_pool))
@@ -106,16 +121,31 @@ def build(base,author,before):
                         'data_version':version[1],'size':size,'foreign_attributes_removed':removed,
                         'byte_identical_to_author':raw==installed})
     s.need(len(closure)==33 and len({r['id'] for r in closure})==33,'Incomplete exact closure family')
+    future=[]
+    if source_v6:
+        for ident,expected_sha in FUTURE_MODELS.items():
+            ns,name=ident.split(':',1);path=f'data/{ns}/structure/{name}.nbt'
+            s.need(('template',ident) in missing and path not in files and path in source_v6,'Unexpected v6 restoration target '+ident)
+            raw=source_v6[path];s.need(s.sha(raw)==expected_sha,'Reviewed v6 model hash changed '+ident)
+            root,installed,removed=sanitize_exact(ext,raw,ident)
+            version=root.get('DataVersion');s.need(version and version[0]==3 and version[1] in (4082,5003),'Unreviewed v6 DataVersion '+ident)
+            size=root['size'][1][1];s.need(len(size)==3 and all(type(x) is int and 0<x<=128 for x in size),'Unexpected v6 model bounds '+ident)
+            files[path]=installed
+            future.append({'id':ident,'path':path,'source_sha256':expected_sha,'installed_sha256':s.sha(installed),
+                           'data_version':version[1],'size':size,'foreign_attributes_removed':removed,
+                           'byte_identical_to_author':raw==installed})
+        s.need(len(future)==len(FUTURE_MODELS),'Incomplete exact v6 recovery')
     fp=s.load('r3918_wall_fingerprint',ROOT/'scripts/fingerprint-never-overworld-pack.py')
     encoded=(json.dumps(fp.fingerprint_document(files),ensure_ascii=False,indent=2)+'\n').encode()
     for p in s.FP:files[p]=encoded
-    additions={r['path'] for r in rows}|{r['path'] for r in closure}
+    additions={r['path'] for r in rows}|{r['path'] for r in closure}|{r['path'] for r in future}
     s.need(set(files)-set(original)==additions and not set(original)-set(files),'Unexpected entry delta')
     allowed_changes=(*fix.POOLS,EVENT_POOL,*s.FP)
     s.need(all(files[p]==v for p,v in original.items() if p not in allowed_changes),'Unrelated original content changed')
     output=s.write_zip(files);s.need(s.read_zip(output)==files and output==s.write_zip(files),'Nonrepeatable output')
     return output,{'pass':True,'base_sha256':fix.BASE,'source_url':AUTHOR_URL,'source_archive_sha256':AUTHOR_SHA,
                    'output_sha256':s.sha(output),'mansion_repair':mansion,'models':rows,'closure_models':closure,
+                   'future_models':future,'v6_source_url':V6_URL if source_v6 else None,'v6_source_sha256':V6_SHA if source_v6 else None,
                    'stray_event_pool_repair':{'path':EVENT_POOL,'removed_location':DANGLING_EVENT,'removed_weight':2,
                                               'upstream_missing_in_checked_releases':True},
                    'restored_templates':len(rows)+len(closure),'existing_entries_preserved':sum(files[p]==v for p,v in original.items()),

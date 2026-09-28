@@ -36,17 +36,18 @@ def main():
         core=r.exact(ROOT/'swift-input','server-r3915.jar',fix.fix.CORE)
         nether=r.exact(ROOT/'inputs','NeverNether.zip',r.NETHER)
         before=json.loads(r.one(ROOT/'integrated-input','combined-resource-after.json').read_text())
-        payload,build=fix.build(base.read_bytes(),fix.author_bytes(),before)
+        payload,build=fix.build(base.read_bytes(),fix.author_bytes(),before,fix.author_v6_bytes())
         target=OUT/'NeverOverworld-R3918-Walls.zip'
         with target.open('xb') as f:f.write(payload)
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
-        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,*(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])))
+        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,*(m['path'] for m in build['models']),
+                        *(m['path'] for m in build.get('closure_models',[])),*(m['path'] for m in build.get('future_models',[])))
         s.need(all(p not in nf or nf[p]==finalfiles[p] for p in restored_paths),'Nether shadows a restored resource')
         audit=s.load('r3918_walls_audit',ROOT/'scripts/audit-neveroverworld-r39-resources.py')
         after=audit.audit_files(core,target);r.save('walls-resource-after.json',after)
         a={(x['kind'],x['id']) for x in before['missing']};b={(x['kind'],x['id']) for x in after['missing']}
-        expected={('template',m['id']) for m in build['models']}|{('template','minecraft:minecraft/empty')}
+        expected={('template',m['id']) for m in build['models']}|{('template',m['id']) for m in build.get('future_models',[])}|{('template','minecraft:minecraft/empty')}
         report['resource_delta']={'before':before['counts'],'after':after['counts'],'removed':sorted(a-b),'introduced':sorted(b-a),'errors':after['errors'],'full_resource_acceptance':after['pass']}
         r.save('walls-resource-delta.json',report['resource_delta']);print('R3918_WALL_RESOURCE_DELTA',json.dumps(report['resource_delta']),flush=True)
         s.need(not after['errors'] and a-b==expected and not b-a,'New unresolved dependencies or incomplete restoration')
@@ -62,7 +63,7 @@ def main():
         shutil.copytree(converted,OUT/'walls-native-converted')
         s.need(s.sha(core.read_bytes())==fix.fix.CORE and s.sha(base.read_bytes())==fix.fix.BASE and s.sha(nether.read_bytes())==r.NETHER,'Original inputs altered')
         s.need(s.sha((packs/'NeverOverworld.zip').read_bytes())==build['output_sha256'],'Test pack changed')
-        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Exact 36 authored legacy walls, 33 exact authored closure templates, one proven dangling upstream event_13b pool entry removed, plus two mansion references. Actual wall loading/direct placement; restart reruns scenes, not complete natural fort assembly.'})
+        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Exact 36 authored legacy walls, 33 exact authored closure templates, five exact later-author repairs, one proven dangling upstream event_13b pool entry removed, plus two mansion references. Actual wall loading/direct placement; restart reruns scenes, not complete natural fort assembly.'})
     except Exception as e:report['error']=repr(e)
     finally:
         r.save('walls-result.json',report);print('R3918_WALL_RESULT',json.dumps({k:v for k,v in report.items() if k not in ('build','walls-first','walls-restart')}),flush=True)
