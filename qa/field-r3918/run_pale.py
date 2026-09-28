@@ -5,11 +5,10 @@ No production kit. Server, Nether, authored parent and child NBT stay unchanged.
 from pathlib import Path
 import collections, copy, hashlib, io, json, os, queue, secrets, shutil, subprocess, threading, time, zipfile
 import restore_pale as p
-ROOT=p.ROOT;OUT=ROOT/'r3918-evidence';WORK=ROOT/'.work/r3918-runtime'
+ROOT=p.ROOT;OUT=ROOT/'artifacts/pale-runtime';WORK=ROOT/'.work/r3920-pale-runtime'
 CORE='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-# Actual bytes retained in the pinned R399 input artifact; the old copied
-# literal contained two transcription errors. No integrity check is removed.
-NETHER='5e47f953cadbd54d1b04d9682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+# Canonical NeverNether used by the completed R39.17 combined acceptance.
+NETHER='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 SEED=-4651369264513492755
 
 def exact(folder,name,expected):
@@ -139,8 +138,9 @@ def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False);report={'pass':False,'all_reported_bugs_fixed':False,'user_kit_published':False}
     try:
         core=exact(ROOT/'swift-input','server-r3915.jar',CORE);nether=exact(ROOT/'inputs','NeverNether.zip',NETHER)
-        original=exact(ROOT/'combined-input','NeverOverworld-R3915-Combined.zip',p.BASE)
-        build=json.loads((OUT/'pale-build/pale-build.json').read_text());candidate=exact(OUT/'pale-build','NeverOverworld-R3918-Combined.zip',build['output_sha256'])
+        build=json.loads((ROOT/'artifacts/walls-build.json').read_text())
+        original=exact(ROOT/'.work/r3918-walls','NeverOverworld-R3918-PrePale.zip',build['pre_pale_output_sha256'])
+        candidate=exact(ROOT/'artifacts','NeverOverworld-R3920-Effective.zip',build['output_sha256'])
         files=p.read(original);host=WORK/'PaleQa.zip';cases=fixture(files,host);classes=compile_qa(core);plugin=WORK/'PaleDecorQa.jar'
         with zipfile.ZipFile(plugin,'x',zipfile.ZIP_DEFLATED) as z:
             for f in sorted(classes.rglob('*.class')):z.write(f,f.relative_to(classes).as_posix())
@@ -158,7 +158,7 @@ def main():
             p.need(sum('minecraft:white_banner' in x['after'] for x in diff)==1 and sum('minecraft:birch_wall_sign' in x['after'] for x in diff)==1,'Wrong decoration writes')
         report['restart']=phase('pale-restart',core,cand_world,False,True);p.need(report['restart']['pass'],'Saved scene changed')
         p.need(p.digest(core.read_bytes())==CORE and p.digest(original.read_bytes())==p.BASE and p.digest(nether.read_bytes())==NETHER,'Input modified')
-        report.update({'pass':True,'core_sha256':CORE,'pack_sha256':build['output_sha256'],'original_pack_sha256':p.BASE,'source_contexts':4,'added_banners':4,'added_signs':4,'other_block_changes':0,'whole_natural_building_tested':False,'core_changed':False})
+        report.update({'pass':True,'core_sha256':CORE,'pack_sha256':build['output_sha256'],'pre_pale_pack_sha256':build['pre_pale_output_sha256'],'source_contexts':4,'added_banners':4,'added_signs':4,'other_block_changes':0,'whole_natural_building_tested':False,'core_changed':False})
     except Exception as e:report['error']=repr(e)
     finally:(OUT/'pale-runtime.json').write_bytes(p.encoded(report))
     print('PALE_RUNTIME',json.dumps({k:v for k,v in report.items() if k not in ('baseline','candidate','restart')},ensure_ascii=False),flush=True);p.need(report['pass'],'Pale runtime not accepted')
