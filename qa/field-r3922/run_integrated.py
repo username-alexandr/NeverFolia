@@ -240,6 +240,9 @@ def main():
       'air_to_water':phases['candidate']['ocean_proof']['air_to_water'],
       'ice_report_files':phases['candidate']['ice_report_files'],
       'tracked_points':tracked_acceptance(phases['off']['observed'],phases['candidate']['observed'])}
+    # Persist the complete comparison state before any fail-closed assertion so CI artifacts
+    # retain the exact block transitions/coordinates responsible for rejection.
+    save('precondition-summary.json',summary)
     need(comparisons['off_vs_candidate']['pass'] and comparisons['off_vs_candidate']['changed']>0,'candidate made unsafe/no worldgen changes')
     need(comparisons['candidate_vs_restart']['pass'] and comparisons['candidate_vs_restart']['changed']==0,'restart mutated saved target state')
     need(comparisons['candidate_vs_reverse']['pass'] and comparisons['candidate_vs_reverse']['changed']==0,'target load order changes final blocks')
