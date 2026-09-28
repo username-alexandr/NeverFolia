@@ -22,11 +22,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: Test fresh-report and fixture guards
+      - name: Test fresh reports and palette-based jigsaw recognition
         run: |
           mkdir -p artifacts
           set -o pipefail
           python3 qa/field-r3915/test_combined.py 2>&1 | tee artifacts/combined-unit-tests.log
+          python3 qa/field-r3915/test_combined_jigsaws.py 2>&1 | tee artifacts/combined-palette-tests.log
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           artifact-ids: '10963935012'
@@ -59,6 +60,10 @@ jobs:
         run: |
           set -o pipefail
           python3 qa/field-r3915/combine_content.py 2>&1 | tee artifacts/combined-build-command.log
+      - name: Prove intended resource delta and retain all outstanding gaps
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/check_combined_resources.py 2>&1 | tee artifacts/combined-resource-command.log
       - name: Compile against final kernel and run all five isolated server phases
         run: |
           set -o pipefail
@@ -74,6 +79,7 @@ jobs:
               assert result[phase]['pass'] is True and result[phase]['exit_code']==0
           assert result['production_accepted'] is False
           assert result['all_reported_bugs_fixed'] is False
+          assert json.loads(Path('artifacts/combined-resource-delta.json').read_text())['pass'] is True
           print('COMBINED_CONTENT_SCOPED_PASS; all-worldgen and remaining missing templates NOT accepted.')
           PY
       - name: Preserve source, provenance and failures
