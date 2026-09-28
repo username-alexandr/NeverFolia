@@ -43,9 +43,9 @@ def main():
     }
     targets=missing|closure
     ext=s.load('r3918_history_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
-    report={'inspection_only':True,'game_files_modified':False,'all_reported_bugs_fixed':False,'base_pack_sha256':PACK,'versions':[],'metadata':[]}
+    report={'inspection_only':True,'game_files_modified':False,'all_reported_bugs_fixed':False,'base_pack_sha256':PACK,'versions':[],'metadata':[],'current_source_references':{}}
     selections=[]
-    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','5.3','6.')),('j3FONRYr',('1.0.15','1.0.16'))]:
+    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','5.3','6.')),('j3FONRYr',('1.0.15','1.0.16','1.0.17'))]:
         raw=get('https://api.modrinth.com/v2/project/'+project+'/version',5000000,'api.modrinth.com')
         versions=json.loads(raw);s.need(isinstance(versions,list),'Invalid version metadata')
         report['metadata'].append({'project':project,'sha256':s.sha(raw),'records':len(versions)})
@@ -54,7 +54,7 @@ def main():
             if not eligible:
                 report['versions'].append({'project':project,'requested_prefix':prefix,'status':'no_matching_official_release'});continue
             v=max(eligible,key=lambda x:x['date_published']);selections.append((project,prefix,v))
-    s.need(len(selections)<=7,'Inspection scope exceeded')
+    s.need(len(selections)<=8,'Inspection scope exceeded')
     for project,prefix,v in selections:
         row={'project':project,'version_id':v['id'],'version_number':v['version_number'],'requested_prefix':prefix,'status':'not_finished','matches':[],'event13b_references':[]};report['versions'].append(row)
         try:
@@ -68,6 +68,16 @@ def main():
             with zipfile.ZipFile(io.BytesIO(raw)) as z:
                 s.need(len(z.infolist())<=30000 and sum(n.file_size for n in z.infolist())<=500000000,'Unreviewed decompressed scope')
                 s.need(len(z.namelist())==len(set(z.namelist())),'Duplicate zip entries')
+                current=(project=='tpehi7ww' and prefix=='5.3') or (project=='j3FONRYr' and prefix=='1.0.17')
+                if current:
+                    refs={}
+                    needles={ident:ident.encode() for ident in missing}
+                    for info in z.infolist():
+                        if not info.filename.endswith(('.json','.mcfunction')) or info.file_size>2000000:continue
+                        payload=z.read(info)
+                        for ident,needle in needles.items():
+                            if needle in payload:refs.setdefault(ident,[]).append(info.filename)
+                    report['current_source_references'][project]={k:sorted(v) for k,v in sorted(refs.items())}
                 for n in z.infolist():
                     if (n.filename.endswith('.json') or n.filename.endswith('.mcfunction')) and n.file_size<=2000000:
                         payload=z.read(n)
@@ -90,5 +100,7 @@ def main():
     report['complete_inspection']=all(r['status']!='failed' for r in report['versions'])
     (OUT/'history-check.json').write_text(json.dumps(report,indent=2)+'\n')
     print('HISTORICAL_EXACT_CANDIDATES',json.dumps(allfound),flush=True)
+    print('UNRESOLVED_ORIGINAL',json.dumps(sorted(missing-set(allfound))),flush=True)
+    print('CURRENT_SOURCE_REFERENCES',json.dumps(report['current_source_references'],sort_keys=True),flush=True)
     s.need(report['complete_inspection'],'Some author archive inspections failed; absence is not proven')
 if __name__=='__main__':main()
