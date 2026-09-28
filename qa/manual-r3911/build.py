@@ -40,6 +40,11 @@ def main():
         if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):
             (libs/(str(i)+'-'+Path(n).name)).write_bytes(b)
     with zipfile.ZipFile(ROOT/'debug/diagnostics.zip') as z:
+        step_names=[n for n in z.namelist() if n.endswith('/src/minecraft/java/net/minecraft/world/level/chunk/status/ChunkStep.java')]
+        need(len(step_names)==1,'Missing exact dependency builder')
+        step=z.read(step_names[0]);need(digest(step)=='337d7b40fd6a3301994d6c40545b28160da5427b4eef20ca32d415fbf4ac427c','Dependency builder changed')
+        (OUT/'reference-ChunkStep.java').write_bytes(step)
+        need(b'getRadiusOfParent(this.parent.targetStatus)' in step,'Unexpected accumulated-dependency algorithm')
         for target,expected in ((LIGHT,'e3679bc3c336156e16dc9740d1ae16ab19112dfbeb19915f034f46c92250f283'),(PYRAMID,'24c0e2b6c1cf7f644031126573055a4994f697bc61286e36727b1661da9074f5')):
             names=[n for n in z.namelist() if n.endswith('/src/minecraft/java/'+target+'.java')]
             need(len(names)==1,'Missing materialized source: '+target);b=z.read(names[0]);need(digest(b)==expected,'Unexpected materialized source')
@@ -49,7 +54,10 @@ def main():
                 text=once(text,anchor,anchor+'\n                net.minecraft.world.level.chunk.NeverOverworldOceanClosureR399.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R3911_MANUAL_WIDE_OCEAN')
             else:
                 anchor='.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light))'
-                text=once(text,anchor,'.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).addRequirement(ChunkStatus.FEATURES, 3).setTask(ChunkStatusTasks::light))')
+                # ChunkStep accumulates transitive distances through its parent.
+                # FEATURES@3 with only INITIALIZE_LIGHT@1 requests neighbours outside
+                # the propagated ticket footprint. Widen the parent as well.
+                text=once(text,anchor,'.step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 3).addRequirement(ChunkStatus.FEATURES, 3).setTask(ChunkStatusTasks::light))')
             p=src/(target+'.java');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf-8')
         providers=[]
         for p in libs.glob('*.jar'):
@@ -106,7 +114,7 @@ def main():
     (CAND/'server.jar').write_bytes(newraw)
     for name,expected in (('NeverOverworld.zip',PACK),('NeverNether.zip',NETHER)):
         shutil.copyfile(pick(ROOT/'baseline',name,expected),CAND/name)
-    report={'version':'R39.11-manual','build_pass':True,'build_environment':'GitHub Actions','kind':'incremental javac --release 25; not full Gradle','base_core_sha256':BASE,'candidate_core_sha256':digest(newraw),'pack_sha256':PACK,'nether_sha256':NETHER,'preserved_hotfix_classes':preserved,'changed_or_added_classes':{n:digest(b) for n,b in sorted(changes.items())},'witness_chunks':25,'feature_dependency_radius':3,'ocean_flag':'neverfolia.r399OceanClosure','production_accepted':False,'visual_tested':False,'ice_fix_included':False,'enchantment_ui_fix_included':False,'source_inputs':source_manifest}
+    report={'version':'R39.11-manual','build_pass':True,'build_environment':'GitHub Actions','kind':'incremental javac --release 25; not full Gradle','base_core_sha256':BASE,'candidate_core_sha256':digest(newraw),'pack_sha256':PACK,'nether_sha256':NETHER,'preserved_hotfix_classes':preserved,'changed_or_added_classes':{n:digest(b) for n,b in sorted(changes.items())},'witness_chunks':25,'feature_dependency_radius':3,'initialize_light_dependency_radius':3,'ocean_flag':'neverfolia.r399OceanClosure','production_accepted':False,'visual_tested':False,'ice_fix_included':False,'enchantment_ui_fix_included':False,'source_inputs':source_manifest}
     (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');(WORK/'classpath.txt').write_text(cp)
     shutil.copytree(src,OUT/'compiled-source')
     print('R3911_BUILD '+json.dumps(report),flush=True)
