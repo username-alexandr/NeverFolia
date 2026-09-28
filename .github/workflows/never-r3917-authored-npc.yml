@@ -1,0 +1,115 @@
+name: R3917 authored NPC combined acceptance
+on:
+  push:
+    branches: ['fix/neveroverworld-r3917-authored-npc-contract']
+    paths: ['qa/field-r3915/**', '.github/workflows/never-r3917-authored-npc.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: r3917-authored-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  combined:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Verify prior contracts then apply exact source-based NPC contract
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python3 qa/field-r3915/test_combined.py 2>&1 | tee artifacts/previous-contract-tests.log
+          python3 qa/field-r3915/test_combined_jigsaws.py 2>&1 | tee artifacts/previous-jigsaw-tests.log
+          python3 qa/field-r3915/apply_authored_npc_contract.py 2>&1 | tee artifacts/npc-contract-transform.log
+          python3 qa/field-r3915/test_authored_npc.py 2>&1 | tee artifacts/authored-npc-tests.log
+          python3 qa/field-r3915/test_combined_jigsaws.py 2>&1 | tee artifacts/current-jigsaw-tests.log
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10967789179'
+          run-id: '36417504719'
+          github-token: ${{ github.token }}
+          path: cart-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: '36419010757'
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: '36308250793'
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Compose checked deltas without editing original child NPCs
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/combine_content.py 2>&1 | tee artifacts/combined-build-command.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('artifacts/combined-content.json').read_text())
+          for row in r['cases']:
+              print('AUTHORED_NPC_SOURCE',json.dumps(row,ensure_ascii=False))
+          PY
+      - name: Retain exact resource delta and outstanding gaps
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/check_combined_resources.py 2>&1 | tee artifacts/combined-resource-command.log
+      - name: Real connected Swift lifecycle and exact jigsaw NPC populations
+        run: |
+          set -o pipefail
+          python3 qa/field-r3915/run_combined.py 2>&1 | tee artifacts/combined-runtime-command.log
+      - name: Require completed combined scope
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('artifacts/combined-runtime.json').read_text())
+          assert r['pass'] is True
+          for p in ('swift_baseline','swift','swift_restart','carts','carts_restart'):
+              assert r[p]['pass'] is True and r[p]['exit_code']==0
+          assert r['production_accepted'] is False and r['all_reported_bugs_fixed'] is False
+          for p in ('carts','carts_restart'):
+              for row in r[p]['observed']['checks']:
+                  print('ACTUAL_AUTHORED_NPC',p,row['id'],json.dumps(row['observed_npcs'],sort_keys=True))
+          assert json.loads(Path('artifacts/combined-resource-delta.json').read_text())['pass'] is True
+          print('R3917_COMBINED_CONTENT_PASS; NOT full worldgen, all mobs or all-resource acceptance')
+          PY
+      - name: Keep actual transformed sources and all failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,shutil
+          out=Path('artifacts');source=out/'source';source.mkdir(parents=True,exist_ok=True)
+          for p in Path('qa/field-r3915').iterdir():
+              if p.is_file():shutil.copyfile(p,source/p.name)
+          shutil.copyfile('.github/workflows/never-r3917-authored-npc.yml',source/'authored-workflow.yml')
+          (out/'authored-provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'production_accepted':False,'user_world_changed':False,'source_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in source.iterdir() if p.is_file()}},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3917-AUTHORED-NPC-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
