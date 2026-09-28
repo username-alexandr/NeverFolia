@@ -147,10 +147,12 @@ def main() -> None:
     client=work/'minecraft-client.jar'; client.write_bytes(client_raw)
     with zipfile.ZipFile(client) as z: game_version=json.loads(z.read('version.json'))
     save(out/'game-version.json',game_version)
-    # Mojang's published 26.2 resource format. Reject a changed input, do not guess.
-    resource=game_version['pack_version']['resource']
-    resource_major=resource.get('major') if isinstance(resource,dict) else (resource[0] if isinstance(resource,list) else resource)
-    need(resource_major==88,'Unexpected official resource format: '+repr(resource))
+    print('OFFICIAL_GAME_VERSION '+json.dumps(game_version),flush=True)
+    # Modern version.json stores major/minor separately, unlike older releases.
+    pack_version=game_version['pack_version']
+    need('resource_major' in pack_version and 'resource_minor' in pack_version,'Unrecognized exact resource metadata')
+    resource={'major':pack_version['resource_major'],'minor':pack_version['resource_minor']}
+    need(resource=={'major':88,'minor':0},'Unexpected official resource format: '+repr(resource))
     disasm=run(['javap','-classpath',str(client),'-p','-c', 'net.minecraft.world.item.CreativeModeTabs'],'official-creative-targets')
     methods={}
     lines=disasm.splitlines()
