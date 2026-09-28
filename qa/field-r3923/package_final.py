@@ -147,7 +147,7 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
 - сохранение защищённых сухих шахт и построек;
 - подводные остатки льда в проверенных проблемных областях;
 - 0 отсутствующих достижимых jigsaw pool/template ресурсов после восстановления;
-- восстановленные Stray Fort / Pale Residence и связанные отсутствующие части;
+- Stray Fort восстановлен из авторских шаблонов;\n- для dangling pale_residence/decor_inside используется валидный empty compatibility pool: в закреплённом исходнике D&T авторского дочернего шаблона для этого коннектора нет;
 - технические D&T enchant-книги скрываются клиентским дополнением, игровые остаются;
 - Swift Soar работает серверно;
 - native/Folia-safe активация dungeon mob/jockey сценариев;
