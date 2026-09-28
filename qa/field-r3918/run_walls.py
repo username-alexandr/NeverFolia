@@ -95,9 +95,11 @@ def main():
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
         pale=build.get('pale_residence_decor_recovery',{})
+        restored_feature_count=(len(pale.get('added_feature_paths',[]))+
+                                len(pale.get('identical_existing_feature_paths',[])))
         s.need(pale.get('pool_path')==fix.PALE_POOL and pale.get('pool_replaced_compatibility_fallback') is True
                and pale.get('feature_family_count',0)>0
-               and len(pale.get('added_feature_paths',[]))==pale.get('feature_family_count'),
+               and restored_feature_count==pale.get('feature_family_count'),
                'Pale Residence authored decor family was not fully restored')
         restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,fix.ANCIENT_POOL,fix.PALE_POOL,
                         *pale.get('added_feature_paths',[]),
