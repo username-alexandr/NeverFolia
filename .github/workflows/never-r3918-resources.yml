@@ -2,7 +2,7 @@ name: R3918 resource recovery
 on:
   push:
     branches: ['fix/neveroverworld-r3918-resource-paths']
-    paths: ['qa/field-r3918/**', 'qa/resource_paths_inspect_r3918.py', '.github/workflows/never-r3918-resources.yml']
+    paths: ['qa/field-r3918/**', 'scripts/*r3918*', '.github/workflows/never-r3918-resources.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,6 +15,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+      - run: |
+          mkdir -p artifacts
+          printf '%s\n' '${{ github.sha }}' > artifacts/source-commit.txt
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
@@ -33,18 +36,10 @@ jobs:
           github-token: ${{ github.token }}
           path: swift-input
           merge-multiple: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          artifact-ids: '10981888711'
-          run-id: 36450508420
-          github-token: ${{ github.token }}
-          path: candidate-input
-          merge-multiple: true
       - name: Inspect exact paths and native template API
         run: |
-          mkdir -p artifacts
           set -o pipefail
-          python3 qa/resource_paths_inspect_r3918.py 2>&1 | tee artifacts/compact-inspection.log
+          python3 scripts/inspect-resource-paths-r3918.py 2>&1 | tee artifacts/compact-inspection.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
