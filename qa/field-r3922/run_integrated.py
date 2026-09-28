@@ -155,7 +155,7 @@ def volume(folder,rows,label):
 
 def compare(left_name,left_folder,left_rows,right_name,right_folder,right_rows,allow_fixes):
     paired,a=volume(left_folder,left_rows,left_name);_,b=volume(right_folder,right_rows,right_name)
-    result={'changed':0,'unexpected':0,'protected_changed':0,'transitions':{},'examples':[]};trans=collections.Counter()
+    result={'changed':0,'unexpected':0,'protected_changed':0,'air_family_equivalent':0,'transitions':{},'examples':[]};trans=collections.Counter()
     for cx,cz in sorted(TARGETS):
         boxes=paired.pdc_boxes(a.roots[(cx,cz)]);need(boxes==paired.pdc_boxes(b.roots[(cx,cz)]),'dry mine geometry changed')
         protected=set()
@@ -167,6 +167,13 @@ def compare(left_name,left_folder,left_rows,right_name,right_folder,right_rows,a
             aa=a.section((cx,sy,cz));bb=b.section((cx,sy,cz));need(len(aa)==len(bb)==4096,'incomplete saved section')
             for i,(v,w) in enumerate(zip(aa,bb)):
                 if v==w:continue
+                # Vanilla may persist equivalent empty cells as air/cave_air across otherwise
+                # identical fresh generation. R399 itself intentionally treats BlockState.isAir()
+                # as one semantic family, and isolated-air acceptance below still rejects any
+                # remaining underwater pocket regardless of which air ID represents it.
+                if v['Name'] in AIR and w['Name'] in AIR:
+                    result['air_family_equivalent']+=1
+                    continue
                 y=sy*16+(i>>8)
                 if not -511<=y<=128:continue
                 pos=(cx*16+(i&15),y,cz*16+((i>>4)&15));result['changed']+=1
