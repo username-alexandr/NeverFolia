@@ -22,22 +22,57 @@ jobs:
           github-token: ${{ github.token }}
           path: inputs
           merge-multiple: true
-      - name: Audit actual missing templates and compare original Dungeons and Taverns
+      - name: Test reversible biome recipes
+        run: python3 qa/field-r3914/test_carts.py
+      - name: Reconstruct missing carts without replacing existing templates
         run: |
           mkdir -p artifacts
-          set -o pipefail
-          python3 qa/field-r3914/inspect.py 2>&1 | tee artifacts/inspection.log
+          python3 - <<'PY'
+          import sys,json
+          from pathlib import Path
+          sys.path.insert(0,'qa/field-r3914')
+          import build_carts
+          inputs=list(Path('inputs').rglob('NeverOverworld.zip'))
+          if len(inputs)!=1:raise ValueError('Ambiguous pack')
+          try:
+              report=build_carts.build(inputs[0],Path('artifacts/NeverOverworld-R3914.zip'))
+          except Exception as e:
+              Path('artifacts/cart-build.json').write_text(json.dumps({'pass':False,'error':repr(e)},indent=2)+'\n')
+              raise
+          Path('artifacts/cart-build.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+          print('CART_SUCCESS',len(report['added_templates']),len(report['existing_variants']),report['output_sha256'])
+          PY
+      - name: Require exact graph improvement and preserved roots
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,sys,importlib.util
+          spec=importlib.util.spec_from_file_location('audit','scripts/audit-neveroverworld-r39-resources.py')
+          audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
+          jars=list(Path('inputs').rglob('server.jar'));packs=list(Path('inputs').rglob('NeverOverworld.zip'))
+          assert len(jars)==len(packs)==1
+          before=audit.audit_files(jars[0],packs[0]);after=audit.audit_files(jars[0],Path('artifacts/NeverOverworld-R3914.zip'))
+          Path('artifacts/resource-before.json').write_text(json.dumps(before,indent=2)+'\n')
+          Path('artifacts/resource-after.json').write_text(json.dumps(after,indent=2)+'\n')
+          build=json.loads(Path('artifacts/cart-build.json').read_text())
+          expected={r['path'].removeprefix('data/').replace('/structure/',':',1).removesuffix('.nbt') for r in build['added_templates']}
+          a={(r['kind'],r['id']) for r in before['missing']};b={(r['kind'],r['id']) for r in after['missing']}
+          assert not before['errors'] and not after['errors']
+          assert a-b=={('template',i) for i in expected} and not b-a
+          assert before['roots']==after['roots'] and after['counts']['missing_pools']==0
+          print('CLOSURE_DELTA',json.dumps({'before':before['counts'],'after':after['counts'],'fixed':sorted(expected),'production_accepted':False}))
+          PY
       - name: Preserve exact source and provenance
         if: always()
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import os,shutil,json,hashlib
+          import os,shutil,json
           out=Path('artifacts');(out/'source').mkdir(parents=True,exist_ok=True)
           for p in Path('qa/field-r3914').iterdir():
               if p.is_file():shutil.copyfile(p,out/'source'/p.name)
           shutil.copyfile('.github/workflows/never-r3914-resources.yml',out/'source/workflow.yml')
-          (out/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'world_modified':False,'production_accepted':False},indent=2)+'\n')
+          (out/'provenance.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'user_world_modified':False,'production_accepted':False},indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
