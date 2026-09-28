@@ -178,6 +178,52 @@ def prune_dangling_pool_elements(files, missing):
     s.need(removed==targets,'Not every proven dangling template reference was removed: '+repr(sorted(targets-removed)))
     return {'targets':sorted(targets),'removed':changed,'pools':touched}
 
+def adapt_pale_features_26_2(files, family):
+    """Port only removed 1.21-era data-format contracts to Minecraft 26.2.
+
+    random_patch used N attempts at triangular offsets around the origin. 26.2 removed
+    that configured-feature type, so preserve the exact attempt count/distribution as
+    placed-feature modifiers and keep the authored child configured feature unchanged.
+    """
+    migrated=[];tag_rewrites=[]
+    for path in family:
+        if not path.endswith('.json'):continue
+        obj=json.loads(files[path])
+        before=json.dumps(obj,sort_keys=True,separators=(',',':'))
+        # Current 26.2 block tag name for the former small_dripleaf_placeable contract.
+        def rewrite(node):
+            if isinstance(node,dict):
+                for k,v in list(node.items()):
+                    if v=='minecraft:small_dripleaf_placeable':
+                        node[k]='minecraft:supports_small_dripleaf';tag_rewrites.append(path)
+                    else:rewrite(v)
+            elif isinstance(node,list):
+                for v in node:rewrite(v)
+        rewrite(obj)
+        if path.startswith('data/nova_structures/worldgen/configured_feature/') and obj.get('type') in ('random_patch','minecraft:random_patch'):
+            cfg=obj.get('config',{}); placed=cfg.get('feature')
+            s.need(isinstance(placed,dict) and isinstance(placed.get('feature'),dict), 'Malformed authored random_patch '+path)
+            s.need(placed.get('placement',[])==[], 'Non-empty nested placement needs separate migration '+path)
+            tries=cfg.get('tries');xz=cfg.get('xz_spread');y=cfg.get('y_spread')
+            s.need(type(tries) is int and tries>0 and type(xz) is int and xz>=0 and type(y) is int and y>=0,
+                   'Invalid authored random_patch parameters '+path)
+            obj=placed['feature']
+            stem=path.rsplit('/',1)[1]
+            pp='data/nova_structures/worldgen/placed_feature/'+stem
+            s.need(pp in files,'Missing placed feature for authored random_patch '+path)
+            pobj=json.loads(files[pp])
+            s.need(pobj.get('feature')=='nova_structures:'+stem[:-5], 'Placed feature target drift '+pp)
+            oldmods=pobj.get('placement',[]);s.need(isinstance(oldmods,list),'Invalid placement list '+pp)
+            triangle=lambda spread:{'type':'minecraft:trapezoid','min':-spread,'max':spread,'plateau':0}
+            pobj['placement']=[{'type':'minecraft:count','count':tries},
+                               {'type':'minecraft:random_offset','xz_spread':triangle(xz),'y_spread':triangle(y)}]+oldmods
+            files[pp]=(json.dumps(pobj,indent=2,ensure_ascii=False)+'\n').encode()
+            migrated.append({'configured_feature':path,'placed_feature':pp,'tries':tries,'xz_spread':xz,'y_spread':y})
+        after=json.dumps(obj,sort_keys=True,separators=(',',':'))
+        if after!=before or path.startswith('data/nova_structures/worldgen/configured_feature/'):
+            files[path]=(json.dumps(obj,indent=2,ensure_ascii=False)+'\n').encode()
+    return {'random_patch_migrations':migrated,'small_dripleaf_tag_rewrites':sorted(set(tag_rewrites))}
+
 def install_pale_decor_recovery(files,source):
     """Restore the exact authored Pale Residence decor contract from pinned D&T v4.5.
 
@@ -211,11 +257,13 @@ def install_pale_decor_recovery(files,source):
             identical.append(path)
         else:
             files[path]=source[path];added.append(path)
+    compatibility=adapt_pale_features_26_2(files,family)
     return {'pool_path':PALE_POOL,'pool_source_sha256':s.sha(source[PALE_POOL]),
             'pool_replaced_compatibility_fallback':prior is not None and prior!=source[PALE_POOL],
             'feature_family_count':len(family),'added_feature_paths':added,
             'identical_existing_feature_paths':identical,
-            'feature_hashes':{path:s.sha(source[path]) for path in family}}
+            'feature_hashes':{path:s.sha(source[path]) for path in family},
+            'minecraft_26_2_compatibility':compatibility}
 
 def sanitize_exact(ext,raw,ident):
     root=ext._nbt_parse(raw)[2]
