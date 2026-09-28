@@ -1,0 +1,41 @@
+name: R3918 historical model inventory
+on:
+  push:
+    branches: ['fix/neveroverworld-r3918-resource-paths']
+    paths: ['qa/field-r3918-history/**', '.github/workflows/never-r3918-history.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - run: mkdir -p history-artifacts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10980264434'
+          run-id: 36446043000
+          github-token: ${{ github.token }}
+          path: integrated-input
+          merge-multiple: true
+      - name: Read verified published models without altering the current datapack
+        run: |
+          set -o pipefail
+          python3 qa/field-r3918-history/inspect.py 2>&1 | tee history-artifacts/history.log
+      - name: Keep source and failed inspections
+        if: always()
+        run: |
+          cp qa/field-r3918-history/inspect.py history-artifacts/inspect.py
+          printf '%s\n' '${{ github.sha }}' > history-artifacts/source-commit.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3918-HISTORY-${{ github.sha }}
+          path: history-artifacts/
+          if-no-files-found: error
+          retention-days: 14
