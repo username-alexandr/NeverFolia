@@ -85,8 +85,16 @@ public final class R3913IceQa extends JavaPlugin implements Listener {
             case 9 -> {for(int y=64;y<67;y++)for(int z=6;z<=10;z++)for(int x=6;x<=10;x++)put(c,x,y,z,Blocks.PACKED_ICE.defaultBlockState());expected=0;}
             case 10 -> {put(c,8,64,8,Blocks.WATER.defaultBlockState());put(c,0,64,8,Blocks.ICE.defaultBlockState());expected=0;}
             case 11 -> {c.persistentDataContainer.set(new NamespacedKey("neverfolia","dry_mines_r12"),PersistentDataType.INTEGER_ARRAY,new int[]{1,1,6,62,6,10,66,10});c.neverOverworldDryMineMaskR12=null;expected=0;}
-            // Both packed coordinates are zero for the origin chunk (0,0).
-            case 12 -> {var registry=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);var s=registry.iterator().next();c.getAllReferences().put(s,new it.unimi.dsi.fastutil.longs.LongOpenHashSet(new long[]{0L}));expected=0;}
+            case 12 -> {
+                var registry=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);var s=registry.iterator().next();
+                // getAllReferences() is a read-only view. Invoke the unique real
+                // public (Structure,long)->void writer, then verify stored data.
+                List<Method> writers=Arrays.stream(ProtoChunk.class.getMethods()).filter(m->m.getReturnType()==void.class&&m.getParameterCount()==2
+                    &&m.getParameterTypes()[0]==net.minecraft.world.level.levelgen.structure.Structure.class&&m.getParameterTypes()[1]==long.class).toList();
+                need(writers.size()==1,"Ambiguous structure-reference writer: "+writers);
+                writers.getFirst().invoke(c,s,0L); // packed chunk (0,0)
+                need(c.getAllReferences().containsKey(s)&&c.getAllReferences().get(s).contains(0L),"Reference not stored by actual writer");expected=0;
+            }
             case 13 -> {c.setPersistedStatus(ChunkStatus.LIGHT);expected=0;}
             case 14 -> {c.setPersistedStatus(ChunkStatus.FULL);expected=0;}
             case 16 -> put(c,9,64,8,Blocks.WATER.defaultBlockState().setValue(LiquidBlock.LEVEL,5));
@@ -128,7 +136,7 @@ public final class R3913IceQa extends JavaPlugin implements Listener {
     private synchronized void finish(Throwable error){
         if(finished)return;finished=true;JsonObject r=new JsonObject();r.addProperty("pass",error==null);r.addProperty("nonce",nonce);r.addProperty("fixtures",fixtures);
         r.addProperty("seed",world==null?0:world.getSeed());r.addProperty("completed",rows.size());r.add("rows",rows);r.addProperty("visual_tested",false);
-        if(error!=null){r.addProperty("error",error.toString());error.printStackTrace();}
+        if(error!=null){r.addProperty("error",error.toString());getLogger().warning("ICE_FIXTURE failure: "+error);error.printStackTrace();}
         try{getDataFolder().mkdirs();Files.writeString(getDataFolder().toPath().resolve("result.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));}catch(Exception failure){failure.printStackTrace();error=failure;}
         getLogger().info("R3913 QA "+(error==null?"PASS ":"FAIL ")+nonce);
     }
