@@ -45,7 +45,7 @@ def main():
     ext=s.load('r3918_history_nbt',ROOT/'scripts/build-never-overworld-external-structures-r19.py')
     report={'inspection_only':True,'game_files_modified':False,'all_reported_bugs_fixed':False,'base_pack_sha256':PACK,'versions':[],'metadata':[],'current_source_references':{}}
     selections=[]
-    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','5.3','6.')),('j3FONRYr',('1.0.15','1.0.16','1.0.17'))]:
+    for project,prefixes in [('tpehi7ww',('4.5','4.6','5.0','5.1','5.2','5.3','6.')),('j3FONRYr',('1.0.13','1.0.14','1.0.15','1.0.16','1.0.17'))]:
         raw=get('https://api.modrinth.com/v2/project/'+project+'/version',5000000,'api.modrinth.com')
         versions=json.loads(raw);s.need(isinstance(versions,list),'Invalid version metadata')
         report['metadata'].append({'project':project,'sha256':s.sha(raw),'records':len(versions)})
@@ -54,7 +54,7 @@ def main():
             if not eligible:
                 report['versions'].append({'project':project,'requested_prefix':prefix,'status':'no_matching_official_release'});continue
             v=max(eligible,key=lambda x:x['date_published']);selections.append((project,prefix,v))
-    s.need(len(selections)<=8,'Inspection scope exceeded')
+    s.need(len(selections)<=12,'Inspection scope exceeded')
     for project,prefix,v in selections:
         row={'project':project,'version_id':v['id'],'version_number':v['version_number'],'requested_prefix':prefix,'status':'not_finished','matches':[],'event13b_references':[]};report['versions'].append(row)
         try:
