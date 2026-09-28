@@ -1,0 +1,94 @@
+name: R3923 full-fix user test kit
+on:
+  push:
+    branches: ['fix/neverfolia-r3921-effective-stack']
+    paths:
+      - 'qa/field-r3923/**'
+      - '.github/workflows/never-r3923-final-kit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Core verified by R3915
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: 36419010757
+          github-token: ${{ github.token }}
+          path: core-input
+          merge-multiple: true
+
+      - name: Closed R3918 resource graph and exact restored models
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10989309683'
+          run-id: 36466282761
+          github-token: ${{ github.token }}
+          path: resource-input
+          merge-multiple: true
+
+      - name: NeverNether and R3913 lineage input
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: ice-input
+          merge-multiple: true
+
+      - name: Verified R3912 client enchantment addon
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10957238609'
+          run-id: 36395185362
+          github-token: ${{ github.token }}
+          path: client-input
+          merge-multiple: true
+
+      - name: R3921 native dungeon mob acceptance
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10990877249'
+          run-id: 36468492555
+          github-token: ${{ github.token }}
+          path: mob-input
+          merge-multiple: true
+
+      - name: R3922 72-chunk water and ice acceptance
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: R3922-FIELD-EVIDENCE-107fe2f4271215f193b8cdbbdeaed4da87be22c5
+          run-id: 36472438585
+          github-token: ${{ github.token }}
+          path: field-input
+          merge-multiple: true
+
+      - name: Assemble only if every pinned acceptance report passes
+        run: |
+          set -euo pipefail
+          python3 qa/field-r3923/package_final.py
+
+      - name: Preserve final packager source
+        if: always()
+        run: |
+          mkdir -p artifacts-r3923/source
+          cp qa/field-r3923/package_final.py artifacts-r3923/source/
+          cp .github/workflows/never-r3923-final-kit.yml artifacts-r3923/source/workflow.yml
+          printf '%s\n' '${{ github.sha }}' > artifacts-r3923/source/packaging-commit.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: NeverFolia-R39.23-FullFix-TEST-${{ github.sha }}
+          path: artifacts-r3923/
+          retention-days: 14
+          if-no-files-found: error
