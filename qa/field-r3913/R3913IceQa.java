@@ -85,7 +85,8 @@ public final class R3913IceQa extends JavaPlugin implements Listener {
             case 9 -> {for(int y=64;y<67;y++)for(int z=6;z<=10;z++)for(int x=6;x<=10;x++)put(c,x,y,z,Blocks.PACKED_ICE.defaultBlockState());expected=0;}
             case 10 -> {put(c,8,64,8,Blocks.WATER.defaultBlockState());put(c,0,64,8,Blocks.ICE.defaultBlockState());expected=0;}
             case 11 -> {c.persistentDataContainer.set(new NamespacedKey("neverfolia","dry_mines_r12"),PersistentDataType.INTEGER_ARRAY,new int[]{1,1,6,62,6,10,66,10});c.neverOverworldDryMineMaskR12=null;expected=0;}
-            case 12 -> {var registry=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);var s=registry.iterator().next();c.getAllReferences().put(s,new it.unimi.dsi.fastutil.longs.LongOpenHashSet(new long[]{ChunkPos.asLong(0,0)}));expected=0;}
+            // Both packed coordinates are zero for the origin chunk (0,0).
+            case 12 -> {var registry=level.registryAccess().lookupOrThrow(Registries.STRUCTURE);var s=registry.iterator().next();c.getAllReferences().put(s,new it.unimi.dsi.fastutil.longs.LongOpenHashSet(new long[]{0L}));expected=0;}
             case 13 -> {c.setPersistedStatus(ChunkStatus.LIGHT);expected=0;}
             case 14 -> {c.setPersistedStatus(ChunkStatus.FULL);expected=0;}
             case 16 -> put(c,9,64,8,Blocks.WATER.defaultBlockState().setValue(LiquidBlock.LEVEL,5));
