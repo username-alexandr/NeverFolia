@@ -2,6 +2,7 @@
 from pathlib import Path
 import json,os,shutil,subprocess,sys,zipfile
 import restore_stray_walls as fix
+import restore_pale as pale
 import run_mansion as r
 s=fix.s;ROOT=fix.ROOT;OUT=r.OUT;WORK=ROOT/'.work/r3918-walls'
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -90,11 +91,19 @@ def main():
         nether=r.exact(ROOT/'inputs','NeverNether.zip',r.NETHER)
         before=json.loads(r.one(ROOT/'integrated-input','combined-resource-after.json').read_text())
         payload,build=fix.build(base.read_bytes(),fix.author_bytes(),before,fix.author_v6_bytes())
-        target=OUT/'NeverOverworld-R3918-Walls.zip'
+        pre_pale_sha=s.sha(payload)
+        pre_pale=WORK/'NeverOverworld-R3918-PrePale.zip';pre_pale.write_bytes(payload)
+        pale_files,pale_report=pale.patch(s.read_zip(payload))
+        payload=s.write_zip(pale_files)
+        s.need(s.read_zip(payload)==pale_files and payload==s.write_zip(pale_files),'Integrated Pale pack encoding is not repeatable')
+        build['pre_pale_output_sha256']=pre_pale_sha
+        build['pale_decoration']=pale_report
+        build['output_sha256']=s.sha(payload)
+        target=OUT/'NeverOverworld-R3920-Effective.zip'
         with target.open('xb') as f:f.write(payload)
         r.save('walls-build.json',build);report['build']=build
         finalfiles=s.read_zip(payload);nf=s.read_zip(nether.read_bytes())
-        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,fix.ANCIENT_POOL,*build.get('proven_dangling_repair',{}).get('pools',{}),
+        restored_paths=(*fix.fix.POOLS,fix.EVENT_POOL,fix.ANCIENT_POOL,pale.POOL,pale.BANNER,pale.PARENT,*build.get('proven_dangling_repair',{}).get('pools',{}),
                         *(m['path'] for m in build['models']),*(m['path'] for m in build.get('closure_models',[])),
                         *(m['path'] for m in build.get('future_models',[])))
         s.need(all(p not in nf or nf[p]==finalfiles[p] for p in restored_paths),'Nether shadows a restored resource')
@@ -129,7 +138,7 @@ def main():
         shutil.copytree(converted,OUT/'walls-native-converted')
         s.need(s.sha(core.read_bytes())==fix.fix.CORE and s.sha(base.read_bytes())==fix.fix.BASE and s.sha(nether.read_bytes())==r.NETHER,'Original inputs altered')
         s.need(s.sha((packs/'NeverOverworld.zip').read_bytes())==build['output_sha256'],'Test pack changed')
-        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'scope':'Effective ordered-stack resource closure for vanilla + repaired NeverOverworld + NeverNether, with automatic Paper datapack order witnessed separately. Exact authored recoveries and 36 wall placements/restart included; complete natural assembly of every root remains a separate runtime test.'})
+        report.update({'pass':True,'core_sha256':fix.fix.CORE,'pack_sha256':build['output_sha256'],'pre_pale_pack_sha256':pre_pale_sha,'scope':'Effective ordered-stack resource closure for vanilla + one integrated repaired NeverOverworld + NeverNether, with automatic Paper datapack order witnessed separately. Includes exact authored Pale Residence decoration recovery plus exact authored resource recoveries and 36 wall placements/restart; complete natural assembly of every root remains a separate runtime test.'})
     except Exception as e:report['error']=repr(e)
     finally:
         r.save('walls-result.json',report);print('R3918_WALL_RESULT',json.dumps({k:v for k,v in report.items() if k not in ('build','walls-first','walls-restart')}),flush=True)
