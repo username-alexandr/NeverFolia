@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inspect pinned combined resources without modifying the pack or world."""
 from pathlib import Path
-import collections, difflib, gzip, hashlib, importlib.util, json, sys, zipfile
+import collections, difflib, gzip, hashlib, importlib.util, io, json, sys, urllib.request, zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PACK_SHA = '0e747781b9ea875631f1453903c0ac912d49f14a3a46ad48bbf604148532c621'
@@ -66,7 +66,29 @@ def main():
         need(z.testzip() is None, 'Bad ZIP CRC')
         files = {name: z.read(name) for name in z.namelist() if not name.endswith('/')}
     reader = load_reader()
-    report = {'input_pack_sha256':PACK_SHA, 'pack_unchanged':True, 'templates':{}, 'pools':{}, 'matching_joints':[], 'missing':[]}
+    builder = load_reader()
+    dat = builder.SOURCES['dat']
+    request = urllib.request.Request(dat['url'], headers={'User-Agent':'NeverFolia-pale-source-audit/1.0'})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        source_raw = response.read(60000000)
+    need(hashlib.sha256(source_raw).hexdigest() == dat['sha256'], 'Pinned D&T source hash changed')
+    source = builder.flatten_zip(source_raw)
+    source_pool = 'data/nova_structures/worldgen/template_pool/pale_residence/decor_inside.json'
+    source_candidates = sorted(name for name in source if 'pale_residence' in name and (
+        'decor_inside' in name or '/decor/' in name or name.endswith('/pale_house_2.nbt')))
+    print('PALE_SOURCE_POOL', source_pool,
+          source.get(source_pool, b'<absent>').decode('utf-8', errors='replace'), flush=True)
+    print('PALE_SOURCE_CANDIDATES', json.dumps(source_candidates, ensure_ascii=False), flush=True)
+    for name in source_candidates:
+        if name.endswith('.nbt'):
+            try:
+                obj = inspect_template(source[name], reader)
+                print('PALE_SOURCE_TEMPLATE', json.dumps({'path':name, **obj}, ensure_ascii=False), flush=True)
+            except Exception as error:
+                print('PALE_SOURCE_TEMPLATE_ERROR', name, repr(error), flush=True)
+    report = {'input_pack_sha256':PACK_SHA, 'pack_unchanged':True, 'source_dat_sha256':dat['sha256'],
+              'source_decor_pool_present':source_pool in source, 'source_candidates':source_candidates,
+              'templates':{}, 'pools':{}, 'matching_joints':[], 'missing':[]}
     def retain():
         (OUT/'resource-inspection.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     try:
