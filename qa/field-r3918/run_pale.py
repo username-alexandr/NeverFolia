@@ -7,20 +7,26 @@ import collections, copy, hashlib, io, json, os, queue, secrets, shutil, subproc
 import restore_pale as p
 ROOT=p.ROOT;OUT=ROOT/'r3918-evidence';WORK=ROOT/'.work/r3918-runtime'
 CORE='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-NETHER='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+# Actual bytes retained in the pinned R399 input artifact; the old copied
+# literal contained two transcription errors. No integrity check is removed.
+NETHER='5e47f953cadbd54d1b04d9682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 SEED=-4651369264513492755
 
 def exact(folder,name,expected):
-    found=[x for x in Path(folder).rglob(name) if x.is_file() and p.digest(x.read_bytes())==expected]
-    p.need(len(found)==1,'Missing/ambiguous pinned '+name);return found[0].resolve()
+    candidates=[x for x in Path(folder).rglob(name) if x.is_file() and not x.is_symlink()]
+    found=[x for x in candidates if p.digest(x.read_bytes())==expected]
+    p.need(len(found)==1,'Missing/ambiguous pinned '+name+'; observed '+str([(str(x),p.digest(x.read_bytes())) for x in candidates]));return found[0].resolve()
 
 def final_state(state):
     name=state['Name'][1];properties=state.get('Properties',(10,{}))[1]
     return name+('['+','.join(k+'='+v[1] for k,v in sorted(properties.items()))+']' if properties else '')
 
 def fixture(files,path):
-    reader=p.inspector.load_reader();compression,root_name,root=reader._nbt_parse(files[p.PARENT]);palette=root['palette'][1][1]
+    reader=p.inspector.load_reader();kind,root_name,root=reader._nbt_parse(files[p.PARENT]);palette=root['palette'][1][1]
     child=reader._nbt_parse(files[p.BANNER])[2]
+    child_layout=[{'pos':b['pos'][1][1],'state':child['palette'][1][1][b['state'][1]],'nbt':b.get('nbt')} for b in child['blocks'][1][1]]
+    print('AUTHORED_CHILD_LAYOUT',json.dumps(child_layout,ensure_ascii=False),flush=True)
+    (OUT/'authored-child-layout.json').write_bytes(p.encoded({'template':p.BANNER,'sha256':p.digest(files[p.BANNER]),'blocks':child_layout}))
     source={tuple(b['pos'][1][1]):b for b in root['blocks'][1][1]}
     templates={};cases=[]
     for i,(px,py,pz) in enumerate(((19,8,6),(22,8,6),(22,8,9),(19,8,9))):
@@ -41,7 +47,7 @@ def fixture(files,path):
         p.need(joint_count==1,'Each source crop must contain its one actual output')
         p.need(any(b['pos'][1][1]==[1,0,1] for b in blocks),'Missing QA anchor')
         host['palette']=(9,(10,pal));host['blocks']=(9,(10,blocks))
-        name=f'data/neverfolia_qa/structure/pale/host_{i}.nbt';templates[name]=reader._nbt_encode(compression,root_name,host)
+        name=f'data/neverfolia_qa/structure/pale/host_{i}.nbt';templates[name]=reader._nbt_encode(kind,root_name,host)
         templates[f'data/neverfolia_qa/worldgen/template_pool/pale/case_{i}.json']=p.encoded({'fallback':'minecraft:empty','elements':[{'weight':1,'element':{'element_type':'minecraft:single_pool_element','location':f'neverfolia_qa:pale/host_{i}','processors':'minecraft:empty','projection':'rigid'}}]})
         cases.append({'case':i,'source_connector':[px,py,pz],'baseline_banners':counts['minecraft:white_banner'],'baseline_signs':counts['minecraft:birch_wall_sign'],'host_sha256':p.digest(templates[name])})
     meta=json.loads(files['pack.mcmeta']);meta['pack']['description']='CI ONLY source-cropped Pale parent contexts, original child pool untouched';templates['pack.mcmeta']=p.encoded(meta)
@@ -142,16 +148,14 @@ def main():
         base_world=world('baseline',original,nether,plugin,host);cand_world=world('candidate',candidate,nether,plugin,host)
         report['baseline']=phase('pale-baseline',core,base_world,True);p.need(report['baseline']['pass'],'Baseline failed')
         report['candidate']=phase('pale-candidate',core,cand_world);p.need(report['candidate']['pass'],'Candidate failed')
-        # Same seed per fixture, same authored host, same runtime. Compare exact
-        # states; only two decoration block positions per host may be added.
         changes=[]
         for a,b in zip(report['baseline']['observed']['checks'],report['candidate']['observed']['checks']):
             p.need(len(a['states'])==len(b['states'])==4096,'Incomplete block snapshot')
             diff=[{'index':i,'before':x,'after':y} for i,(x,y) in enumerate(zip(a['states'],b['states'])) if x!=y]
+            changes.append({'case':a['case'],'changes':diff});report['exact_changes']=changes
             p.need(len(diff)==2,'Unexpected geometry difference')
             p.need(all(x['before']=='Block{minecraft:air}' for x in diff),'Decoration overwrote source solids')
-            p.need(sum('minecraft:white_banner' in x['after'] for x in diff)==1 and sum('minecraft:birch_wall_sign' in x['after'] for x in diff)==1,'Wrong decoration writes');changes.append({'case':a['case'],'changes':diff})
-        report['exact_changes']=changes
+            p.need(sum('minecraft:white_banner' in x['after'] for x in diff)==1 and sum('minecraft:birch_wall_sign' in x['after'] for x in diff)==1,'Wrong decoration writes')
         report['restart']=phase('pale-restart',core,cand_world,False,True);p.need(report['restart']['pass'],'Saved scene changed')
         p.need(p.digest(core.read_bytes())==CORE and p.digest(original.read_bytes())==p.BASE and p.digest(nether.read_bytes())==NETHER,'Input modified')
         report.update({'pass':True,'core_sha256':CORE,'pack_sha256':build['output_sha256'],'original_pack_sha256':p.BASE,'source_contexts':4,'added_banners':4,'added_signs':4,'other_block_changes':0,'whole_natural_building_tested':False,'core_changed':False})
