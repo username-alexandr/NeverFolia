@@ -51,6 +51,8 @@ def main():
         expected={('template',m['id']) for m in build['models']}|{('template',m['id']) for m in build.get('future_models',[])}|{('template',x) for x in build.get('proven_dangling_repair',{}).get('targets',[])}|{('template','minecraft:minecraft/empty')}
         report['resource_delta']={'before':before['counts'],'after':after['counts'],'removed':sorted(a-b),'introduced':sorted(b-a),'errors':after['errors'],'full_resource_acceptance':after['pass']}
         r.save('walls-resource-delta.json',report['resource_delta']);print('R3918_WALL_RESOURCE_DELTA',json.dumps(report['resource_delta']),flush=True)
+        for issue in after.get('missing',[]):
+            print('R3918_STILL_MISSING',json.dumps(issue,ensure_ascii=False),flush=True)
         s.need(not after['errors'] and a-b==expected and not b-a,'New unresolved dependencies or incomplete restoration')
         s.need({x['id'] for x in before['roots']}=={x['id'] for x in after['roots']},'Root coverage changed')
         plugin=compile_plugin(core,build['models']);folder=WORK/'server';packs=folder/'world/datapacks';packs.mkdir(parents=True);(folder/'plugins').mkdir()
