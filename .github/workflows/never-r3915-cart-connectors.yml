@@ -1,0 +1,71 @@
+name: R3915 cart connector contract
+on:
+  push:
+    branches: ['fix/neveroverworld-r3915-functional-content']
+    paths: ['.github/workflows/never-r3915-cart-connectors.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  connectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - name: Inspect immutable actual child pools and their NBT joints
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import importlib.util,sys,json,zipfile,hashlib
+          spec=importlib.util.spec_from_file_location('reader','scripts/build-never-overworld-external-structures-r19.py');m=importlib.util.module_from_spec(spec);sys.modules['reader']=m;spec.loader.exec_module(m)
+          packs=list(Path('inputs').rglob('NeverOverworld.zip'))
+          if len(packs)!=1 or hashlib.sha256(packs[0].read_bytes()).hexdigest()!='a5fb99cd0b15efc2ec78a1f155c763112f3e3d2669c1519aae69e468de7902be':raise ValueError('Wrong actual pack')
+          out=Path('connector-evidence');out.mkdir();report={'pools':{},'templates':{}}
+          with zipfile.ZipFile(packs[0]) as z:
+              selected=[]
+              for path in z.namelist():
+                  if '/template_pool/' not in path or not path.endswith('.json') or 'tavern' not in path:continue
+                  raw=z.read(path)
+                  if b'villager' in raw or 'tavern_trader.json' in path:
+                      obj=json.loads(raw);report['pools'][path]=obj;print('SOURCE_POOL',path,json.dumps(obj))
+                      def visit(v):
+                          if isinstance(v,dict):
+                              if isinstance(v.get('location'),str):selected.append('data/'+v['location'].replace(':','/structure/',1)+'.nbt')
+                              for x in v.values():visit(x)
+                          elif isinstance(v,list):
+                              for x in v:visit(x)
+                      visit(obj)
+              for path in sorted(set(selected)):
+                  if path not in z.namelist():print('MISSING_TARGET',path);continue
+                  raw=z.read(path);root=m._nbt_parse(raw)[2]
+                  joints=[]
+                  for b in root.get('blocks',(9,(10,[])))[1][1]:
+                      n=b.get('nbt',(10,{}))[1]
+                      if n.get('id')==(8,'minecraft:jigsaw'):joints.append({'pos':b['pos'],'nbt':n})
+                  row={'sha256':hashlib.sha256(raw).hexdigest(),'size':root.get('size'),'joints':joints,'entities':root.get('entities')}
+                  report['templates'][path]=row;print('SOURCE_NPC_TEMPLATE',path,json.dumps(row))
+              for biome in ('acacia','mangrove','pale','swamp'):
+                  path='data/nova_structures/structure/tavern/tavern_event_trader_car_armorer_'+biome+'.nbt'
+                  raw=z.read(path);root=m._nbt_parse(raw)[2]
+                  joints=[{'pos':b['pos'],'nbt':b['nbt']} for b in root['blocks'][1][1] if b.get('nbt',(10,{}))[1].get('id')==(8,'minecraft:jigsaw')]
+                  report['templates'][path]={'sha256':hashlib.sha256(raw).hexdigest(),'joints':joints,'entities':root.get('entities')}
+                  print('SOURCE_CART_JOINTS',path,json.dumps(report['templates'][path]))
+          (out/'source-connectors.json').write_text(json.dumps(report,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3915-CART-CONNECTORS-${{ github.sha }}
+          path: connector-evidence/
+          if-no-files-found: error
+          retention-days: 14
