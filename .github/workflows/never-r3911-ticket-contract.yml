@@ -1,0 +1,52 @@
+name: R3911 generation ticket contract
+on:
+  push:
+    branches: ['build/neverfolia-r3911-manual-test']
+    paths: ['.github/workflows/never-r3911-ticket-contract.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          repository: username-alexandr/NeverFolia
+          path: debug
+          merge-multiple: true
+      - name: Read real scheduler and ticket dependencies
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,hashlib,json
+          out=Path('source-contract');out.mkdir();manifest={}
+          wanted=['ChunkTaskScheduler.java','ChunkLevel.java','ChunkStatus.java','ChunkHolderManager.java','NewChunkHolder.java']
+          with zipfile.ZipFile('debug/diagnostics.zip') as z:
+              for leaf in wanted:
+                  names=[n for n in z.namelist() if n.endswith('/'+leaf) and '/src/minecraft/java/' in n]
+                  assert len(names)==1,(leaf,names)
+                  raw=z.read(names[0]);(out/leaf).write_bytes(raw);manifest[leaf]={'path':names[0],'sha256':hashlib.sha256(raw).hexdigest()}
+                  print('SOURCE',leaf,manifest[leaf]['sha256'])
+                  lines=raw.decode().splitlines()
+                  if leaf=='ChunkTaskScheduler.java': indexes=set(range(620,min(len(lines),840)))
+                  elif leaf=='ChunkLevel.java': indexes=set(range(len(lines)))
+                  else:
+                      indexes=set()
+                      for i,line in enumerate(lines):
+                          if any(s in line for s in ('MAX_TICKET_LEVEL','MAX_LEVEL','getTicketLevel','ChunkPyramid','getAccumulatedRadius','requiredNeighbour','getAccessRadius')):
+                              indexes.update(range(max(0,i-5),min(len(lines),i+12)))
+                  for i in sorted(indexes)[:450]:print(f'{i+1}: {lines[i]}')
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3911-ticket-source-${{ github.sha }}
+          path: source-contract/
+          retention-days: 14
+          if-no-files-found: error
