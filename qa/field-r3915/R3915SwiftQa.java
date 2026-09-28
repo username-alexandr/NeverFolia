@@ -72,8 +72,9 @@ public final class R3915SwiftQa extends JavaPlugin implements Listener {
             var effects=holder.value().effects().get(EnchantmentEffectComponents.TICK);
             check(baseline?(effects==null||effects.isEmpty()):(effects!=null&&effects.size()==3),"loaded tick graph matches baseline/candidate");
             for(int n=1;n<=3;n++)check(level.getServer().getFunctions().get(id("swift_soar_"+n)).isPresent()!=baseline,"compiled function "+n);
+            var type=BuiltInRegistries.ENTITY_TYPE.getOptional(Identifier.fromNamespaceAndPath("minecraft","happy_ghast")).orElseThrow();
             for(int n=1;n<=3;n++) {
-                HappyGhast ghast=EntityType.HAPPY_GHAST.create(level,EntitySpawnReason.COMMAND);
+                HappyGhast ghast=(HappyGhast)type.create(level,EntitySpawnReason.COMMAND);
                 check(ghast!=null,"create actual happy ghast "+n);ghast.setPos(8,400,8);ghast.setNoAi(true);ghast.setNoGravity(true);
                 check(level.addFreshEntity(ghast),"add actual region-owned happy ghast "+n);
                 ServerPlayer driver=null;
@@ -97,12 +98,10 @@ public final class R3915SwiftQa extends JavaPlugin implements Listener {
                         input(driver,true,false);tick(ghast);amount(flight,FLIGHT,speed,"forward retains sprint latch "+n);
                         input(driver,false,false);tick(ghast);absent(flight,FLIGHT,"releasing forward removes flight modifier "+n);absent(fov,FOV,"releasing forward removes rider modifier "+n);
                         check(!ghast.entityTags().contains("sprinting"),"releasing forward clears latch "+n);
-                        // Observe the unmodified author dismount behavior without
-                        // silently counting an untested cleanup as a pass.
+                        // Observe author dismount behavior, not actual mount events.
                         input(driver,true,true);tick(ghast);links(ghast,driver,false);tick(ghast);
                         absent(flight,FLIGHT,"unridden mount loses its boost "+n);
                         JsonObject row=new JsonObject();row.addProperty("tier",n);row.addProperty("speed_modifier",speed);row.addProperty("rider_modifier",zoom);row.addProperty("residual_rider_modifier_after_detach",fov.getModifier(FOV)!=null);levels.add(row);
-                        // The synthetic unconnected rider must not leak effects.
                         fov.removeModifier(FOV);
                     }
                 } finally {
