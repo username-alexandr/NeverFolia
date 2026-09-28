@@ -1,0 +1,88 @@
+name: R3915 effective functional content
+on:
+  push:
+    branches: ['fix/neveroverworld-r3915-functional-content']
+    paths: ['qa/field-r3915/**', '.github/workflows/never-r3915-functional-content.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: '36407606753'
+          github-token: ${{ github.token }}
+          path: inputs
+          merge-multiple: true
+      - name: Inspect actual effective resources without changing inputs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zipfile
+          def sha(b):return hashlib.sha256(b).hexdigest()
+          expected={'NeverOverworld.zip':'a5fb99cd0b15efc2ec78a1f155c763112f3e3d2669c1519aae69e468de7902be','NeverNether.zip':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'}
+          out=Path('functional-evidence');out.mkdir()
+          packs={};inputs={};effective={};providers={}
+          for name,want in expected.items():
+              found=list(Path('inputs').rglob(name))
+              if len(found)!=1:raise ValueError('Ambiguous pack '+name)
+              raw=found[0].read_bytes()
+              if sha(raw)!=want:raise ValueError('Wrong pack '+name)
+              inputs[name]=want
+              with zipfile.ZipFile(found[0]) as z:
+                  if z.testzip() is not None or len(z.namelist())!=len(set(z.namelist())):raise ValueError('Bad ZIP')
+                  packs[name]={n:z.read(n) for n in z.namelist() if n.startswith('data/') and not n.endswith('/')}
+              for path,data in packs[name].items():effective[path]=data;providers[path]=name
+          selected={}
+          for path,data in effective.items():
+              if path.endswith('.json') and ('/enchantment/' in path or '/function/' in path or path.endswith('/template_pool/pale_residence/decor_inside.json') or path.endswith('/template_pool/mobs.json')):
+                  if '/enchantment/' in path or any(s in path for s in ('pale_residence','betterwitchhuts')):
+                      item={'provider':providers[path],'sha256':sha(data),'json':json.loads(data)}
+                      selected[path]=item
+                      print('EFFECTIVE_JSON',path,json.dumps(item,ensure_ascii=False))
+          functions={}
+          for name,files in packs.items():
+              chosen={p:{'sha256':sha(b),'text':b.decode('utf-8')} for p,b in files.items() if '/function/' in p and any(t in p for t in ('swift_soar','wither_coated','tavern_level','pale_residence'))}
+              functions[name]=chosen
+              for path,item in chosen.items():print('PACK_FUNCTION',name,path,json.dumps(item,ensure_ascii=False))
+          collisions=[]
+          for path in sorted(set(packs['NeverOverworld.zip'])&set(packs['NeverNether.zip'])):
+              if '/enchantment/' in path or '/function/' in path:
+                  collisions.append({'path':path,'equal':packs['NeverOverworld.zip'][path]==packs['NeverNether.zip'][path],'winner':'NeverNether.zip'})
+          print('FUNCTION_ENCHANT_COLLISIONS',json.dumps(collisions,ensure_ascii=False))
+          templates=[p for p in effective if '/structure/' in p and 'pale_residence' in p and any(s in p for s in ('decor','deko','inside'))]
+          print('PALE_DECOR_TEMPLATES',json.dumps(templates))
+          source_matches=[]
+          for folder in ('scripts','native','datapacks','qa'):
+              base=Path(folder)
+              if not base.exists():continue
+              for p in sorted(base.rglob('*')):
+                  if not p.is_file() or p.suffix not in ('.py','.java','.json','.mcfunction') or 'field-r3915' in str(p):continue
+                  if p.stat().st_size>2000000:continue
+                  lines=p.read_text(errors='replace').splitlines();hits=[i for i,s in enumerate(lines) if any(t in s for t in ('swift_soar','pale_residence/decor_inside','FOLIA_FUNCTION'))]
+                  if not hits:continue
+                  ranges=set()
+                  for i in hits[:12]:ranges.update(range(max(0,i-5),min(len(lines),i+9)))
+                  item={'path':p.as_posix(),'sha256':sha(p.read_bytes()),'hits':len(hits),'context':[{'line':i+1,'text':lines[i]} for i in sorted(ranges)]}
+                  source_matches.append(item)
+                  print('SOURCE_CONTEXT',json.dumps(item,ensure_ascii=False))
+          report={'inputs':inputs,'selected':selected,'functions':functions,'collisions':collisions,'pale_templates':templates,'source_matches':source_matches,'scope':'Static effective-pack analysis only. No game or GUI has been run.','input_files_changed':False}
+          (out/'effective-content.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          for name,want in expected.items():
+              if sha(next(Path('inputs').rglob(name)).read_bytes())!=want:raise ValueError('Input modified')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3915-FUNCTIONAL-CONTENT-${{ github.sha }}
+          path: functional-evidence/
+          if-no-files-found: error
+          retention-days: 14
