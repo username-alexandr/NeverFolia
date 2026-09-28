@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import json,os,shutil,subprocess
+          import json,os,shutil,subprocess,time
           core=Path(os.environ['CORE']).resolve()
           ow=Path(os.environ['OVERWORLD']).resolve(); nn=Path(os.environ['NETHER']).resolve()
           root=Path('.work/r3921-mobs/server')
@@ -121,10 +121,25 @@ jobs:
                     '-Dneverfolia.r399OceanClosure=true','-Dneverfolia.r3913IceFragments=true',
                     '-jar',str(core),'--nogui']
               with log.open('w') as stream:
-                  p=subprocess.run(args,cwd=root,stdout=stream,stderr=subprocess.STDOUT,text=True,timeout=300)
-              if p.returncode != 0: raise SystemExit(f'{phase} server exit {p.returncode}')
-              if not result.is_file(): raise SystemExit(f'{phase} result missing')
-              data=json.loads(result.read_text())
+                  p=subprocess.Popen(args,cwd=root,stdin=subprocess.PIPE,stdout=stream,stderr=subprocess.STDOUT,text=True)
+                  deadline=time.monotonic()+300
+                  while time.monotonic()<deadline and not result.is_file() and p.poll() is None:
+                      time.sleep(.5)
+                  if not result.is_file():
+                      if p.poll() is None:
+                          p.terminate()
+                          try:p.wait(timeout=20)
+                          except subprocess.TimeoutExpired:p.kill();p.wait(timeout=10)
+                      raise SystemExit(f'{phase} result missing; premature exit={p.returncode}')
+                  data=json.loads(result.read_text())
+                  if p.poll() is None:
+                      p.stdin.write('stop\n');p.stdin.flush()
+                  try:exit_code=p.wait(timeout=120)
+                  except subprocess.TimeoutExpired:
+                      p.terminate()
+                      try:exit_code=p.wait(timeout=20)
+                      except subprocess.TimeoutExpired:p.kill();exit_code=p.wait(timeout=10)
+              if exit_code != 0: raise SystemExit(f'{phase} server exit {exit_code}')
               if data.get('pass') is not True: raise SystemExit(f'{phase} mob QA failed: {data}')
               text=log.read_text(errors='replace')
               hits=[line for line in text.splitlines() if any(x in line for x in bad)]
