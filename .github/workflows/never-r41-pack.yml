@@ -2,7 +2,7 @@ name: R41 consolidated datapack repair
 on:
   push:
     branches: ['fix/neveroverworld-r41-consolidated']
-    paths: ['qa/field-r41/repair_pack.py','.github/workflows/never-r41-pack.yml']
+    paths: ['qa/field-r41/repair_pack.py','qa/field-r41/build_pack.py','.github/workflows/never-r41-pack.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,15 +28,15 @@ jobs:
           merge-multiple: true
       - name: Existing cart serializer tests
         run: python3 qa/field-r394/build_candidate.py --self-test
-      - name: Repair explicitly reviewed paths and missing biome models
-        run: python3 qa/field-r41/repair_pack.py
+      - name: Repair reviewed paths and verify full biome state recipes
+        run: python3 qa/field-r41/build_pack.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: R41-REPAIRED-PACK-${{ github.sha }}
           path: NeverOverworld-R41.zip
           if-no-files-found: error
           retention-days: 14
-      - name: Discover actual validation API and native dispatch
+      - name: Discover native function dispatch and current entity APIs
         if: always()
         run: |
           python3 - <<'PY'
@@ -49,15 +49,19 @@ jobs:
               raw=z.read(names[0])
           tmp=Path('.work/r41-api');tmp.mkdir(parents=True);jar=tmp/'engine.jar';jar.write_bytes(raw)
           with zipfile.ZipFile(io.BytesIO(raw)) as z:
-              classes=[n for n in z.namelist() if n.endswith('.class') and '$' not in n and any(t in n for t in ('NeverEnchant','NeverDatapack','NativeMob','ExternalMob','TrialSpawnerConfig','StructureTemplateManager'))]
-          classes+=['net/minecraft/world/entity/EntityType.class','net/minecraft/nbt/NbtUtils.class','net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.class','net/minecraft/server/ReloadableServerRegistries$Holder.class']
+              classes=[n for n in z.namelist() if n.startswith('net/minecraft/') and n.endswith('.class') and '$' not in n and any(t in z.read(n) for t in (b'spawn_zautilus_jockey',b'ghast_boss_summon_child',b'spawn_cave_spider_minion'))]
+          classes+=['net/minecraft/world/entity/EntitySpawnRequest.class','net/minecraft/world/entity/EntityProcessor.class','net/minecraft/world/level/SpawnData.class','net/minecraft/world/entity/EquipmentTable.class','net/minecraft/nbt/NbtIo.class']
           for n in classes:
               p=subprocess.run(['javap','-p','-classpath',str(jar),n[:-6].replace('/','.')],capture_output=True,text=True,timeout=30)
               (out/(Path(n).stem+'.api.txt')).write_text(p.stdout+p.stderr)
-              print('API',n,p.stdout[:13000])
-          print('NATIVE_SCRIPT_PATHS',json.dumps([str(p) for p in Path('scripts').glob('*') if any(t in p.name for t in ('native','behavio','runtime'))]))
-          if Path('NeverOverworld-R41.zip').exists():
-              with zipfile.ZipFile('NeverOverworld-R41.zip') as z:print('BLAZE_LOOT_NAMES',json.dumps([n for n in z.namelist() if 'loot_table/' in n and any(x in n for x in ('blaze','nether_port'))]))
+              print('API',n,p.stdout)
+          found=[]
+          for p in Path('scripts').glob('*.py'):
+              text=p.read_text()
+              if any(t in text for t in ('spawn_zautilus_jockey','ghast_boss_summon_child')):found.append(str(p))
+          print('NATIVE_SCRIPT_PATHS',json.dumps(found))
+          with zipfile.ZipFile('core/NeverOverworld.zip') as z:
+              print('BLAZE_LOOT_NAMES',json.dumps([n for n in z.namelist() if 'loot_table/' in n and any(x in n for x in ('blaze','nether_port'))]))
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
