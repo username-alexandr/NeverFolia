@@ -37,6 +37,13 @@ DANGLING_EVENT='nova_structures:stray_fort/stray_fort_event_13b'
 # Exact resource IDs referenced by the current source pools but absent from all
 # reviewed official source releases. These entries can never resolve at runtime.
 # Do not add IDs here unless the historical inventory proves the absence.
+EMPTY_COMPAT_POOLS={
+    'data/structory_towers/worldgen/template_pool/random_pillager_book.json':{
+        'structory_towers:book/pillager_1',
+        'structory_towers:book/pillager_2',
+        'structory_towers:book/pillager_3',
+    },
+}
 PROVEN_DANGLING={
     'minecraft:village_jungle/jungle_village_path5',
     'minecraft:village_swamp/swamp_village_big_house1',
@@ -120,13 +127,23 @@ def prune_dangling_pool_elements(files, missing):
         updated=prune(original,[path])
         if updated==original:continue
         elements=updated.get('elements')
-        s.need(isinstance(elements,list) and any(
-            isinstance(e,dict) and type(e.get('weight')) is int and e.get('weight')>0
-            for e in elements),'Dangling repair would empty template pool '+path)
+        positive=[e for e in elements or [] if isinstance(e,dict) and type(e.get('weight')) is int and e.get('weight')>0]
+        compatibility_empty=False
+        if not positive:
+            allowed=EMPTY_COMPAT_POOLS.get(path)
+            original_ids={
+                e.get('element',{}).get('location') for e in original.get('elements',[])
+                if isinstance(e,dict) and isinstance(e.get('element'),dict)
+                and e['element'].get('element_type') in ('minecraft:single_pool_element','minecraft:legacy_single_pool_element')
+            }
+            s.need(allowed is not None and original_ids==allowed and allowed <= targets,
+                   'Dangling repair would empty non-cosmetic template pool '+path)
+            updated['elements']=[{'weight':1,'element':{'element_type':'minecraft:empty_pool_element'}}]
+            elements=updated['elements'];positive=elements;compatibility_empty=True
         encoded=(json.dumps(updated,indent=2,ensure_ascii=False)+'\n').encode()
         files[path]=encoded
         touched[path]={'source_sha256':s.sha(payload),'output_sha256':s.sha(encoded),
-                       'remaining_positive_entries':sum(isinstance(e,dict) and type(e.get('weight')) is int and e.get('weight')>0 for e in elements)}
+                       'remaining_positive_entries':len(positive),'compatibility_empty':compatibility_empty}
     s.need(removed==targets,'Not every proven dangling template reference was removed: '+repr(sorted(targets-removed)))
     return {'targets':sorted(targets),'removed':changed,'pools':touched}
 
