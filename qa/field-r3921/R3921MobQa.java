@@ -129,6 +129,6 @@ public final class R3921MobQa extends JavaPlugin implements Listener {
         r.add("checks",checks);r.add("cases",cases);if(error!=null){r.addProperty("error",error.toString());error.printStackTrace();}
         try{getDataFolder().mkdirs();Files.writeString(getDataFolder().toPath().resolve("result.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));}catch(Exception e){e.printStackTrace();}
         getLogger().info("R3921 MOB QA "+(error==null?"PASS":"FAIL"));
-        Bukkit.getGlobalRegionScheduler().execute(this,()->{try{world.setChunkForceLoaded(0,0,false);}finally{Bukkit.shutdown();}});
+        Bukkit.getGlobalRegionScheduler().execute(this,()->world.setChunkForceLoaded(0,0,false));
     }
 }
