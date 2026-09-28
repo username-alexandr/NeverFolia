@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run only disposable CI worlds; never opens a user's world or network listener."""
+"""Run only disposable CI worlds; binds loopback only, never opens a user's world."""
 from pathlib import Path
 import hashlib,importlib.util,io,json,os,queue,secrets,shutil,subprocess,threading,time,zipfile
 ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts';WORK=ROOT/'.work/r3914';SEED=-4651369264513492755
@@ -15,6 +15,28 @@ def exact(name,digest):
     paths=list((ROOT/'inputs').rglob(name));need(len(paths)==1 and sha(paths[0])==digest,'Wrong input '+name);return paths[0]
 def load(name,path):
     s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
+
+def resolve_api(libs,debug):
+    providers=[]
+    for path in libs.glob('*.jar'):
+        with zipfile.ZipFile(path) as z:
+            if 'org/bukkit/Bukkit.class' in z.namelist():providers.append(path)
+    if not providers:
+        need(len(debug)==1,'Ambiguous pinned debug archive')
+        with zipfile.ZipFile(debug[0]) as z:
+            matches=[]
+            for name in z.namelist():
+                if not name.endswith('.jar') or 'folia-api' not in name:continue
+                raw=z.read(name)
+                with zipfile.ZipFile(io.BytesIO(raw)) as candidate:
+                    if 'org/bukkit/Bukkit.class' in candidate.namelist():matches.append((name,raw))
+            need(len(matches)==1,'Missing or ambiguous actual API provider: '+repr([n for n,r in matches]))
+            provider=libs/'folia-api.jar';provider.write_bytes(matches[0][1]);providers.append(provider)
+            source=matches[0][0]
+    else:source='embedded runtime library'
+    need(len(providers)==1,'Multiple Bukkit API providers on classpath')
+    row={'file':providers[0].name,'sha256':sha(providers[0]),'source':source,'provenance':'pinned R3913 runtime / pinned R38 DEBUG artifact'}
+    save('cart-api-provider.json',row);print('ACTUAL_API',json.dumps(row),flush=True)
 
 def phase(jar,folder,fixture):
     name='placement' if fixture else 'restart';nonce=secrets.token_hex(16);proc=None;reader=None;lines=[];events=queue.Queue();result={'pass':False,'nonce':nonce,'fixture':fixture}
@@ -68,10 +90,7 @@ def main():
     with zipfile.ZipFile(jar) as z:
         for i,n in enumerate(z.namelist()):
             if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):(libs/(str(i)+'-'+Path(n).name)).write_bytes(z.read(n))
-    debug=list((ROOT/'debug').rglob('diagnostics.zip'));need(len(debug)==1,'Ambiguous debug input')
-    with zipfile.ZipFile(debug[0]) as z:
-        paths=[n for n in z.namelist() if n.endswith('/folia-api/build/libs/folia-api-26.2-R0.1-SNAPSHOT.jar')]
-        need(len(paths)==1,'Missing actual Folia API');(libs/'folia-api.jar').write_bytes(z.read(paths[0]))
+    resolve_api(libs,list((ROOT/'debug').rglob('diagnostics.zip')))
     compiler=subprocess.run(['javac','-version'],capture_output=True,text=True,check=True);need('javac 25' in compiler.stdout+compiler.stderr,'Java 25 required')
     command=['javac','--release','25','-proc:none','-classpath',os.pathsep.join(str(p) for p in sorted(libs.glob('*.jar'))),'-d',str(classes),str(ROOT/'qa/field-r3914/R3914CartQa.java')]
     done=subprocess.run(command,capture_output=True,text=True);(OUT/'cart-javac.log').write_text(done.stdout+done.stderr);print(done.stdout+done.stderr,flush=True);need(done.returncode==0,'QA compiler failure')
