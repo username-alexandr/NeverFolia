@@ -5,9 +5,12 @@ import collections,hashlib,importlib.util,json,os,queue,shutil,subprocess,thread
 
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts-r3922';WORK=ROOT/'.work/r3922'
-CORE_SHA='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-OW_SHA='1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b'
-NN_SHA='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+CORE_SHA=os.environ.get('R3922_CORE_SHA','845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40')
+OW_SHA=os.environ.get('R3922_OW_SHA','1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b')
+NN_SHA=os.environ.get('R3922_NN_SHA','5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10')
+CORE_NAME=os.environ.get('R3922_CORE_NAME','server-r3915.jar')
+OW_NAME=os.environ.get('R3922_OW_NAME','NeverOverworld-R3920-Effective.zip')
+NN_NAME=os.environ.get('R3922_NN_NAME','NeverNether.zip')
 SEED=-4651369264513492755
 CENTERS=((7,1),(1,-4),(-197,-217),(-169,-250),(-189,-223),(-1699,-769))
 SCREENSHOT_CHUNKS=((8,1),(6,2),(6,1),(1,0),(3,2),(4,-3),(1,-2),(1,-5),(1,-4),(0,-5),(-3,-3),(-2,5),(6,-1),
