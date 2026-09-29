@@ -1,0 +1,57 @@
+name: R3924 isolated ice target diagnostic
+on:
+  push:
+    branches: ['fix/neverfolia-r3924-ice-target-diagnostic']
+    paths:
+      - 'qa/field-r3924/R3924IceTargetQa.java'
+      - 'qa/field-r3924/run_ice_target_diag.py'
+      - '.github/workflows/diag-r3924-ice-target.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download diagnostic NeverFolia
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11054131309'
+          run-id: 36611871367
+          github-token: ${{ github.token }}
+          path: core-input
+          merge-multiple: true
+      - name: Download R3924 Overworld
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11046608022'
+          run-id: 36597924509
+          github-token: ${{ github.token }}
+          path: ow-input
+          merge-multiple: true
+      - name: Download proven NeverNether
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: nn-input
+          merge-multiple: true
+      - name: Generate target chunk and capture component reason
+        run: python3 qa/field-r3924/run_ice_target_diag.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3924-ICE-TARGET-DIAG-${{ github.sha }}
+          path: artifacts-r3924-ice-target/
+          retention-days: 14
+          if-no-files-found: error
