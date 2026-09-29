@@ -26,11 +26,11 @@ jobs:
           path: core-input
           merge-multiple: true
 
-      - name: Closed R3918 resource graph and exact restored models
+      - name: R3920 authored Pale resource graph and runtime stack
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '10989309683'
-          run-id: 36466282761
+          artifact-ids: '10996653403'
+          run-id: 36480987985
           github-token: ${{ github.token }}
           path: resource-input
           merge-multiple: true
@@ -56,8 +56,8 @@ jobs:
       - name: R3921 native dungeon mob acceptance
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '10990877249'
-          run-id: 36468492555
+          artifact-ids: '11011748788'
+          run-id: 36519073116
           github-token: ${{ github.token }}
           path: mob-input
           merge-multiple: true
@@ -65,10 +65,19 @@ jobs:
       - name: R3922 72-chunk water and ice acceptance
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: R3922-FIELD-EVIDENCE-107fe2f4271215f193b8cdbbdeaed4da87be22c5
-          run-id: 36472438585
+          artifact-ids: '11012942618'
+          run-id: 36520353524
           github-token: ${{ github.token }}
           path: field-input
+          merge-multiple: true
+
+      - name: R3923 exact final Swift lifecycle acceptance
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11011983537'
+          run-id: 36519274866
+          github-token: ${{ github.token }}
+          path: swift-final-input
           merge-multiple: true
 
       - name: Assemble only if every pinned acceptance report passes
