@@ -6,9 +6,12 @@ import hashlib,importlib.util,json,os,subprocess,sys,zipfile
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts-r3923-swift'
 WORK=ROOT/'.work/r3923-swift'
-CORE_SHA='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-OW_SHA='1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b'
-NN_SHA='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+CORE_SHA=os.environ.get('R3924_CORE_SHA','845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40')
+OW_SHA=os.environ.get('R3924_OW_SHA','1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b')
+NN_SHA=os.environ.get('R3924_NN_SHA','5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10')
+CORE_NAME=os.environ.get('R3924_CORE_NAME','server-r3915.jar')
+OW_NAME=os.environ.get('R3924_OW_NAME','NeverOverworld-R3920-Effective.zip')
+NN_NAME=os.environ.get('R3924_NN_NAME','NeverNether.zip')
 
 def need(ok,msg):
     if not ok: raise ValueError(msg)
@@ -24,9 +27,9 @@ def once(text,before,after):
 
 def main():
     OUT.mkdir(exist_ok=False);WORK.mkdir(parents=True,exist_ok=False)
-    core=exact(ROOT/'swift-input','server-r3915.jar',CORE_SHA)
-    ow=exact(ROOT/'resource-input','NeverOverworld-R3920-Effective.zip',OW_SHA)
-    nn=exact(ROOT/'ice-input','NeverNether.zip',NN_SHA)
+    core=exact(ROOT/'swift-input',CORE_NAME,CORE_SHA)
+    ow=exact(ROOT/'resource-input',OW_NAME,OW_SHA)
+    nn=exact(ROOT/'ice-input',NN_NAME,NN_SHA)
 
     sys.path.insert(0,str(ROOT/'qa/field-r3915'))
     import run_runtime as r
