@@ -1,0 +1,81 @@
+name: R3924 gameplay enchantment acquisition
+on:
+  push:
+    branches: ['fix/neverfolia-r3924-sea-level-gate']
+    paths:
+      - 'qa/field-r3924/restore_enchantment_acquisition.py'
+      - 'scripts/build-never-overworld-external-structures-r19.py'
+      - '.github/workflows/never-r3924-enchants.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Download accepted R3920 effective pack
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10996653403'
+          run-id: 36480987985
+          github-token: ${{ github.token }}
+          path: r3920-input
+          merge-multiple: true
+      - name: Restore authored gameplay acquisition tags
+        run: |
+          set -euo pipefail
+          BASE="$(find r3920-input -type f -name 'NeverOverworld-R3920-Effective.zip' -print -quit)"
+          test -n "$BASE"
+          mkdir -p artifacts-r3924
+          python3 qa/field-r3924/restore_enchantment_acquisition.py             --base "$BASE"             --out artifacts-r3924/NeverOverworld-R3924-Effective.zip             --report artifacts-r3924/enchantment-acquisition.json
+      - name: Re-fingerprint exact R3924 pack
+        run: |
+          set -euo pipefail
+          PACK=artifacts-r3924/NeverOverworld-R3924-Effective.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input "$PACK" --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input "$PACK" --verify
+          sha256sum "$PACK" > artifacts-r3924/SHA256SUMS.txt
+      - name: Fail closed on gameplay/technical public-tag partition
+        run: |
+          python3 - <<'PY'
+          import json,zipfile
+          from pathlib import Path
+          p=Path('artifacts-r3924/NeverOverworld-R3924-Effective.zip')
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              def load(n): return json.loads(z.read(n))
+              def ids(doc):
+                  out=set()
+                  for v in doc.get('values',[]):
+                      if isinstance(v,str): out.add(v)
+                      elif isinstance(v,dict) and isinstance(v.get('id'),str): out.add(v['id'])
+                  return out
+              game=ids(load('data/nova_structures/tags/enchantment/all_dnt_enchants.json'))
+              tech=ids(load('data/nova_structures/tags/enchantment/non_survival_enchants.json'))
+              assert len(game)==17 and len(tech)>=15 and not game&tech
+              public={}
+              for n in z.namelist():
+                  if n.startswith('data/minecraft/tags/enchantment/') and n.endswith('.json'):
+                      public[n]=ids(load(n))
+              leaks={n:sorted(v&tech) for n,v in public.items() if v&tech}
+              assert not leaks, leaks
+              union=set().union(*public.values()) if public else set()
+              # The two previously stripped safe gameplay IDs must now be reachable again.
+              assert 'nova_structures:swift_soar' in union
+              assert 'nova_structures:ghasted' in union
+              out={'pass':True,'gameplay_count':len(game),'technical_count':len(tech),
+                   'public_gameplay_ids':sorted(union&game),'technical_leaks':leaks}
+              Path('artifacts-r3924/public-tag-audit.json').write_text(json.dumps(out,indent=2)+'\n')
+              print(json.dumps(out))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3924-OVERWORLD-ENCHANTS-${{ github.sha }}
+          path: artifacts-r3924/
+          retention-days: 14
+          if-no-files-found: error
