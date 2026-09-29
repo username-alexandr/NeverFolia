@@ -48,6 +48,9 @@ DNT_SAFE_RUNTIME_FUNCTIONS = frozenset({
     "nova_structures:ghast_boss_fireball_damage",
     "nova_structures:ghasted",
     "nova_structures:gravity_particles",
+    "nova_structures:swift_soar_1",
+    "nova_structures:swift_soar_2",
+    "nova_structures:swift_soar_3",
     "nova_structures:hydro_veil_heal",
     "nova_structures:ghast_boss_fireball_possess",
     "nova_structures:ghast_boss_summon_child",
@@ -617,6 +620,7 @@ def sanitize_dat_runtime_function(resource_id: str, payload: bytes) -> bytes:
     r37_native_functions = {
         "hydro_veil_heal", "ghast_boss_fireball_possess", "ghast_boss_summon_child",
         "ghasted_fireball_1", "ghasted_fireball_2", "ghasted_fireball_3",
+        "swift_soar_1", "swift_soar_2", "swift_soar_3",
     }
     name = resource_id.removeprefix("nova_structures:")
     if name in r37_native_functions:
@@ -759,10 +763,8 @@ def sanitize_dat_enchantment_tags(out: dict[str, bytes]) -> None:
             elif isinstance(value,dict) and isinstance(value.get("id"),str):
                 technical.add(value["id"])
 
-    # swift_soar's source implementation is entirely scripted; after structure-
-    # only import it has no effects and must not leak into treasure/trades.
-    technical.add("nova_structures:swift_soar")
-    technical.add("nova_structures:ghasted")
+    # R39.24: Swift Soar and Ghasted retain only reviewed Folia-safe runtime
+    # functions, so their authored player-acquisition tags must not be stripped.
 
     for name,payload in list(out.items()):
         if not name.startswith("data/minecraft/tags/enchantment/") or not name.endswith(".json"):
