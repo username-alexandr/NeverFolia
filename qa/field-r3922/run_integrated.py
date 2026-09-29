@@ -165,7 +165,7 @@ def volume(folder,rows,label):
 
 def compare(left_name,left_folder,left_rows,right_name,right_folder,right_rows,allow_fixes):
     paired,a=volume(left_folder,left_rows,left_name);_,b=volume(right_folder,right_rows,right_name)
-    result={'changed':0,'unexpected':0,'protected_changed':0,'air_family_equivalent':0,'transitions':{},'examples':[]};trans=collections.Counter()
+    result={'changed':0,'unexpected':0,'protected_changed':0,'surface_fill_violations':0,'air_family_equivalent':0,'transitions':{},'examples':[]};trans=collections.Counter()
     for cx,cz in sorted(TARGETS):
         boxes=paired.pdc_boxes(a.roots[(cx,cz)]);need(boxes==paired.pdc_boxes(b.roots[(cx,cz)]),'dry mine geometry changed')
         protected=set()
@@ -190,7 +190,9 @@ def compare(left_name,left_folder,left_rows,right_name,right_folder,right_rows,a
                 trans[v['Name']+' => '+w['Name']]+=1
                 allowed=False
                 if allow_fixes:
-                    allowed=(v['Name'] in AIR and w==WATER and pos not in protected) or (v['Name'] in ICE and w==WATER)
+                    allowed=(v['Name'] in AIR and w==WATER and y<WATER_SURFACE_Y and pos not in protected) or (v['Name'] in ICE and w==WATER)
+                if v['Name'] in AIR and w==WATER and y>=WATER_SURFACE_Y:
+                    result['surface_fill_violations']+=1
                 if not allowed:
                     result['unexpected']+=1
                     if pos in protected:result['protected_changed']+=1
@@ -227,9 +229,9 @@ def tracked_acceptance(off,candidate):
 
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
-    core=exact(ROOT/'swift-input','server-r3915.jar',CORE_SHA)
-    ow=exact(ROOT/'resource-input','NeverOverworld-R3920-Effective.zip',OW_SHA)
-    nn=exact(ROOT/'ice-input','NeverNether.zip',NN_SHA)
+    core=exact(ROOT/'swift-input',CORE_NAME,CORE_SHA)
+    ow=exact(ROOT/'resource-input',OW_NAME,OW_SHA)
+    nn=exact(ROOT/'ice-input',NN_NAME,NN_SHA)
     plugin=compile_plugin(core,ow)
     folders={};phases={}
     folders['off']=setup('off',plugin,ow,nn);phases['off']=phase('off',folders['off'],core,False)
@@ -290,7 +292,8 @@ def main():
       'all_transition_types_seen_in_repairs_off_control':set(drift)<=set(baseline),
       'touches_water_air_or_ice':drift_touches_repair_domain,
       'within_control_budget':drift_count<=max(128,baseline_changed//20),
-      'protected_changed':comparisons['off_vs_candidate']['protected_changed']}
+      'protected_changed':comparisons['off_vs_candidate']['protected_changed'],
+      'surface_fill_violations':comparisons['off_vs_candidate']['surface_fill_violations']}
     # Persist the complete comparison state before any fail-closed assertion so CI artifacts
     # retain the exact block transitions/coordinates responsible for rejection.
     save('precondition-summary.json',summary)
@@ -300,6 +303,7 @@ def main():
     need(intended_changes>0 and summary['air_to_water']>0 and summary['ice_to_water']>0,
          'candidate did not demonstrate both water and ice repairs')
     need(drift_control['protected_changed']==0,'candidate changed protected dry structure cells')
+    need(drift_control['surface_fill_violations']==0,'candidate filled AIR at or above Y128 water surface')
     need(drift_control['all_transition_types_seen_in_repairs_off_control'],
          'candidate introduced a non-repair transition family absent from repairs-OFF control')
     need(not drift_control['touches_water_air_or_ice'],
