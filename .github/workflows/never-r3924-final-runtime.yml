@@ -24,8 +24,8 @@ jobs:
       - name: Download exact R3924 compiled NeverFolia
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '11051216037'
-          run-id: 36604690977
+          artifact-ids: '11051149233'
+          run-id: 36607132021
           github-token: ${{ github.token }}
           path: swift-input
           merge-multiple: true
@@ -47,10 +47,10 @@ jobs:
           merge-multiple: true
       - name: Run R3924 72-chunk water/ice/enchantment regression
         env:
-          R3922_CORE_SHA: '8e3481d8ccb60fed2d2f07c29a38f1ece3bf09ab76476edaee8fb61c2f385f79'
+          R3922_CORE_SHA: '1033d237fe0ac8b20a5bdef0fb8b76156f28c27de883276dc43c8469194f48ab'
           R3922_OW_SHA: '9b6e37db1a77188036e055913e192e9fe13b4e9a549b513e3270551de9792105'
           R3922_NN_SHA: '5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
-          R3922_CORE_NAME: 'NeverFolia-26.2-0.1.0-dev-f9f98cd.jar'
+          R3922_CORE_NAME: 'NeverFolia-26.2-0.1.0-dev-d0fd47b.jar'
           R3922_OW_NAME: 'NeverOverworld-R3924-Effective.zip'
           R3922_NN_NAME: 'NeverNether.zip'
         run: |
