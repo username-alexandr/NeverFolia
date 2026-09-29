@@ -98,6 +98,14 @@ def main():
     need(field.get('candidate_restart_water_hash_equal') is True,'R3922 restart persistence acceptance failed')
     need(field.get('reverse_repair_signature_equal') is True and
          field.get('reverse_tracked_points_equal') is True,'R3922 reverse-order repair acceptance failed')
+    need(field.get('air_to_water',0)>0 and field.get('ice_to_water',0)>0,
+         'R3922 did not demonstrate both water and ice repairs')
+    drift=field.get('fresh_world_drift_control',{})
+    need(drift.get('protected_changed')==0 and
+         drift.get('all_transition_types_seen_in_repairs_off_control') is True and
+         drift.get('touches_water_air_or_ice')==[] and
+         drift.get('within_control_budget') is True,
+         'R3922 fresh-world drift control failed')
     need(resource.get('pale_residence_decor_runtime_loaded') is True,'Pale Residence authored decor did not load at runtime')
     pale_recovery=resource.get('build',{}).get('pale_residence_decor_recovery',{})
     need(pale_recovery.get('pool_replaced_compatibility_fallback') is True and
@@ -209,7 +217,9 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
         'R3922_water_ice_field':{
           'pass':field['pass'],'targets':field['targets'],
           'air_to_water':field.get('air_to_water'),
+          'ice_to_water':field.get('ice_to_water'),
           'ice_report_files':field.get('ice_report_files'),
+          'fresh_world_drift_control':field.get('fresh_world_drift_control'),
           'isolated_air':field.get('isolated_air'),
           'isolated_ice':field.get('isolated_ice'),
           'candidate_restart_water_hash_equal':field['candidate_restart_water_hash_equal'],
