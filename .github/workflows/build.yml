@@ -160,6 +160,15 @@ jobs:
           chmod +x ./scripts/apply-neverfolia-post-patches.sh
           ./scripts/apply-neverfolia-post-patches.sh
 
+      - name: Apply integrated NeverNether R8-R15 native chain
+        run: |
+          set -euo pipefail
+          for stage in 8 9 10 11 12 13 14; do
+            python3 "./scripts/apply-never-nether-experiment-r${stage}.py" ./.work/Folia --acknowledge-experimental-worldgen
+          done
+          python3 ./scripts/apply-never-nether-bug01-bounds.py ./.work/Folia
+          python3 ./scripts/apply-never-nether-experiment-r15.py ./.work/Folia --acknowledge-experimental-worldgen
+
       - name: Defer upper ore pruning to LIGHT barrier
         run: |
           set -euo pipefail
@@ -170,7 +179,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia
+          python3 ./scripts/apply-never-nether-experiment-r16.py ./.work/Folia
           python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
+          python3 ./scripts/apply-never-nether-experiment-r16.py ./.work/Folia --check-only
 
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
