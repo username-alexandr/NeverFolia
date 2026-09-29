@@ -23,10 +23,10 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
  * Finite reachability is not global closure and is not worldgen-order determinism.
  */
 public final class NeverOverworldOceanClosureR399 {
-    public static final String REVISION="R399-5x5-completed-feature-halo-v1";
+    public static final String REVISION="R399-5x5-completed-feature-halo-v2-surface-gate";
     private static final boolean ENABLED=Boolean.getBoolean("neverfolia.r399OceanClosure");
     private static final String REPORT=System.getProperty("neverfolia.r399ReportDirectory","");
-    private static final int LOW=-511,HIGH=128,HEIGHT=640,RADIUS=2,SIDE=5,WIDTH=80,AREA=6400;
+    private static final int LOW=-511,HIGH=128,WATER_SURFACE_Y=128,HEIGHT=640,RADIUS=2,SIDE=5,WIDTH=80,AREA=6400;
     private NeverOverworldOceanClosureR399() {}
 
     public static int apply(WorldGenLevel world,StaticCache2D<GenerationChunkHolder> cache,ChunkAccess owner) {
@@ -81,7 +81,7 @@ public final class NeverOverworldOceanClosureR399 {
             }
         }
         OceanConnectivityR399.Proof proof=OceanConnectivityR399.solve(WIDTH,WIDTH,HEIGHT,cells,sky,extraLava);
-        int changed=0,unproven=0,conflicts=0,beforeWater=0,preservedWater=0,protectedAir=0;
+        int changed=0,unproven=0,conflicts=0,beforeWater=0,preservedWater=0,protectedAir=0,skippedSurfaceAir=0;
         BitSet changedOwner=new BitSet(256*HEIGHT);
         int bx=owner.getPos().getMinBlockX(),bz=owner.getPos().getMinBlockZ();
         // Validate the entire owning snapshot before the first write, avoiding partial writes on conflict.
@@ -93,7 +93,12 @@ public final class NeverOverworldOceanClosureR399 {
         for(int y=LOW;y<=HIGH;y++)for(int z=0;z<16;z++)for(int x=0;x<16;x++) {
             int local=((y-LOW)<<8)|(z<<4)|x,index=(y-LOW)*AREA+(z+32)*WIDTH+x+32;
             BlockState before=originalOwner[local];p.set(bx+x,y,bz+z);
-            if(cells[index]==OceanConnectivityR399.AIR) {
+            // R39.24: Y=128 is the water surface plane, not a water block target.
+            // Never synthesize WATER at the surface plane or above. Connectivity may still
+            // traverse the witness there so below-surface ocean cells retain the same proof.
+            if(y>=WATER_SURFACE_Y) {
+                if(cells[index]==OceanConnectivityR399.AIR&&proof.connected().get(index))skippedSurfaceAir++;
+            } else if(cells[index]==OceanConnectivityR399.AIR) {
                 if(proof.connected().get(index)) {owner.setBlockState(p,Blocks.WATER.defaultBlockState(),0);changedOwner.set(local);changed++;}
                 else unproven++;
             } else if(cells[index]==OceanConnectivityR399.PROTECTED&&before.isAir())protectedAir++;
@@ -102,7 +107,7 @@ public final class NeverOverworldOceanClosureR399 {
         if(beforeWater!=preservedWater)throw new IllegalStateException("R399 native water changed");
         if(!REPORT.isEmpty() && auditTarget(cx,cz)) {
             JsonObject r=new JsonObject();r.addProperty("revision",REVISION);r.addProperty("chunk_x",cx);r.addProperty("chunk_z",cz);
-            r.addProperty("added_air_to_water",changed);r.addProperty("unproven_owner_air",unproven);
+            r.addProperty("added_air_to_water",changed);r.addProperty("unproven_owner_air",unproven);r.addProperty("water_surface_y",WATER_SURFACE_Y);r.addProperty("skipped_at_or_above_surface_air",skippedSurfaceAir);
             r.addProperty("protected_owner_air",protectedAir);r.addProperty("snapshot_write_conflicts",conflicts);
             r.addProperty("native_aquatic_cells",beforeWater);r.addProperty("preserved_aquatic_cells",preservedWater);
             r.addProperty("visited_witness_cells",proof.visited());r.addProperty("elapsed_ms",(System.nanoTime()-started)/1_000_000L);
