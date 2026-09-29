@@ -263,13 +263,49 @@ def main():
       'isolated_air':{k:isolated(v['observed'],'single_air_with_six_aquatic_neighbours') for k,v in phases.items()},
       'isolated_ice':{k:isolated(v['observed'],'single_ice_with_six_aquatic_neighbours') for k,v in phases.items()},
       'air_to_water':phases['candidate']['ocean_proof']['air_to_water'],
+      'ice_to_water':sum(row[2] for row in phases['candidate']['ice_repair_signature']),
       'ice_report_files':phases['candidate']['ice_report_files'],
       'tracked_points':tracked_acceptance(phases['off']['observed'],phases['candidate']['observed'])}
+    # Whole fresh-world geology is not byte-stable under Folia feature scheduling. Keep the
+    # full-volume diff as evidence, but only accept non-repair drift when it is the same
+    # vanilla feature family already demonstrated by the repairs-OFF reverse-order control.
+    repair_names=(
+        {a+' => minecraft:water' for a in AIR} |
+        {i+' => minecraft:water' for i in ICE}
+    )
+    candidate_trans=comparisons['off_vs_candidate']['transitions']
+    drift={k:v for k,v in candidate_trans.items() if k not in repair_names}
+    baseline=comparisons['off_vs_off_reverse']['transitions']
+    repair_domain=AIR|ICE|{'minecraft:water'}
+    def pair_blocks(key):
+        left,right=key.split(' => ',1);return left,right
+    drift_touches_repair_domain=sorted(
+        k for k in drift if any(x in repair_domain for x in pair_blocks(k)))
+    drift_count=sum(drift.values())
+    baseline_changed=comparisons['off_vs_off_reverse']['changed']
+    summary['fresh_world_drift_control']={
+      'candidate_nonrepair_changed':drift_count,
+      'baseline_reverse_changed':baseline_changed,
+      'transition_types':sorted(drift),
+      'all_transition_types_seen_in_repairs_off_control':set(drift)<=set(baseline),
+      'touches_water_air_or_ice':drift_touches_repair_domain,
+      'within_control_budget':drift_count<=max(128,baseline_changed//20),
+      'protected_changed':comparisons['off_vs_candidate']['protected_changed']}
     # Persist the complete comparison state before any fail-closed assertion so CI artifacts
     # retain the exact block transitions/coordinates responsible for rejection.
     save('precondition-summary.json',summary)
     print('R3922_COMPARISONS',json.dumps(comparisons,ensure_ascii=False),flush=True)
-    need(comparisons['off_vs_candidate']['pass'] and comparisons['off_vs_candidate']['changed']>0,'candidate made unsafe/no worldgen changes')
+    drift_control=summary['fresh_world_drift_control']
+    intended_changes=comparisons['off_vs_candidate']['changed']-comparisons['off_vs_candidate']['unexpected']
+    need(intended_changes>0 and summary['air_to_water']>0 and summary['ice_to_water']>0,
+         'candidate did not demonstrate both water and ice repairs')
+    need(drift_control['protected_changed']==0,'candidate changed protected dry structure cells')
+    need(drift_control['all_transition_types_seen_in_repairs_off_control'],
+         'candidate introduced a non-repair transition family absent from repairs-OFF control')
+    need(not drift_control['touches_water_air_or_ice'],
+         'candidate has unexplained non-repair changes in the water/air/ice domain')
+    need(drift_control['within_control_budget'],
+         'candidate non-repair fresh-world drift exceeds repairs-OFF control budget')
     need(comparisons['candidate_vs_restart']['pass'] and comparisons['candidate_vs_restart']['changed']==0,'restart mutated saved target state')
     # Vanilla FEATURES are order-sensitive, so a reverse load order is not required to
     # reproduce identical geology/ore placement. The repair itself must remain identical:
