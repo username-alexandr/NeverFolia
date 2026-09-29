@@ -28,8 +28,8 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '10987230288'
-          run-id: 36459514080
+          artifact-ids: '10996653403'
+          run-id: 36480987985
           github-token: ${{ github.token }}
           path: resource-input
           merge-multiple: true
@@ -45,13 +45,13 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts .work/r3921-mobs
           CORE="$(find swift-input -type f -name server-r3915.jar -print -quit)"
-          OVERWORLD="$(find resource-input -type f -name NeverOverworld-R3918-Walls.zip -print -quit)"
+          OVERWORLD="$(find resource-input -type f -name NeverOverworld-R3920-Effective.zip -print -quit)"
           NETHER="$(find ice-input -type f -name NeverNether.zip -print -quit)"
           test -n "$CORE" && test -n "$OVERWORLD" && test -n "$NETHER"
           echo "CORE=$CORE" >> "$GITHUB_ENV"
           echo "OVERWORLD=$OVERWORLD" >> "$GITHUB_ENV"
           echo "NETHER=$NETHER" >> "$GITHUB_ENV"
-          printf '%s  %s\n'             '845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40' "$CORE"             '9daf27e23300d6687e8cc93cf82c7e6db91f69e4fe605382c6947521f0855590' "$OVERWORLD"             '5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10' "$NETHER" | sha256sum -c -
+          printf '%s  %s\n'             '845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40' "$CORE"             '1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b' "$OVERWORLD"             '5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10' "$NETHER" | sha256sum -c -
           sha256sum "$CORE" "$OVERWORLD" "$NETHER" | tee artifacts/input-hashes.txt
       - name: Compile Folia-owned mob QA plugin
         run: |
@@ -150,7 +150,7 @@ jobs:
           Path('artifacts/r3921-mobs-summary.json').write_text(json.dumps({
               'pass':True,'phases':len(reports),'case_counts':[len(x['cases']) for x in reports],
               'core_sha256':'845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40',
-              'overworld_sha256':'9daf27e23300d6687e8cc93cf82c7e6db91f69e4fe605382c6947521f0855590',
+              'overworld_sha256':'1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b',
               'nether_sha256':'5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
           },indent=2)+'\n')
           PY
