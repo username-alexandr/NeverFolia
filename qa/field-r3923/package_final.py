@@ -83,13 +83,17 @@ def main():
     after=resource['resource_delta']['after']
     need(after.get('missing_pools')==after.get('missing_templates')==after.get('other_missing')==0,
          'R3920 still has missing jigsaw resources')
-    stacks=resource.get('effective_resource_stacks',{})
-    need(set(stacks)=={'overworld_then_nether','nether_then_overworld'},
-         'R3920 effective two-pack stack evidence missing')
-    for label,row in stacks.items():
-        counts=row.get('counts',{})
-        need(counts.get('missing_pools')==counts.get('missing_templates')==counts.get('other_missing')==0,
-             'R3920 effective stack not closed: '+label)
+    stack=resource.get('effective_stack',{})
+    need(stack.get('pass') is True,'R3920 effective runtime-order stack acceptance missing')
+    counts=stack.get('after_counts',{})
+    need(counts.get('missing_pools')==counts.get('missing_templates')==counts.get('other_missing')==0,
+         'R3920 effective runtime-order stack not closed')
+    need(stack.get('shadowed_repairs')==[] and
+         stack.get('order_low_to_high')==['vanilla','file/NeverOverworld.zip','file/NeverNether.zip'],
+         'R3920 effective stack order/shadowing drift')
+    need(resource.get('runtime_enabled_order')==['vanilla','file/NeverOverworld.zip','file/NeverNether.zip','paper'] and
+         resource.get('paper_pack_auto_load_witness') is True,
+         'R3920 runtime datapack order was not witnessed')
     need(mobs.get('pass') is True and mobs.get('phases')==2 and min(mobs.get('case_counts',[0]))>=14,
          'R3921 mob acceptance failed')
     need(mobs.get('core_sha256')==CORE_SHA and mobs.get('overworld_sha256')==OW_SHA and
