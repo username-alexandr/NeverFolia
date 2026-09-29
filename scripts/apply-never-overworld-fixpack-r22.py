@@ -37,7 +37,8 @@ def main() -> None:
         run("scripts/apply-never-overworld-r37.py", folia, True)
         run("scripts/apply-never-overworld-r38.py", folia, True)
         run("scripts/apply-never-overworld-r399.py", folia, True)
-        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37/R38/R399 final invariants OK")
+        run("scripts/apply-never-overworld-r3913.py", folia, True)
+        print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37/R38/R399/R3913 final invariants OK")
         return
 
     run("scripts/apply-never-overworld-fixpack-r21.py", folia)
@@ -61,7 +62,9 @@ def main() -> None:
     run("scripts/apply-never-overworld-r38.py", folia, True)
     run("scripts/apply-never-overworld-r399.py", folia)
     run("scripts/apply-never-overworld-r399.py", folia, True)
-    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37/R38/R399 installed")
+    run("scripts/apply-never-overworld-r3913.py", folia)
+    run("scripts/apply-never-overworld-r3913.py", folia, True)
+    print(f"[NeverOverworld R22] {PROFILE} + FIELD-R32/R33/R34/R35/R37/R38/R399/R3913 installed")
 
 if __name__ == "__main__":
     main()
