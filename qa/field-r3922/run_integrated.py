@@ -22,6 +22,7 @@ TRACKED_ICE={( -3022,62,-3564),(-2701,63,-4040)}
 AIR={'minecraft:air','minecraft:cave_air','minecraft:void_air'}
 ICE={'minecraft:ice','minecraft:packed_ice','minecraft:blue_ice'}
 WATER={'Name':'minecraft:water','Properties':{'level':'0'}}
+WATER_SURFACE_Y=128
 
 def need(ok,msg):
     if not ok: raise ValueError(msg)
