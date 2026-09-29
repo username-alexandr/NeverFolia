@@ -28,8 +28,8 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '10987230288'
-          run-id: 36459514080
+          artifact-ids: '10996653403'
+          run-id: 36480987985
           github-token: ${{ github.token }}
           path: resource-input
           merge-multiple: true
