@@ -3,6 +3,7 @@ on:
   push:
     branches: ['qa/neverfolia-r3924-manual-candidate']
     paths:
+      - 'qa/field-r3922/run_integrated.py'
       - '.github/workflows/never-r3924-final-runtime.yml'
   workflow_dispatch:
 permissions:
