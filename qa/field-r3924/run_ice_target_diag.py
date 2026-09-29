@@ -57,10 +57,18 @@ def main():
             raise ValueError('server timeout')
     result=srv/'plugins/R3924IceTargetQa/result.json';need(code==0,'server exit '+str(code));need(result.is_file(),'plugin result missing')
     result_doc=json.loads(result.read_text());need(result_doc.get('pass') is True,'plugin failed')
-    diag=ice/'target_component_-189_-223.json';need(diag.is_file(),'target component diagnostic missing')
-    diag_doc=json.loads(diag.read_text())
+    expect_fixed=os.environ.get('R3924_EXPECT_FIXED','0')=='1'
+    reports=sorted(ice.glob('-189_-223_*.json'));need(len(reports)==1,'expected one owner ice report: '+repr(reports))
+    ice_doc=json.loads(reports[0].read_text())
+    diag=ice/'target_component_-189_-223.json'
+    diag_doc=json.loads(diag.read_text()) if diag.is_file() else None
+    if expect_fixed:
+        need(result_doc.get('target_block')=='minecraft:water','target ice remains: '+repr(result_doc))
+        need(ice_doc.get('flat_boundary_components_melted',0)>=1,'flat boundary proof did not activate')
+    else:
+        need(diag_doc is not None,'target component diagnostic missing')
     summary={'pass':True,'core_sha256':sha(core),'overworld_sha256':sha(ow),'nether_sha256':sha(nn),
-             'observed':result_doc,'component':diag_doc}
+             'observed':result_doc,'ice_report':ice_doc,'component':diag_doc,'expect_fixed':expect_fixed}
     (OUT/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     print('R3924_ICE_TARGET '+json.dumps(summary))
 
