@@ -1,0 +1,72 @@
+name: R3924 final Swift lifecycle acceptance
+on:
+  push:
+    branches: ['qa/neverfolia-r3924-manual-candidate']
+    paths:
+      - 'qa/field-r3923/run_final_swift.py'
+      - '.github/workflows/never-r3924-final-swift.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  swift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download exact R3924 compiled NeverFolia
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11048009816'
+          run-id: 36600235779
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - name: Download exact R3924 effective Overworld pack
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11046608022'
+          run-id: 36597924509
+          github-token: ${{ github.token }}
+          path: resource-input
+          merge-multiple: true
+      - name: Download proven NeverNether pack
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: ice-input
+          merge-multiple: true
+      - name: Run exact R3924 Swift lifecycle
+        env:
+          R3924_CORE_SHA: '69d6691cc4657a280b685ad5d5614f59562150dd7b76766a95a2d8fb555da904'
+          R3924_OW_SHA: '9b6e37db1a77188036e055913e192e9fe13b4e9a549b513e3270551de9792105'
+          R3924_NN_SHA: '5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+          R3924_CORE_NAME: 'NeverFolia-26.2-0.1.0-dev-a4790f3.jar'
+          R3924_OW_NAME: 'NeverOverworld-R3924-Effective.zip'
+          R3924_NN_NAME: 'NeverNether.zip'
+        run: |
+          set -euo pipefail
+          python3 qa/field-r3923/run_final_swift.py
+      - name: Preserve exact Swift evidence
+        if: always()
+        run: |
+          mkdir -p artifacts-r3924-swift/source
+          cp -a artifacts-r3923-swift/. artifacts-r3924-swift/ 2>/dev/null || true
+          cp qa/field-r3923/run_final_swift.py artifacts-r3924-swift/source/
+          cp .github/workflows/never-r3924-final-swift.yml artifacts-r3924-swift/source/workflow.yml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3924-FINAL-SWIFT-${{ github.sha }}
+          path: artifacts-r3924-swift/
+          retention-days: 14
+          if-no-files-found: error
