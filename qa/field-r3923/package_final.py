@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts-r3923'
 WORK=ROOT/'.work/r3923'
 CORE_SHA='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-OW_SHA='9daf27e23300d6687e8cc93cf82c7e6db91f69e4fe605382c6947521f0855590'
+OW_SHA='1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b'
 NN_SHA='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 CLIENT_MOD_SHA='da556d6f79c53f741f319ca215b09bceb5b74a6b46ac657878ffaca766b9b53d'
 CLIENT_RP_SHA='831b4cba0af3bbdad507f1c1c355b5e05a2787560fd990bee30f8c3423d98196'
@@ -54,7 +54,7 @@ def main():
     WORK.mkdir(parents=True);OUT.mkdir(exist_ok=True)
 
     core=exact(ROOT/'core-input','server-r3915.jar',CORE_SHA)
-    ow=exact(ROOT/'resource-input','NeverOverworld-R3918-Walls.zip',OW_SHA)
+    ow=exact(ROOT/'resource-input','NeverOverworld-R3920-Effective.zip',OW_SHA)
     nn=exact(ROOT/'ice-input','NeverNether.zip',NN_SHA)
     client_mod=exact(ROOT/'client-input','NeverLand-Enchantment-UI-Fabric-26.2-R39.12.jar',CLIENT_MOD_SHA)
     client_rp=exact(ROOT/'client-input','NeverLand-Enchantments-RU-26.2-R39.12.zip',CLIENT_RP_SHA)
@@ -75,27 +75,32 @@ def main():
     resource=one_json(ROOT/'resource-input','walls-result.json')
     mobs=one_json(ROOT/'mob-input','r3921-mobs-summary.json')
     field=one_json(ROOT/'field-input','summary.json')
-    need(resource.get('pass') is True,'R3918 resource acceptance failed')
+    need(resource.get('pass') is True,'R3920 resource acceptance failed')
     need(resource.get('all_reported_bugs_fixed') is True,'Resource candidate explicitly reports unresolved bugs')
     need(resource.get('production_accepted') is False,'Resource evidence must remain a test candidate until user acceptance')
-    need(resource.get('resource_delta',{}).get('full_resource_acceptance') is True,'R3918 graph not closed')
+    need(resource.get('resource_delta',{}).get('full_resource_acceptance') is True,'R3920 graph not closed')
     after=resource['resource_delta']['after']
     need(after.get('missing_pools')==after.get('missing_templates')==after.get('other_missing')==0,
-         'R3918 still has missing jigsaw resources')
+         'R3920 still has missing jigsaw resources')
     stacks=resource.get('effective_resource_stacks',{})
     need(set(stacks)=={'overworld_then_nether','nether_then_overworld'},
-         'R3918 effective two-pack stack evidence missing')
+         'R3920 effective two-pack stack evidence missing')
     for label,row in stacks.items():
         counts=row.get('counts',{})
         need(counts.get('missing_pools')==counts.get('missing_templates')==counts.get('other_missing')==0,
-             'R3918 effective stack not closed: '+label)
+             'R3920 effective stack not closed: '+label)
     need(mobs.get('pass') is True and mobs.get('phases')==2 and min(mobs.get('case_counts',[0]))>=14,
          'R3921 mob acceptance failed')
     need(mobs.get('core_sha256')==CORE_SHA and mobs.get('overworld_sha256')==OW_SHA and
          mobs.get('nether_sha256')==NN_SHA,'R3921 tested different binaries')
     need(field.get('pass') is True and field.get('targets')==72,'R3922 72-chunk field acceptance failed')
-    need(field.get('candidate_restart_water_hash_equal') is True and
-         field.get('candidate_reverse_water_hash_equal') is True,'R3922 persistence/order acceptance failed')
+    need(field.get('candidate_restart_water_hash_equal') is True,'R3922 restart persistence acceptance failed')
+    need(field.get('reverse_repair_signature_equal') is True and
+         field.get('reverse_tracked_points_equal') is True,'R3922 reverse-order repair acceptance failed')
+    need(resource.get('pale_residence_decor_runtime_loaded') is True,'Pale Residence authored decor did not load at runtime')
+    pale_recovery=resource.get('build',{}).get('pale_residence_decor_recovery',{})
+    need(pale_recovery.get('pool_replaced_compatibility_fallback') is True and
+         pale_recovery.get('feature_family_count',0)>=24,'Pale Residence authored feature family incomplete')
     need(field.get('isolated_air',{}).get('candidate')==0,'R3922 isolated ocean air remains')
     need(field.get('isolated_ice',{}).get('candidate')==0,'R3922 isolated submerged ice remains')
     need(field.get('core_sha256')==CORE_SHA and field.get('overworld_sha256')==OW_SHA and
@@ -162,7 +167,7 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
 - сохранение защищённых сухих шахт и построек;
 - подводные остатки льда в проверенных проблемных областях;
 - 0 отсутствующих достижимых jigsaw pool/template ресурсов после восстановления;
-- Stray Fort восстановлен из авторских шаблонов;\n- pale_residence/decor_inside восстановлен из закреплённого авторского D&T v4.5 вместе с исходной pale_* feature-семьёй;
+- Stray Fort восстановлен из авторских шаблонов;\n- pale_residence/decor_inside восстановлен из закреплённого авторского D&T v4.5 вместе с полной pale_* feature-семьёй, адаптированной под Minecraft 26.2;
 - технические D&T enchant-книги скрываются клиентским дополнением, игровые остаются;
 - Swift Soar работает серверно;
 - native/Folia-safe активация dungeon mob/jockey сценариев;
@@ -190,7 +195,7 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
       'schema':1,'version':'R39.23','pass':True,'seed':int(SEED),
       'inputs':members,
       'acceptance':{
-        'R3918_resource_graph':{
+        'R3920_resource_graph':{
           'pass':True,'missing_pools':after['missing_pools'],
           'missing_templates':after['missing_templates'],'other_missing':after['other_missing']},
         'R3921_dungeon_mobs':mobs,
@@ -201,7 +206,8 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
           'isolated_air':field.get('isolated_air'),
           'isolated_ice':field.get('isolated_ice'),
           'candidate_restart_water_hash_equal':field['candidate_restart_water_hash_equal'],
-          'candidate_reverse_water_hash_equal':field['candidate_reverse_water_hash_equal'],
+          'reverse_repair_signature_equal':field.get('reverse_repair_signature_equal'),
+          'reverse_tracked_points_equal':field.get('reverse_tracked_points_equal'),
           'comparisons':field.get('comparisons')}},
       'manual_test_required':True,
       'production_accepted':False,
