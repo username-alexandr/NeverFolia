@@ -58,7 +58,14 @@ def prepare(folia):
     indent=anchor[:len(anchor)-len(anchor.lstrip())]
     text=replace(text,anchor,indent+'final var waterAuditR38 = net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.begin(task.world, task.fromChunk);\n'+anchor)
     anchor=next(line for line in text.splitlines() if line.strip()=='net.minecraft.world.level.chunk.NeverOverworldEcologyR15.cleanup(task.world, task.fromChunk);')
-    text=replace(text,anchor,anchor+'\n'+indent+'net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);')
+    end_line=indent+'net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);'
+    # Later reviewed LIGHT hooks (R399 ocean closure, R3913 ice cleanup) are
+    # intentionally allowed between ecology cleanup and the R38 audit end.
+    # R38 owns the unique audit boundary, not adjacency to the cleanup call.
+    if end_line in text:
+        if text.count(end_line)!=1: raise ValueError('duplicate R38 audit end')
+    else:
+        text=replace(text,anchor,anchor+'\n'+end_line)
     staged[path]=text
     path=folia/JAVA/'net/minecraft/server/commands/NeverNetherDntCommands.java';text=path.read_text()
     text=replace(text,'"clear_saddle", "sprint_on"','"clear_saddle", "drowned_mount", "sprint_on"')
