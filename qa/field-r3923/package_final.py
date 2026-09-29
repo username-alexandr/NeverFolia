@@ -75,6 +75,7 @@ def main():
     resource=one_json(ROOT/'resource-input','walls-result.json')
     mobs=one_json(ROOT/'mob-input','r3921-mobs-summary.json')
     field=one_json(ROOT/'field-input','summary.json')
+    swift=one_json(ROOT/'swift-final-input','r3923-final-swift-summary.json')
     need(resource.get('pass') is True,'R3920 resource acceptance failed')
     need(resource.get('all_reported_bugs_fixed') is True,'Resource candidate explicitly reports unresolved bugs')
     need(resource.get('production_accepted') is False,'Resource evidence must remain a test candidate until user acceptance')
@@ -105,6 +106,12 @@ def main():
     need(field.get('isolated_ice',{}).get('candidate')==0,'R3922 isolated submerged ice remains')
     need(field.get('core_sha256')==CORE_SHA and field.get('overworld_sha256')==OW_SHA and
          field.get('nether_sha256')==NN_SHA,'R3922 tested different binaries')
+    need(swift.get('pass') is True and swift.get('phases')==2 and swift.get('tiers')==[1,2,3],
+         'Final Swift lifecycle acceptance failed')
+    need(swift.get('dismount_cleanup_pass') is True and swift.get('harness_removal_pass') is True and
+         swift.get('network_player_tested') is True,'Final Swift cleanup/network coverage incomplete')
+    need(swift.get('core_sha256')==CORE_SHA and swift.get('overworld_sha256')==OW_SHA and
+         swift.get('nether_sha256')==NN_SHA,'Final Swift tested different binaries')
 
     kit=WORK/'NeverFolia-R39.23-FullFix-TEST'
     (kit/'world/datapacks').mkdir(parents=True)
@@ -208,7 +215,8 @@ exec java -Xms2G -Xmx4G -Dneverfolia.r399OceanClosure=true -Dneverfolia.r3913Ice
           'candidate_restart_water_hash_equal':field['candidate_restart_water_hash_equal'],
           'reverse_repair_signature_equal':field.get('reverse_repair_signature_equal'),
           'reverse_tracked_points_equal':field.get('reverse_tracked_points_equal'),
-          'comparisons':field.get('comparisons')}},
+          'comparisons':field.get('comparisons')},
+        'R3923_final_swift':swift},
       'manual_test_required':True,
       'production_accepted':False,
       'generation_only_note':'Use a new world; already-generated old chunks are not rewritten by the generation-stage repair.'
