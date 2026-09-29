@@ -1,0 +1,69 @@
+name: R3923 final Swift lifecycle
+on:
+  push:
+    branches: ['fix/neverfolia-r3921-effective-stack']
+    paths:
+      - 'qa/field-r3923/run_final_swift.py'
+      - '.github/workflows/never-r3923-final-swift.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  swift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10968482107'
+          run-id: 36419010757
+          github-token: ${{ github.token }}
+          path: swift-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10996653403'
+          run-id: 36480987985
+          github-token: ${{ github.token }}
+          path: resource-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: ice-input
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10928009164'
+          run-id: 36308250793
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Run exact final Swift lifecycle
+        run: |
+          set -euo pipefail
+          python3 qa/field-r3923/run_final_swift.py
+      - name: Preserve exact sources
+        if: always()
+        run: |
+          mkdir -p artifacts-r3923-swift/source
+          cp qa/field-r3923/run_final_swift.py artifacts-r3923-swift/source/
+          cp .github/workflows/never-r3923-final-swift.yml artifacts-r3923-swift/source/workflow.yml
+          printf '%s\n' '${{ github.sha }}' > artifacts-r3923-swift/source/commit.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3923-FINAL-SWIFT-EVIDENCE-${{ github.sha }}
+          path: artifacts-r3923-swift/
+          retention-days: 14
+          if-no-files-found: error
