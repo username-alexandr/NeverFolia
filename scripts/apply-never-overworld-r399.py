@@ -20,7 +20,7 @@ PYRAMID = JAVA / "net/minecraft/world/level/chunk/status/ChunkPyramid.java"
 LIGHT_HOOK = "                net.minecraft.world.level.chunk.NeverOverworldOceanClosureR399.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R399_OCEAN_CLOSURE"
 LIGHT_ANCHOR = "                net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);"
 PYRAMID_OLD = ".step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).setTask(ChunkStatusTasks::light))"
-PYRAMID_NEW = ".step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 1).addRequirement(ChunkStatus.FEATURES, 3).setTask(ChunkStatusTasks::light))"
+PYRAMID_NEW = ".step(ChunkStatus.LIGHT, s -> s.addRequirement(ChunkStatus.INITIALIZE_LIGHT, 3).addRequirement(ChunkStatus.FEATURES, 3).setTask(ChunkStatusTasks::light))"
 
 def fail(msg: str) -> None:
     raise ValueError("[R399-INTEGRATION] " + msg)
@@ -95,7 +95,7 @@ def main() -> None:
         for path, text in staged.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-    print("[R399-INTEGRATION] bounded ocean closure + Y<128 surface gate OK")
+    print("[R399-INTEGRATION] bounded ocean closure + Y<128 surface gate + LIGHT radius3/FEATURES radius3 OK")
 
 if __name__ == "__main__":
     main()
