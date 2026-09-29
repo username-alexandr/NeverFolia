@@ -25,8 +25,8 @@ jobs:
       - name: Download diagnostic NeverFolia
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '11054131309'
-          run-id: 36611871367
+          artifact-ids: '11054831992'
+          run-id: 36613606124
           github-token: ${{ github.token }}
           path: core-input
           merge-multiple: true
@@ -46,7 +46,9 @@ jobs:
           github-token: ${{ github.token }}
           path: nn-input
           merge-multiple: true
-      - name: Generate target chunk and capture component reason
+      - name: Generate target chunk and verify flat boundary fix
+        env:
+          R3924_EXPECT_FIXED: '1'
         run: python3 qa/field-r3924/run_ice_target_diag.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
