@@ -22,15 +22,20 @@ def patch(text:str)->str:
     if CALL_PREFIX in text:
         if text.count(CALL_PREFIX)!=1: fail("duplicate lifecycle hook")
         return text
-    # Match the materialized Mojang source without depending on access modifier
-    # or parameter names. The second parameter is the entity owned by this tick.
-    pat=re.compile(
-        r'(?P<head>\bstatic\s+void\s+tickEffects\s*\(\s*ServerLevel\s+\w+\s*,\s*LivingEntity\s+(?P<entity>\w+)\s*\)\s*\{)'
-    )
-    m=pat.search(text)
-    if not m: fail("tickEffects(ServerLevel, LivingEntity) source anchor missing")
-    if len(pat.findall(text))!=1: fail("tickEffects source anchor ambiguous")
-    call="\n        NeverFoliaSwiftLifecycleR3915.tick("+m.group("entity")+"); // R3915_SWIFT_OWNED_LIFECYCLE"
+    # Materialized Mojang/Paper sources may add final/annotations to parameters.
+    # Match the method shape first, then derive the second parameter identifier
+    # without assuming exact source formatting.
+    pat=re.compile(r'(?P<head>\\bstatic\\s+void\\s+tickEffects\\s*\\((?P<params>[^)]*)\\)\\s*\\{)')
+    matches=list(pat.finditer(text))
+    if len(matches)!=1: fail("tickEffects source anchor missing/ambiguous: "+str(len(matches)))
+    m=matches[0]
+    params=[p.strip() for p in m.group("params").split(",")]
+    if len(params)!=2 or "ServerLevel" not in params[0] or "LivingEntity" not in params[1]:
+        fail("unexpected tickEffects parameters: "+m.group("params"))
+    ident=re.search(r'([A-Za-z_$][A-Za-z0-9_$]*)\\s*$',params[1])
+    if not ident: fail("cannot derive LivingEntity parameter name")
+    entity=ident.group(1)
+    call="\\n        NeverFoliaSwiftLifecycleR3915.tick("+entity+"); // R3915_SWIFT_OWNED_LIFECYCLE"
     return text[:m.end()]+call+text[m.end():]
 
 def prepare(folia:Path)->dict[Path,str]:
