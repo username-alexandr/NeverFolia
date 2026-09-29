@@ -67,3 +67,4 @@ jobs:
           path: artifacts-r3923-swift/
           retention-days: 14
           if-no-files-found: error
+# trigger exact final lifecycle acceptance
