@@ -6,7 +6,7 @@ import collections,hashlib,importlib.util,json,os,queue,shutil,subprocess,thread
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'artifacts-r3922';WORK=ROOT/'.work/r3922'
 CORE_SHA='845d0e90fcbe0fbebad7a613aa9934f608cce64a9d41abdfdf012e39e21c1d40'
-OW_SHA='9daf27e23300d6687e8cc93cf82c7e6db91f69e4fe605382c6947521f0855590'
+OW_SHA='1ca2b2a41ad42263b0761644674efded53c628e89bd9b617c92a6000f450698b'
 NN_SHA='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 SEED=-4651369264513492755
 CENTERS=((7,1),(1,-4),(-197,-217),(-169,-250),(-189,-223),(-1699,-769))
@@ -228,7 +228,7 @@ def tracked_acceptance(off,candidate):
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
     core=exact(ROOT/'swift-input','server-r3915.jar',CORE_SHA)
-    ow=exact(ROOT/'resource-input','NeverOverworld-R3918-Walls.zip',OW_SHA)
+    ow=exact(ROOT/'resource-input','NeverOverworld-R3920-Effective.zip',OW_SHA)
     nn=exact(ROOT/'ice-input','NeverNether.zip',NN_SHA)
     plugin=compile_plugin(core,ow)
     folders={};phases={}
