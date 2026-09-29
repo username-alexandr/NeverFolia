@@ -29,7 +29,7 @@ OWNER_HELPER="""    private static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL;
+        return oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y < FLOOD_LEVEL;
     }
 
 """
@@ -46,7 +46,7 @@ R15_HELPER="""    static boolean customOceanColumnOpen(
             localX,
             localZ
         );
-        return oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y;
+        return oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y < SCAN_MAX_Y;
     }
 
 """
@@ -178,10 +178,10 @@ def verify(owner:str,r15:str)->None:
 
     if "return y == FLOOD_LEVEL" in owner or "return y == SCAN_MAX_Y" in r15:
         fail("R35 must not treat every Y128 AIR column as ocean")
-    if "oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y <= FLOOD_LEVEL" not in owner:
-        fail("owner Y128 write is not tied to a real ocean-floor column")
-    if "oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y <= SCAN_MAX_Y" not in r15:
-        fail("R15 Y128 traversal is not tied to a real ocean-floor column")
+    if "oceanFloorY < FLOOD_LEVEL && y >= oceanFloorY && y < FLOOD_LEVEL" not in owner:
+        fail("owner synthetic water must stay strictly below Y128")
+    if "oceanFloorY < SCAN_MAX_Y && y >= oceanFloorY && y < SCAN_MAX_Y" not in r15:
+        fail("R15 synthetic water traversal must stay strictly below Y128")
 
     # No plain canonical writes may survive in the verified component path.
     forbidden="if(!state.is(Blocks.WATER)&&traversable(chunk,pos)){chunk.setBlockState(pos,water,0);++changed;}"
@@ -256,7 +256,7 @@ def main()->None:
     verify(owner,r15)
     owner_path.write_text(owner,encoding="utf-8")
     r15_path.write_text(r15,encoding="utf-8")
-    print("[FIELD-R35] installed: synthetic WATER only above natural OCEAN_FLOOR_WG")
+    print("[FIELD-R35] installed: synthetic WATER above natural OCEAN_FLOOR_WG and strictly below Y128")
 
 if __name__=="__main__":
     main()
