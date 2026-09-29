@@ -24,6 +24,7 @@ public final class NeverOverworldIceFragmentsR3913 {
     public static final String REVISION="R3913-piece-scoped-deep-ice-v2";
     private static final int LOW=-511,HIGH=128,COUNT=(HIGH-LOW+1)*256;
     private static final int SURFACE_BUFFER=16,MAX_COMPONENT=64;
+    private static final int DIAG_X=-3022,DIAG_Y=62,DIAG_Z=-3564;
     private static final boolean ENABLED=Boolean.getBoolean("neverfolia.r3913IceFragments");
     private static final String REPORT=System.getProperty("neverfolia.r3913IceReport","");
     private static final AtomicLong IDS=new AtomicLong();
@@ -92,21 +93,33 @@ public final class NeverOverworldIceFragmentsR3913 {
         }
         if(iceCount==0)return 0;
         BitSet seen=new BitSet(COUNT),melt=new BitSet(COUNT);int[] queue=new int[iceCount];int retained=0,boundary=0;
+        final boolean diagChunk=Math.floorDiv(DIAG_X,16)==owner.getPos().x()&&Math.floorDiv(DIAG_Z,16)==owner.getPos().z();
+        final int diagIndex=diagChunk?((DIAG_Y-LOW)<<8)|(Math.floorMod(DIAG_Z,16)<<4)|Math.floorMod(DIAG_X,16):-1;
         for(int first=0;first<COUNT;first++){
             if(seen.get(first)||!ice(snapshot[first]))continue;
-            int head=0,tail=1;queue[0]=first;seen.set(first);boolean safe=true,touchesBoundary=false;
+            int head=0,tail=1;queue[0]=first;seen.set(first);boolean safe=true,touchesBoundary=false,targetComponent=false;
+            int protectedHits=0,nonAquaticFaces=0,boundaryFaces=0,minComponentY=Integer.MAX_VALUE,maxComponentY=Integer.MIN_VALUE;
+            String firstBlocker="";
             while(head<tail){
                 int i=queue[head++],x=i&15,z=(i>>>4)&15,y=LOW+(i>>>8);
-                if(y>=HIGH-SURFACE_BUFFER||protectedCells.get(i))safe=false;
+                if(i==diagIndex)targetComponent=true;
+                minComponentY=Math.min(minComponentY,y);maxComponentY=Math.max(maxComponentY,y);
+                if(y>=HIGH-SURFACE_BUFFER)safe=false;
+                if(protectedCells.get(i)){safe=false;protectedHits++;}
                 for(int face=0;face<6;face++){
                     int nx=x+(face==0?-1:face==1?1:0),nz=z+(face==2?-1:face==3?1:0),ny=y+(face==4?-1:face==5?1:0);
-                    if(nx<0||nx>=16||nz<0||nz>=16||ny<LOW||ny>HIGH){safe=false;touchesBoundary=true;continue;}
+                    if(nx<0||nx>=16||nz<0||nz>=16||ny<LOW||ny>HIGH){safe=false;touchesBoundary=true;boundaryFaces++;continue;}
                     int n=((ny-LOW)<<8)|(nz<<4)|nx;BlockState next=snapshot[n];
                     if(ice(next)){if(!seen.get(n)){seen.set(n);queue[tail++]=n;}continue;}
-                    if(!aquatic(next)&&!(face==5&&next.is(Blocks.MAGMA_BLOCK)))safe=false;
+                    if(!aquatic(next)&&!(face==5&&next.is(Blocks.MAGMA_BLOCK))){
+                        safe=false;nonAquaticFaces++;
+                        if(firstBlocker.isEmpty())firstBlocker=(bx+nx)+","+ny+","+(bz+nz)+":"+next;
+                    }
                 }
             }
-            if(tail>MAX_COMPONENT)safe=false;
+            boolean oversized=tail>MAX_COMPONENT;if(oversized)safe=false;
+            if(targetComponent)recordTarget(owner,tail,protectedHits,protectedCells.get(diagIndex),touchesBoundary,boundaryFaces,
+                nonAquaticFaces,oversized,minComponentY,maxComponentY,firstBlocker,safe);
             if(safe){for(int j=0;j<tail;j++)melt.set(queue[j]);}else{retained++;if(touchesBoundary)boundary++;}
         }
         if(!melt.isEmpty()){
@@ -121,6 +134,20 @@ public final class NeverOverworldIceFragmentsR3913 {
             }
         }
         record(owner,iceCount,melt.cardinality(),retained,boundary,protectedCells.cardinality(),false);return melt.cardinality();
+    }
+    private static void recordTarget(ChunkAccess chunk,int size,int protectedHits,boolean targetProtected,boolean touchesBoundary,
+        int boundaryFaces,int nonAquaticFaces,boolean oversized,int minY,int maxY,String firstBlocker,boolean safe){
+        if(REPORT.isEmpty())return;
+        JsonObject r=new JsonObject();r.addProperty("revision",REVISION);r.addProperty("diagnostic","R3924-target-ice-component");
+        r.addProperty("target_x",DIAG_X);r.addProperty("target_y",DIAG_Y);r.addProperty("target_z",DIAG_Z);
+        r.addProperty("chunk_x",chunk.getPos().x());r.addProperty("chunk_z",chunk.getPos().z());r.addProperty("component_size",size);
+        r.addProperty("protected_hits",protectedHits);r.addProperty("target_protected",targetProtected);
+        r.addProperty("touches_chunk_boundary",touchesBoundary);r.addProperty("boundary_faces",boundaryFaces);
+        r.addProperty("non_aquatic_faces",nonAquaticFaces);r.addProperty("oversized",oversized);
+        r.addProperty("min_y",minY);r.addProperty("max_y",maxY);r.addProperty("first_blocker",firstBlocker);
+        r.addProperty("safe_to_melt",safe);
+        try{Path dir=Path.of(REPORT);Files.createDirectories(dir);Files.writeString(dir.resolve("target_component_"+chunk.getPos().x()+"_"+chunk.getPos().z()+".json"),r+"\n",StandardOpenOption.CREATE_NEW);}
+        catch(java.io.IOException e){throw new IllegalStateException("R3913 target diagnostic write failed",e);}
     }
     private static void record(ChunkAccess chunk,int before,int changed,int retained,int boundary,int protectedCount,boolean unknown){
         if(REPORT.isEmpty())return;JsonObject r=new JsonObject();r.addProperty("revision",REVISION);
