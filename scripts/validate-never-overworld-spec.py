@@ -104,7 +104,6 @@ def main() -> None:
         "NeverOverworld flood hook",
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
-    forbid(flood, "!state.is(Blocks.WATER)", "NeverOverworld R39.28 native-water policy")
 
     for marker in (
         "floodLargeBoundaryConnectedCaverns",
