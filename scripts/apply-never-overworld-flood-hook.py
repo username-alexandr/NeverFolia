@@ -160,19 +160,22 @@ public final class NeverOverworldFlood {
         final BlockState air = Blocks.AIR.defaultBlockState();
         final BlockState water = Blocks.WATER.defaultBlockState();
 
-        removeGeneratedFluids(chunk, minY, FLOOD_LEVEL, air);
+        removeGeneratedLava(chunk, minY, FLOOD_LEVEL, air);
         floodSurfaceConnectedAir(chunk, minY, FLOOD_LEVEL, water);
     }
 
     /**
-     * Remove pure generated water/lava only. Waterlogged structure blocks are
-     * preserved because replacing them would destroy the block itself. This pass
-     * executes during generation, so later player-placed fluids are unaffected.
+     * R39.28 safety scrub: remove pure generated lava only.
+     *
+     * Native water is authoritative from NOISE/AQUIFER with sea level Y=128 and
+     * must survive into FEATURES/LIGHT. Deleting it here was the architectural
+     * cause of dry columns below overhangs and made ice/structures observe a
+     * different sea level from the final world. Waterlogged blocks are untouched.
      *
      * <p>Sections without any fluid are skipped through LevelChunkSection's cached
      * fluid count; solid deep sections cost O(sections), not O(height).</p>
      */
-    private static void removeGeneratedFluids(
+    private static void removeGeneratedLava(
         final ChunkAccess chunk,
         final int minY,
         final int maxY,
@@ -204,7 +207,7 @@ public final class NeverOverworldFlood {
                 for (int localZ = 0; localZ < 16; ++localZ) {
                     for (int localX = 0; localX < 16; ++localX) {
                         final BlockState state = section.getBlockState(localX, localY, localZ);
-                        if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA)) {
+                        if (!state.is(Blocks.LAVA)) {
                             continue;
                         }
                         pos.set(minX + localX, y, minZ + localZ);
@@ -364,6 +367,7 @@ class ChunkStatusTasks {
         "Level.OVERWORLD",
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
+        "removeGeneratedLava",
         "floodSurfaceConnectedAir",
         "chunk.setBlockState",
         "beginning of the LIGHT chunk status",
@@ -377,7 +381,9 @@ class ChunkStatusTasks {
     ):
         if forbidden in helper:
             fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
-    print("[NeverFolia][NeverOverworld flood] STRUCTURAL LIGHT-BARRIER V3 SELF-TEST OK")
+    if "removeGeneratedFluids" in helper or "!state.is(Blocks.WATER)" in helper:
+        fail("SELF-TEST: R39.28 must preserve native water during LIGHT")
+    print("[NeverFolia][NeverOverworld flood] R39.28 NATIVE-WATER LIGHT NORMALIZER SELF-TEST OK")
 
 
 def main() -> None:
