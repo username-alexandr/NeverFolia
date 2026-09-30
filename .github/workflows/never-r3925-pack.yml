@@ -1,0 +1,73 @@
+name: R3925 native sea level pack
+on:
+  push:
+    branches: ['fix/neverfolia-r3925-native-sea-level']
+    paths:
+      - 'qa/field-r3925/build_native_sea_pack.py'
+      - '.github/workflows/never-r3925-pack.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Download accepted R3924 effective pack
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11046608022'
+          run-id: 36597924509
+          github-token: ${{ github.token }}
+          path: base
+          merge-multiple: true
+      - name: Build native-sea R3925 pack
+        run: |
+          set -euo pipefail
+          BASE="$(find base -type f -name 'NeverOverworld-R3924-Effective.zip' -print -quit)"
+          test -n "$BASE"
+          mkdir -p artifacts-r3925
+          python3 qa/field-r3925/build_native_sea_pack.py             --base "$BASE"             --out artifacts-r3925/NeverOverworld-R3925-NativeSea.zip             --report artifacts-r3925/pack-report.json
+      - name: Fingerprint and verify exact output
+        run: |
+          set -euo pipefail
+          PACK=artifacts-r3925/NeverOverworld-R3925-NativeSea.zip
+          python3 scripts/fingerprint-never-overworld-pack.py --input "$PACK" --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input "$PACK" --verify
+          sha256sum "$PACK" > artifacts-r3925/SHA256SUMS.txt
+      - name: Static contract audit
+        run: |
+          python3 - <<'PY'
+          import json,zipfile
+          from pathlib import Path
+          p=Path('artifacts-r3925/NeverOverworld-R3925-NativeSea.zip')
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              noise=json.loads(z.read('data/minecraft/worldgen/noise_settings/overworld.json'))
+              assert noise['sea_level']==128
+              def ids(name):
+                  d=json.loads(z.read(name));out=[]
+                  for v in d.get('values',[]):
+                      out.append(v if isinstance(v,str) else v['id'])
+                  return set(out)
+              game=ids('data/nova_structures/tags/enchantment/all_dnt_enchants.json')
+              tech=ids('data/nova_structures/tags/enchantment/non_survival_enchants.json')
+              assert len(game)==17 and len(tech)==16 and not game&tech
+              assert 'nova_structures:jockey/spawn_ravager_jockey' in tech
+              for rid in tech:
+                  ns,name=rid.split(':',1)
+                  d=json.loads(z.read(f'data/{ns}/enchantment/{name}.json'))
+                  assert d['max_level']==1
+                  assert d['description']=={'text':''}
+              print('R3925_PACK_STATIC PASS sea_level=128 gameplay=17 technical=16')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: R3925-NATIVE-SEA-PACK-${{ github.sha }}
+          path: artifacts-r3925/
+          retention-days: 14
+          if-no-files-found: error
