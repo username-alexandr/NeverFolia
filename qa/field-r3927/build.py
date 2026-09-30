@@ -65,9 +65,93 @@ def main():
     light=WORK/'src'/Path(LIGHT+'.java');light.parent.mkdir(parents=True);light.write_text(text)
     (OUT/'ChunkLightTask-R3927.java').write_text(text)
 
+    # Reconstruct the exact final FIELD-R9 ore helper from the same guarded
+    # transformers used by the production build. Compile the unmodified form
+    # first and require byte-for-byte identity with R39.26 before adding ONE
+    # provenance-prime call at SURFACE.
+    base_geo=load('r3927_geo_base',ROOT/'scripts/apply-never-overworld-ore-geology.py')
+    geo=base_geo.helper_source()
+    geo=load('r3927_geo_ext',ROOT/'scripts/extend-never-overworld-ore-geology.py').patch_helper(geo)
+    geo=load('r3927_geo_v2',ROOT/'scripts/tune-never-overworld-ore-balance.py').patch_helper(geo)
+    geo=load('r3927_geo_v3',ROOT/'scripts/tune-never-overworld-ore-balance-v3.py').patch_helper(geo)
+    geo=load('r3927_geo_r6',ROOT/'scripts/tune-never-overworld-ore-field-r6.py').patch(geo)
+    geo=load('r3927_geo_r7',ROOT/'scripts/tune-never-overworld-ore-field-r7.py').patch(geo)
+    geo=load('r3927_geo_r9',ROOT/'scripts/tune-never-overworld-ore-field-r9.py').patch_geology(geo)
+
+    geo_rel=Path('net/minecraft/world/level/chunk/NeverOverworldOreGeology.java')
+    baseline_geo_src=WORK/'geo-baseline'/geo_rel
+    baseline_geo_src.parent.mkdir(parents=True);baseline_geo_src.write_text(geo)
+    baseline_geo_classes=WORK/'geo-baseline-classes';baseline_geo_classes.mkdir()
+    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(baseline_geo_classes),str(baseline_geo_src)],'geology-baseline-javac.log')
+    geo_family={p.relative_to(baseline_geo_classes).as_posix():p.read_bytes() for p in baseline_geo_classes.rglob('NeverOverworldOreGeology*.class')}
+    expected_geo={n:inner[n] for n in inner if n=='net/minecraft/world/level/chunk/NeverOverworldOreGeology.class' or n.startswith('net/minecraft/world/level/chunk/NeverOverworldOreGeology    run(['javac','--release','25','-proc:none','-cp',str(classes),'-d',str(tests),str(ROOT/'qa/field-r3927/OceanConnectivityR3927Test.java')],'solver-javac.log')
+    run(['java','-cp',str(tests)+os.pathsep+str(classes),'OceanConnectivityR3927Test'],'solver-tests.log')
+
+    replacements={p.relative_to(classes).as_posix():p.read_bytes() for p in classes.rglob('*.class')}
+    need(not set(KEEP)&set(replacements),'Attempted overwrite of inherited hotfix/classifier')
+    old_family={n for n in inner if n==LIGHT+'.class' or n.startswith(LIGHT+'$')}
+    new_family={n for n in replacements if n==LIGHT+'.class' or n.startswith(LIGHT+'$')}
+    need(old_family==new_family,'LIGHT inner-class family mismatch')
+    need(all(int.from_bytes(v[6:8],'big')==69 for v in replacements.values()),'Wrong Java 25 bytecode')
+
+    packaging=load('r3927_pack',ROOT/'qa/field-r395/jar_packaging.py')
+    run(['python3',str(ROOT/'qa/field-r395/jar_packaging.py')],'packaging-tests.log')
+    modified=packaging.rewrite_zip(outer[nested],replacements)
+    rows=[];seen=0
+    for line in outer['META-INF/versions.list'].decode().splitlines():
+        f=line.split('\t');need(len(f)==3,'Bad versions row')
+        if 'META-INF/versions/'+f[2]==nested:
+            need(f[0]==digest(outer[nested]),'Input bundled digest mismatch');f[0]=digest(modified);seen+=1
+        rows.append('\t'.join(f))
+    need(seen==1,'No unique bundled versions row')
+    bundled=packaging.rewrite_zip(base.read_bytes(),{nested:modified,'META-INF/versions.list':('\n'.join(rows)+'\n').encode()})
+    newInner=members(modified);newOuter=members(bundled)
+    need(all(newInner[k]==inner[k] for k in KEEP),'Inherited class bytes changed')
+    need(all(newInner[n]==inner[n] for n in inner if n not in replacements),'Unrelated bundled entry changed')
+    need(set(outer)==set(newOuter) and {n for n in outer if outer[n]!=newOuter[n]}=={nested,'META-INF/versions.list'},'Outer bundle drift')
+
+    (CAND/'server.jar').write_bytes(bundled);shutil.copyfile(pack,CAND/'NeverOverworld.zip');shutil.copyfile(nether,CAND/'NeverNether.zip')
+
+    pluginClasses=WORK/'plugin-classes';pluginClasses.mkdir()
+    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(pluginClasses),str(ROOT/'qa/field-r3927/R3927NaturalQa.java')],'plugin-javac.log')
+    with zipfile.ZipFile(WORK/'R3927NaturalQa.jar','w',zipfile.ZIP_DEFLATED) as z:
+        for p in pluginClasses.rglob('*.class'):z.write(p,p.relative_to(pluginClasses).as_posix())
+        z.writestr('plugin.yml',"name: R3927NaturalQa\nversion: '1'\nmain: R3927NaturalQa\napi-version: '26.2'\nfolia-supported: true\n")
+
+    report={'build_pass':True,'kind':'Incremental javac --release 25 on exact R39.26',
+      'base_core_sha256':BASE,'candidate_core_sha256':sha(CAND/'server.jar'),
+      'pack_sha256':PACK,'nether_sha256':NETHER,
+      'preserved_classes':{k:digest(newInner[k]) for k in KEEP},
+      'changed_or_added_classes':{k:digest(v) for k,v in sorted(replacements.items())},
+      'production_accepted':False,'strict_manual_test':True}
+    (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');print('R3927_BUILD '+json.dumps(report),flush=True)
+
+if __name__=='__main__':main()
+)}
+    need(set(geo_family)==set(expected_geo),'Reconstructed geology class family mismatch')
+    need(all(geo_family[n]==expected_geo[n] for n in geo_family),'Reconstructed FIELD-R9 geology is not byte-identical to R39.26')
+
+    scope='''        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
+            || level.getMinY() != EXPECTED_MIN_Y
+            || level.getHeight() != EXPECTED_HEIGHT) {
+            return;
+        }
+
+'''
+    need(geo.count(scope)==1,'Geology scope anchor drifted')
+    prime='''        // R39.27: capture native NOISE/aquifer WATER provenance while the
+        // owner NoiseChunk is guaranteed to exist, before CARVERS/FEATURES can
+        // turn the final state into indistinguishable minecraft:air.
+        net.minecraft.world.level.levelgen.NeverOverworldNoiseOracleR3927.prime(chunk, -511, 128);
+
+'''
+    geo=geo.replace(scope,scope+prime,1)
+    geo_src=WORK/'src'/geo_rel;geo_src.parent.mkdir(parents=True,exist_ok=True);geo_src.write_text(geo)
+    (OUT/'NeverOverworldOreGeology-R3927.java').write_text(geo)
+
     classes=WORK/'classes';classes.mkdir()
     sources=sorted((ROOT/'native/overworld-r3927').glob('*.java'));need(len(sources)==3,'Unexpected R3927 source set')
-    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),str(light)]+list(map(str,sources)),'core-javac.log')
+    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),str(light),str(geo_src)]+list(map(str,sources)),'core-javac.log')
 
     tests=WORK/'test-classes';tests.mkdir()
     run(['javac','--release','25','-proc:none','-cp',str(classes),'-d',str(tests),str(ROOT/'qa/field-r3927/OceanConnectivityR3927Test.java')],'solver-javac.log')
