@@ -380,7 +380,7 @@ class ChunkStatusTasks {
     ):
         if forbidden in helper:
             fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
-    if "!state.is(Blocks.WATER)" in helper:
+    if ("!state.is(Blocks." + "WATER)") in helper:
         fail("SELF-TEST: R39.28 must preserve native water during LIGHT")
     print("[NeverFolia][NeverOverworld flood] R39.28 NATIVE-WATER LIGHT NORMALIZER SELF-TEST OK")
 
