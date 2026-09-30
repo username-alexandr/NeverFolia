@@ -14,9 +14,15 @@ rm -rf "${FOLIA_DIR}"
 mkdir -p "${WORK_DIR}"
 
 echo "[NeverFolia] Cloning ${FOLIA_REPOSITORY}@${FOLIA_REF}"
-git clone --depth 1 --branch "${FOLIA_REF}" "https://github.com/${FOLIA_REPOSITORY}.git" "${FOLIA_DIR}"
-
-cd "${FOLIA_DIR}"
+if [[ "${FOLIA_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+  git clone --filter=blob:none --no-checkout "https://github.com/${FOLIA_REPOSITORY}.git" "${FOLIA_DIR}"
+  cd "${FOLIA_DIR}"
+  git fetch --depth 1 origin "${FOLIA_REF}"
+  git checkout --detach FETCH_HEAD
+else
+  git clone --depth 1 --branch "${FOLIA_REF}" "https://github.com/${FOLIA_REPOSITORY}.git" "${FOLIA_DIR}"
+  cd "${FOLIA_DIR}"
+fi
 
 python3 - <<'PY'
 from pathlib import Path
