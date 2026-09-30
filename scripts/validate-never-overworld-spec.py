@@ -58,8 +58,10 @@ def main() -> None:
         "DEEP_BLEND_START_Y = -96",
         "FLOOD_LEVEL = 128",
         '"terrain_mode": "VANILLA_FLOODED"',
-        '"flood_phase": "neverfolia-light-barrier-surface-connected-chunk-owned-v3"',
-        '"sealed_cavity_policy": "remain-dry-without-surface-connected-air-path"',
+        '"flood_phase": "native-sea128-plus-light-additive-normalization-r3928"',
+        '"sealed_cavity_policy": "native-aquifer-plus-additive-surface-connectivity"',
+        'noise_settings["sea_level"] = FLOOD_LEVEL',
+        '"underground_fluid_policy": "preserve-native-water-scrub-generated-lava-only"',
         "minecraft:lake_lava_underground",
         "minecraft:spring_water",
         "minecraft:spring_lava",
@@ -92,6 +94,7 @@ def main() -> None:
         "Level.OVERWORLD",
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
+        "removeGeneratedLava",
         "floodSurfaceConnectedAir",
         "chunk.setBlockState",
     ):
@@ -102,6 +105,8 @@ def main() -> None:
         "NeverOverworld flood hook",
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
+    forbid(flood, "removeGeneratedFluids", "NeverOverworld R39.28 native-water policy")
+    forbid(flood, "!state.is(Blocks.WATER)", "NeverOverworld R39.28 native-water policy")
 
     for marker in (
         "floodLargeBoundaryConnectedCaverns",
