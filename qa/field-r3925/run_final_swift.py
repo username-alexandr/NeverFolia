@@ -74,7 +74,19 @@ def main():
         for path in classes.rglob('*.class'):z.write(path,path.relative_to(classes).as_posix())
         z.writestr('plugin.yml',"name: R3915SwiftQa\nversion: '3925'\nmain: R3915SwiftQa\napi-version: '26.2'\nfolia-supported: true\n")
 
-    Client,cfg=r.wire_config()
+    # Minecraft 26.2 protocol mapping pinned from two successful R39.24
+    # connected-client runs. GameProtocols source SHA is recorded so this cannot
+    # silently drift with a future Minecraft/Paper line.
+    protocol_source_sha='54e5914510d6a9b24a50f21a865cb73905f1b802c75ee9c6259563761d449e26'
+    cfg={'play_keepalive':44,'play_position':72,'play_keepalive_reply':28}
+    spec=importlib.util.spec_from_file_location('r3925_loopback',ROOT/'qa/field-r38/loopback_client.py')
+    client_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(client_module)
+    Client=client_module.Client
+    (OUT/'protocol-source.json').write_text(json.dumps({
+      'source':'Minecraft 26.2 GameProtocols.java',
+      'sha256':protocol_source_sha,'mapping':cfg,
+      'provenance':'R39.24 successful connected-client evidence'
+    },indent=2)+'\n')
     folder=r.setup('final-swift',ow,nn,plugin)
     first=r.phase('final-swift-first',core,folder,False,Client,cfg);need(first['pass'],'Final Swift first phase failed')
     restart=r.phase('final-swift-restart',core,folder,False,Client,cfg);need(restart['pass'],'Final Swift restart failed')
