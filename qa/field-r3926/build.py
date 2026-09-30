@@ -55,22 +55,15 @@ def main():
         with zipfile.ZipFile(p) as z:
             if 'org/bukkit/Bukkit.class' in z.namelist():api.append(p)
 
-    with zipfile.ZipFile(ROOT/'debug/diagnostics.zip') as z:
-        names=[n for n in z.namelist() if n.endswith('/src/minecraft/java/'+LIGHT+'.java')]
-        need(len(names)==1,'Missing exact ChunkLightTask source')
-        source=z.read(names[0]);need(digest(source)==LIGHT_SHA,'Unexpected ChunkLightTask source')
-        if not api:
-            options=[]
-            for n in z.namelist():
-                if 'folia-api' not in n or not n.endswith('.jar'):continue
-                raw=z.read(n)
-                with zipfile.ZipFile(io.BytesIO(raw)) as a:
-                    if 'org/bukkit/Bukkit.class' in a.namelist():options.append(raw)
-            need(len(options)==1,'Ambiguous API provider')
-            p=libs/'folia-api.jar';p.write_bytes(options[0]);api.append(p)
-    need(len(api)==1,'Ambiguous Bukkit API')
+    need(len(api)==1,'Missing or ambiguous Bukkit API in exact R39.9 bundle')
 
-    text=source.decode()
+    r40_source=ROOT/'debug/ChunkLightTask-R40.java'
+    need(r40_source.is_file(),'Missing retained R40 ChunkLightTask source')
+    text=r40_source.read_text()
+    retired='                net.minecraft.world.level.chunk.NeverOverworldOceanClosureR395.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R40_ON_R399\n'
+    need(text.count(retired)==1,'Unexpected retained R40 LIGHT source')
+    text=text.replace(retired,'',1)
+    need(digest(text.encode())==LIGHT_SHA,'R40 evidence does not normalize to exact inspected LIGHT source')
     anchor='                net.minecraft.world.level.chunk.NeverOverworldWaterAuditR38.end(task.world, task.fromChunk, waterAuditR38);'
     need(text.count(anchor)==1,'Expected exact LIGHT insertion anchor')
     call='                net.minecraft.world.level.chunk.NeverOverworldOceanClassifierR3926.apply(task.world, task.neverOverworldNeighbours, task.fromChunk); // R3926_SEA_PLANE_CLASSIFIER\n'
