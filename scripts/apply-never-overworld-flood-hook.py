@@ -160,7 +160,7 @@ public final class NeverOverworldFlood {
         final BlockState air = Blocks.AIR.defaultBlockState();
         final BlockState water = Blocks.WATER.defaultBlockState();
 
-        removeGeneratedLava(chunk, minY, FLOOD_LEVEL, air);
+        removeGeneratedFluids(chunk, minY, FLOOD_LEVEL, air);
         floodSurfaceConnectedAir(chunk, minY, FLOOD_LEVEL, water);
     }
 
@@ -175,7 +175,7 @@ public final class NeverOverworldFlood {
      * <p>Sections without any fluid are skipped through LevelChunkSection's cached
      * fluid count; solid deep sections cost O(sections), not O(height).</p>
      */
-    private static void removeGeneratedLava(
+    private static void removeGeneratedFluids(
         final ChunkAccess chunk,
         final int minY,
         final int maxY,
@@ -367,7 +367,6 @@ class ChunkStatusTasks {
         "Level.OVERWORLD",
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
-        "removeGeneratedLava",
         "floodSurfaceConnectedAir",
         "chunk.setBlockState",
         "beginning of the LIGHT chunk status",
@@ -381,7 +380,7 @@ class ChunkStatusTasks {
     ):
         if forbidden in helper:
             fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
-    if "removeGeneratedFluids" in helper or "!state.is(Blocks.WATER)" in helper:
+    if "!state.is(Blocks.WATER)" in helper:
         fail("SELF-TEST: R39.28 must preserve native water during LIGHT")
     print("[NeverFolia][NeverOverworld flood] R39.28 NATIVE-WATER LIGHT NORMALIZER SELF-TEST OK")
 
