@@ -5,6 +5,9 @@ on:
     paths: ['native/overworld-r3931/**','qa/field-r3931/**','.github/workflows/never-r3931-native-sea128.yml']
   workflow_dispatch:
 permissions: {contents: read, actions: read}
+concurrency:
+  group: r3931-native-sea-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   candidate:
     runs-on: ubuntu-latest
