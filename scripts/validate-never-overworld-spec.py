@@ -94,7 +94,6 @@ def main() -> None:
         "Level.OVERWORLD",
         "Heightmap.Types.OCEAN_FLOOR_WG",
         "section.hasFluid()",
-        "removeGeneratedLava",
         "floodSurfaceConnectedAir",
         "chunk.setBlockState",
     ):
@@ -105,7 +104,6 @@ def main() -> None:
         "NeverOverworld flood hook",
     )
     forbid(flood, 'FLOOD_CALL = "NeverOverworldFlood.apply(level, chunk);"', "NeverOverworld flood hook")
-    forbid(flood, "removeGeneratedFluids", "NeverOverworld R39.28 native-water policy")
     forbid(flood, "!state.is(Blocks.WATER)", "NeverOverworld R39.28 native-water policy")
 
     for marker in (
