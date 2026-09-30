@@ -30,6 +30,8 @@ jobs:
           python3 qa/field-r3928/build_pack_only.py \
             --input r399/world/datapacks/NeverOverworld.zip \
             --output artifacts/NeverOverworld-R3928-PackOnly.zip | tee artifacts/pack.json
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-R3928-PackOnly.zip --inject
+          python3 scripts/fingerprint-never-overworld-pack.py --input artifacts/NeverOverworld-R3928-PackOnly.zip --verify
       - name: Run exact R39.9 server with only sea level changed
         run: |
           set -o pipefail
