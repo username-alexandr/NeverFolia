@@ -86,7 +86,15 @@ def main():
     geo_prefix='net/minecraft/world/level/chunk/NeverOverworldOreGeology'
     expected_geo={n:inner[n] for n in inner if n==geo_prefix+'.class' or n.startswith(geo_prefix+chr(36))}
     need(set(geo_family)==set(expected_geo),'Reconstructed geology class family mismatch')
-    need(all(geo_family[n]==expected_geo[n] for n in geo_family),'Reconstructed FIELD-R9 geology is not byte-identical to R39.26')
+    baseline_kernel=WORK/'baseline-folia-26.2.jar';baseline_kernel.write_bytes(outer[nested])
+    for suffix in ('',chr(36)+'OreKind'):
+        cls='net.minecraft.world.level.chunk.NeverOverworldOreGeology'+suffix
+        a=subprocess.run(['javap','-classpath',str(baseline_kernel),'-c','-p','-s',cls],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=60)
+        b=subprocess.run(['javap','-classpath',str(baseline_geo_classes),'-c','-p','-s',cls],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=60)
+        (OUT/('geology-baseline-'+('main' if not suffix else 'orekind')+'.javap')).write_text(a.stdout)
+        (OUT/('geology-rebuilt-'+('main' if not suffix else 'orekind')+'.javap')).write_text(b.stdout)
+        need(a.returncode==0 and b.returncode==0,'javap geology semantic gate failed')
+        need(a.stdout==b.stdout,'Reconstructed FIELD-R9 geology bytecode semantics differ from R39.26: '+cls)
 
     scope='''        if (!level.getLevel().dimension().equals(Level.OVERWORLD)
             || level.getMinY() != EXPECTED_MIN_Y
