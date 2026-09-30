@@ -49,20 +49,28 @@ public final class NeverOverworldNoiseOracleR3927 {
 
     private NeverOverworldNoiseOracleR3927() {}
 
+    public static void prime(ChunkAccess chunk,int minY,int maxY) {
+        if(cached(chunk,minY,maxY)!=null)return;
+        Sample sample=compute(chunk,minY,maxY);
+        if(!sample.available())
+            throw new IllegalStateException("R3927 provenance prime failed: "+sample.reason());
+    }
+
     public static Sample sample(ChunkAccess chunk,int minY,int maxY) {
+        Sample cached=cached(chunk,minY,maxY);
+        return cached!=null?cached:compute(chunk,minY,maxY);
+    }
+
+    private static Sample compute(ChunkAccess chunk,int minY,int maxY) {
         if(minY>maxY||minY<chunk.getMinY()||maxY>=chunk.getMaxY())
             return unavailable("range");
         final NoiseChunk noise;
         try {
             noise=chunk.getOrCreateNoiseChunk(ignored->{throw new MissingNoiseChunk();});
         } catch(MissingNoiseChunk missing) {
-            Sample cached=cached(chunk,minY,maxY);
-            return cached!=null?cached:unavailable("missing_noise_chunk");
+            return unavailable("missing_noise_chunk");
         }
-        if(noise==null) {
-            Sample cached=cached(chunk,minY,maxY);
-            return cached!=null?cached:unavailable("null_noise_chunk");
-        }
+        if(noise==null)return unavailable("null_noise_chunk");
 
         synchronized(noise) {
             boolean started=false;
