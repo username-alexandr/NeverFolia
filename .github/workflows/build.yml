@@ -183,6 +183,12 @@ jobs:
           python3 ./scripts/apply-never-overworld-fixpack-r22.py ./.work/Folia --check-only
           python3 ./scripts/apply-never-nether-experiment-r16.py ./.work/Folia --check-only
 
+      - name: Switch NeverOverworld to native sea level 128
+        run: |
+          set -euo pipefail
+          python3 ./scripts/apply-never-overworld-native-sea-r3925.py ./.work/Folia
+          python3 ./scripts/apply-never-overworld-native-sea-r3925.py ./.work/Folia --check-only
+
       - name: Build runnable Paperclip JAR
         working-directory: .work/Folia
         env:
