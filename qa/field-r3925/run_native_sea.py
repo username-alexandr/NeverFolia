@@ -112,23 +112,28 @@ def main():
     }
     seams,seam_flags=edge_stats(rows)
     server_text=log.read_text(errors='replace')
+    diagnostics={
+      'inputs':{'core_sha256':core_sha,'overworld_sha256':ow_sha,'nether_sha256':nn_sha},
+      'static_pack':static,'totals':totals,'seam_flags_big24_ge8':seam_flags,
+      'seam_count':len(seams),'seam_flag_count':len(seam_flags),
+      'synthetic_r399_reports':len(list(r399.glob('*.json'))),
+      'synthetic_r3913_reports':len(list(ice.glob('*.json'))),
+    }
+    # Persist raw observations before fail-closed acceptance checks.
+    (OUT/'result.json').write_text(json.dumps(result,indent=2)+'\n')
+    (OUT/'seams.json').write_text(json.dumps({'seams':seams,'flags':seam_flags},indent=2)+'\n')
+    (OUT/'diagnostics.json').write_text(json.dumps(diagnostics,indent=2)+'\n')
+
     need('Native fluid picker active' in server_text and 'seaLevel=128' in server_text,'native fluid picker seaLevel=128 not observed')
     need(totals['air_gap_cells_in_wet_columns']==0,'AIR gaps remain in wet ocean columns')
     need(totals['surface_gap_columns']==0,'dry caps remain above ocean water')
     need(totals['living_floor_columns']==0,'living grass/podzol/moss floor remains underwater')
     need(totals['flowing_water_cells_in_wet_columns']==0,'flowing-water curtains remain inside ocean columns')
-    need(not list(r399.glob('*.json')),'R399 wrote evidence in native sea mode')
-    need(not list(ice.glob('*.json')),'R3913 wrote evidence in native sea mode')
+    need(diagnostics['synthetic_r399_reports']==0,'R399 wrote evidence in native sea mode')
+    need(diagnostics['synthetic_r3913_reports']==0,'R3913 wrote evidence in native sea mode')
 
-    summary={
-      'pass':True,'inputs':{'core_sha256':core_sha,'overworld_sha256':ow_sha,'nether_sha256':nn_sha},
-      'static_pack':static,'totals':totals,'seam_flags_big24_ge8':seam_flags,
-      'seam_count':len(seams),'seam_flag_count':len(seam_flags),
-      'synthetic_r399_reports':0,'synthetic_r3913_reports':0,
-      'production_accepted':False
-    }
-    (OUT/'result.json').write_text(json.dumps(result,indent=2)+'\n')
-    (OUT/'seams.json').write_text(json.dumps({'seams':seams,'flags':seam_flags},indent=2)+'\n')
+    summary=dict(diagnostics)
+    summary.update({'pass':True,'production_accepted':False})
     (OUT/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     print('R3925_NATIVE_SEA '+json.dumps(summary),flush=True)
 
