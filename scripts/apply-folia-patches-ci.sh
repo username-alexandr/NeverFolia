@@ -24,6 +24,24 @@ fi
 # a loose object directory disappears during SetupForkMinecraftSources. This is
 # infrastructure/cache corruption, not a source patch conflict. Retry exactly once
 # only for that narrow signature; every other failure remains a hard CI failure.
+if grep -Fq '429' "${LOG_FILE}" && grep -Fq 'Too Many Requests' "${LOG_FILE}"; then
+  echo '[NeverFolia CI] Maven/Gradle rate limit detected; retrying dependency resolution up to two times.' >&2
+  for attempt in 1 2; do
+    sleep $((attempt * 15))
+    rm -f "${LOG_FILE}"
+    if run_apply; then
+      echo "[NeverFolia CI] applyAllPatches rate-limit retry ${attempt} succeeded."
+      exit 0
+    fi
+    if ! grep -Fq '429' "${LOG_FILE}" || ! grep -Fq 'Too Many Requests' "${LOG_FILE}"; then
+      echo '[NeverFolia CI] retry failed for a different reason; stopping.' >&2
+      exit 1
+    fi
+  done
+  echo '[NeverFolia CI] Maven rate limit persisted after two retries.' >&2
+  exit 1
+fi
+
 if ! grep -Fq 'java.nio.file.NoSuchFileException:' "${LOG_FILE}" \
   || ! grep -Fq '/paperweight/upstreams/server-work/' "${LOG_FILE}" \
   || ! grep -Fq '/.git/objects/' "${LOG_FILE}"; then
