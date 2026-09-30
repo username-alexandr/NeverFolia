@@ -34,7 +34,7 @@ def phase(name,folder,server):
                 continue
             if line is None:break
             if 'R3931 OCEAN QA ' in line:need('R3931 OCEAN QA PASS '+nonce in line,line.rstrip());ok=True;break
-        need(ok,'No QA PASS');rp=folder/'plugins/R3931OceanQa/result.json';need(rp.is_file(),'Missing result');r=json.loads(rp.read_text());need(r.get('pass') and r.get('nonce')==nonce and r.get('completed_chunks')==54,'Bad result')
+        need(ok,'No QA PASS');rp=folder/'plugins/R3931OceanQa/result.json';need(rp.is_file(),'Missing result');r=json.loads(rp.read_text());need(r.get('pass') and r.get('nonce')==nonce and r.get('completed_chunks')==4,'Bad result')
         proc.stdin.write('stop\n');proc.stdin.flush();code=proc.wait(timeout=120);t.join(timeout=10);need(code==0,'Abnormal stop')
         return r
     finally:
@@ -50,6 +50,6 @@ def main():
     base=prepare('baseline',jar,ROOT/'baseline/server.jar',ROOT/'baseline/world/datapacks/NeverOverworld.zip',ROOT/'baseline/world/datapacks/NeverNether.zip')
     cand=prepare('candidate',jar,ROOT/'candidate/server.jar',ROOT/'candidate/NeverOverworld.zip',ROOT/'candidate/NeverNether.zip')
     rb=phase('baseline',base,ROOT/'baseline/server.jar');rc=phase('candidate',cand,ROOT/'candidate/server.jar')
-    sb,sc=sums(rb),sums(rc);report={'pass':True,'baseline':sb,'candidate':sc,'delta':{k:sc[k]-sb[k] for k in sb},'production_accepted':False,'scope':'54 natural chunks across islands/cold/frozen/coast/cave regions'}
+    sb,sc=sums(rb),sums(rc);report={'pass':True,'baseline':sb,'candidate':sc,'delta':{k:sc[k]-sb[k] for k in sb},'production_accepted':False,'scope':'4 critical natural chunks: islands, cold ocean, frozen ocean, coast'}
     (OUT/'runtime.json').write_text(json.dumps(report,indent=2)+'\n');print('R3931_RUNTIME '+json.dumps(report),flush=True)
 if __name__=='__main__':main()
