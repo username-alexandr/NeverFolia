@@ -1,5 +1,9 @@
 package net.minecraft.world.level.levelgen;
 
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,6 +28,24 @@ public final class NeverOverworldNoiseOracleR3927 {
     }
 
     private static final class MissingNoiseChunk extends RuntimeException {}
+    private record CachedWater(int minY,int maxY,BitSet water) {}
+
+    /**
+     * Generation-lifetime fallback for chunks whose NoiseChunk has already
+     * been discarded before a later LIGHT pass exposes them as an
+     * ImposterProtoChunk. Only one bit per sampled block is retained:
+     * "native NOISE/aquifer expected WATER".
+     *
+     * 512 entries cap the BitSet payload at roughly 10 MiB for the
+     * NeverOverworld -511..128 range. Eviction is safe: strict mode then
+     * refuses unresolved AIR instead of guessing.
+     */
+    private static final int CACHE_LIMIT=512;
+    private static final Map<Long,CachedWater> WATER_CACHE=new LinkedHashMap<>(64,0.75f,true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<Long,CachedWater> eldest) {
+            return size()>CACHE_LIMIT;
+        }
+    };
 
     private NeverOverworldNoiseOracleR3927() {}
 
@@ -34,9 +56,13 @@ public final class NeverOverworldNoiseOracleR3927 {
         try {
             noise=chunk.getOrCreateNoiseChunk(ignored->{throw new MissingNoiseChunk();});
         } catch(MissingNoiseChunk missing) {
-            return unavailable("missing_noise_chunk");
+            Sample cached=cached(chunk,minY,maxY);
+            return cached!=null?cached:unavailable("missing_noise_chunk");
         }
-        if(noise==null)return unavailable("null_noise_chunk");
+        if(noise==null) {
+            Sample cached=cached(chunk,minY,maxY);
+            return cached!=null?cached:unavailable("null_noise_chunk");
+        }
 
         synchronized(noise) {
             boolean started=false;
@@ -84,6 +110,7 @@ public final class NeverOverworldNoiseOracleR3927 {
                     }
                     noise.swapSlices();
                 }
+                remember(chunk,minY,maxY,out);
                 return new Sample(true,"ok",minY,maxY,out,cellWidth,cellHeight);
             } catch(RuntimeException failure) {
                 return unavailable("replay_"+failure.getClass().getSimpleName());
@@ -94,6 +121,26 @@ public final class NeverOverworldNoiseOracleR3927 {
                 }
             }
         }
+    }
+
+    private static void remember(ChunkAccess chunk,int minY,int maxY,byte[] cells) {
+        BitSet water=new BitSet(cells.length);
+        for(int i=0;i<cells.length;i++)if(cells[i]==WATER)water.set(i);
+        synchronized(WATER_CACHE) {
+            WATER_CACHE.put(chunk.getPos().longKey(),new CachedWater(minY,maxY,water));
+        }
+    }
+
+    private static Sample cached(ChunkAccess chunk,int minY,int maxY) {
+        final CachedWater cached;
+        synchronized(WATER_CACHE) {
+            cached=WATER_CACHE.get(chunk.getPos().longKey());
+        }
+        if(cached==null||cached.minY()!=minY||cached.maxY()!=maxY)return null;
+        byte[] cells=new byte[(maxY-minY+1)*256];
+        Arrays.fill(cells,SOLID);
+        for(int i=cached.water().nextSetBit(0);i>=0;i=cached.water().nextSetBit(i+1))cells[i]=WATER;
+        return new Sample(true,"cached_water_origin",minY,maxY,cells,0,0);
     }
 
     private static byte classify(BlockState state) {
