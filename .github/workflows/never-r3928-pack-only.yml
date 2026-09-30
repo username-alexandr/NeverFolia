@@ -1,0 +1,75 @@
+name: R3928 pack-only native sea control
+on:
+  push:
+    branches: ['qa/r3928-native-sea-pack-only']
+    paths:
+      - 'qa/field-r3928/**'
+      - '.github/workflows/never-r3928-pack-only.yml'
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '25'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10939310250'
+          run-id: 36340789810
+          github-token: ${{ github.token }}
+          path: r399
+          merge-multiple: true
+      - name: Make pack-only native sea candidate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 qa/field-r3928/build_pack_only.py \
+            --input r399/world/datapacks/NeverOverworld.zip \
+            --output artifacts/NeverOverworld-R3928-PackOnly.zip | tee artifacts/pack.json
+      - name: Run exact R39.9 server with only sea level changed
+        run: |
+          set -o pipefail
+          bash scripts/smoke-test-never-overworld-runtime.sh \
+            r399/server.jar artifacts/NeverOverworld-R3928-PackOnly.zip \
+            2>&1 | tee artifacts/runtime.log
+      - name: Summarize final saved ocean
+        run: |
+          python3 - <<'PY' | tee artifacts/ocean-summary.json
+          import importlib.util,json
+          from pathlib import Path
+          root=Path('.').resolve()
+          spec=importlib.util.spec_from_file_location('raw',root/'scripts/hash-never-nether-chunks.py')
+          raw=importlib.util.module_from_spec(spec);spec.loader.exec_module(raw)
+          over_spec=importlib.util.spec_from_file_location('over',root/'scripts/hash-never-overworld-generation-chunks.py')
+          over=importlib.util.module_from_spec(over_spec);over_spec.loader.exec_module(over)
+          world=root/'overworld-smoke-test/world'
+          region=over.find_region_dir(world)
+          chunks=[(0,0),(32,0),(-32,0),(0,32),(0,-32),(32,32),(-32,-32),(31,0),(-17,-25),(-4,-17)]
+          AIR={'minecraft:air','minecraft:cave_air','minecraft:void_air'}
+          ICE={'minecraft:ice','minecraft:packed_ice','minecraft:blue_ice'}
+          out={'chunks':len(chunks),'surface_water':0,'surface_ice':0,'submerged_ice':0,'air_y128_with_solid_below':0}
+          for cx,cz in chunks:
+              nbt=raw.read_chunk_nbt(region,cx,cz);bx=cx*16;bz=cz*16
+              for z in range(16):
+                  for x in range(16):
+                      wx=bx+x;wz=bz+z;b128=raw.block_at(nbt,wx,128,wz)
+                      if b128=='minecraft:water':out['surface_water']+=1
+                      if b128 in ICE:out['surface_ice']+=1
+                      if b128 in AIR:
+                          if any(raw.block_at(nbt,wx,y,wz) not in AIR|{'minecraft:water'} for y in range(127,-65,-1)):
+                              out['air_y128_with_solid_below']+=1
+                      for y in range(64,128):
+                          if raw.block_at(nbt,wx,y,wz) in ICE:out['submerged_ice']+=1
+          print(json.dumps(out,indent=2))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3928-PACK-ONLY-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
