@@ -98,7 +98,8 @@ HELPER=r'''    private static int enqueueNativeWaterConnectedR3928(
         if (localX < 0 || localX > 15 || localZ < 0 || localZ > 15 || y < minY || y > maxY) return tail;
         final int encoded = ((y - minY) << 8) | (localZ << 4) | localX;
         if (visited[encoded]) return tail;
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(baseX + localX, y, baseZ + localZ);
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        pos.set(baseX + localX, y, baseZ + localZ);
         final BlockState state = chunk.getBlockState(pos);
         final boolean nativeWater = state.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
         if (!nativeWater && (!isFloodableAt(chunk, pos) || NeverOverworldDryMinesR12.protectedCell(chunk, pos))) {
