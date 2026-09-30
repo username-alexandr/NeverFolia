@@ -1,0 +1,101 @@
+name: R3927 native origin ocean classifier
+on:
+  push:
+    branches: ['fix/neveroverworld-r3927-native-origin-classifier']
+    paths:
+      - 'native/overworld-r3927/**'
+      - 'qa/field-r3927/**'
+      - '.github/workflows/never-r3927-native-origin.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  r3927:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11113734311'
+          run-id: 36750214669
+          github-token: ${{ github.token }}
+          path: baseline
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11113594592'
+          run-id: 36750214669
+          github-token: ${{ github.token }}
+          path: debug
+          merge-multiple: true
+      - name: Build exact R39.26 plus native-origin classifier
+        id: build
+        run: |
+          mkdir -p artifacts
+          python3 -m py_compile qa/field-r3927/*.py
+          set -o pipefail
+          python3 qa/field-r3927/build.py 2>&1 | tee artifacts/build-command.log
+      - name: Compare 54 natural chunks against R39.26
+        id: runtime
+        if: steps.build.outcome == 'success'
+        run: |
+          set -o pipefail
+          python3 qa/field-r3927/runtime.py 2>&1 | tee artifacts/runtime-command.log
+      - name: Preserve source and provenance
+        if: always()
+        run: |
+          mkdir -p artifacts/source
+          cp -R native/overworld-r3927 qa/field-r3927 .github/workflows/never-r3927-native-origin.yml artifacts/source/
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          Path('artifacts/provenance.json').write_text(json.dumps({
+            'commit':os.environ['GITHUB_SHA'],
+            'run_id':os.environ['GITHUB_RUN_ID'],
+            'base':'R39.26 8145b7cb4a7beeb97c27db6804acadaac8c2e74b8c0d68601f62ee648aee2f2d',
+            'production_accepted':False
+          },indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3927-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Package manual-test kit
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: python3 qa/field-r3927/package.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        with:
+          name: NeverFolia-R39.27-Native-Origin-TEST-${{ github.sha }}
+          path: test-kit/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Require exact paired regression
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          RUNTIME: ${{ steps.runtime.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          assert os.environ['BUILD']=='success' and os.environ['RUNTIME']=='success'
+          r=json.loads(Path('artifacts/runtime.json').read_text())
+          assert r['pass'] is True
+          assert r['comparison']['pass'] is True
+          assert r['comparison']['protected_changes']==0
+          assert r['comparison']['piece_metadata_changed_chunks']==0
+          assert r['native_sea_seed_cells']>0
+          print('R39.27 paired natural regression passed; manual screenshot acceptance still required.')
+          PY
