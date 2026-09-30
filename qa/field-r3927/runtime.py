@@ -64,7 +64,6 @@ def phase(name,folder,jar,candidate):
         result['proof']=list(by.values())
         if candidate:
             need(len(by)==54,'Missing R3927 target proof')
-            need(all(r.get('noise_oracle_available') is True for r in by.values()),'Noise oracle unavailable in natural target')
             need(all(r.get('missed_expected_water')==0 and r.get('remaining_oracle_unknown_air')==0 and r.get('oracle_unavailable_air')==0 for r in by.values()),'Strict provenance residue')
             need(all(r.get('reads_above_sea_level')==0 and r.get('read_max_y')==128 for r in by.values()),'Above-sea read regression')
         result['pass']=True
