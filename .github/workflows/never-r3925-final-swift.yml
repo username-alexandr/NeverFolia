@@ -45,14 +45,6 @@ jobs:
           github-token: ${{ github.token }}
           path: ice-input
           merge-multiple: true
-      - name: Download pinned protocol source
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          artifact-ids: '10928009164'
-          run-id: 36308250793
-          github-token: ${{ github.token }}
-          path: debug
-          merge-multiple: true
       - name: Run exact R3925 Swift lifecycle
         env:
           R3925_CORE_SHA: '3e8555d1785ed73c3ecbbcc831fc56f2799002e5ea059b28869c26090904c210'
