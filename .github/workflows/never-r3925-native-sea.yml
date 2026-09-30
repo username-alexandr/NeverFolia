@@ -1,0 +1,71 @@
+name: R3925 native sea regression
+on:
+  push:
+    branches: ['qa/neverfolia-r3925-native-sea']
+    paths:
+      - 'qa/field-r3925/R3925NativeSeaQa.java'
+      - 'qa/field-r3925/run_native_sea.py'
+      - '.github/workflows/never-r3925-native-sea.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-sea:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download exact R3925 NeverFolia
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11107133983'
+          run-id: 36736721342
+          github-token: ${{ github.token }}
+          path: core-input
+          merge-multiple: true
+      - name: Download exact R3925 native-sea Overworld
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11105828785'
+          run-id: 36735066873
+          github-token: ${{ github.token }}
+          path: ow-input
+          merge-multiple: true
+      - name: Download proven NeverNether
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '10963935012'
+          run-id: 36407606753
+          github-token: ${{ github.token }}
+          path: nn-input
+          merge-multiple: true
+      - name: Run native sea regression
+        env:
+          R3925_CORE_SHA: '3e8555d1785ed73c3ecbbcc831fc56f2799002e5ea059b28869c26090904c210'
+          R3925_OW_SHA: '611e450f8368ba84ba4288c46b9362beaac37b1e72a7fae184cf2daab7070480'
+          R3925_NN_SHA: '5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
+          R3925_CORE_NAME: 'NeverFolia-26.2-0.1.0-dev-0f8fe86.jar'
+        run: |
+          set -euo pipefail
+          python3 qa/field-r3925/run_native_sea.py
+      - name: Preserve exact sources
+        if: always()
+        run: |
+          mkdir -p artifacts-r3925-native-sea/source
+          cp qa/field-r3925/R3925NativeSeaQa.java artifacts-r3925-native-sea/source/
+          cp qa/field-r3925/run_native_sea.py artifacts-r3925-native-sea/source/
+          cp .github/workflows/never-r3925-native-sea.yml artifacts-r3925-native-sea/source/workflow.yml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3925-NATIVE-SEA-EVIDENCE-${{ github.sha }}
+          path: artifacts-r3925-native-sea/
+          retention-days: 14
+          if-no-files-found: error
