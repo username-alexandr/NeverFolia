@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import argparse,hashlib,io,json,zipfile
+import argparse,hashlib,io,json,zipfile,struct
 
 TARGET='data/minecraft/worldgen/noise_settings/overworld.json'
 
@@ -30,5 +30,8 @@ def main():
     with zipfile.ZipFile(io.BytesIO(out)) as z:
         data=json.loads(z.read(TARGET))
     assert data['sea_level']==128
-    print('R3931_PACK',json.dumps({'input_sha256':sha(raw),'output_sha256':sha(out),'sea_level':data['sea_level']}))
+    root=json.loads(z.read('neveroverworld-worldgen-fingerprint.json'))
+    resource=json.loads(z.read('data/neverfolia/neveroverworld/worldgen_fingerprint.json'))
+    assert root==resource and root['entry_count_excluding_fingerprint']==8005
+    print('R3931_PACK',json.dumps({'input_sha256':sha(raw),'output_sha256':sha(out),'sea_level':data['sea_level'],'content_fingerprint':root['content_sha256']}))
 if __name__=='__main__':main()
