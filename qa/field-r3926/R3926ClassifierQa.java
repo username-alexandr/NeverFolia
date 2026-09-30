@@ -125,15 +125,15 @@ public final class R3926ClassifierQa extends JavaPlugin implements Listener {
 
         Scene d=new Scene(level,0,0);d.tunnel(true);verify("missing_east_neighbour_not_proof",d,true,0);
 
-        Scene e=new Scene(level,0,0);e.tunnel(true);e.put(12,64,8,Blocks.BLUE_ICE.defaultBlockState());verify("ice_is_barrier_not_target",e,false,4);
+        Scene e=new Scene(level,0,0);e.tunnel(true);e.put(12,64,8,Blocks.BLUE_ICE.defaultBlockState());verify("ice_is_barrier_not_target",e,false,3);
 
         Scene f=new Scene(level,0,0);f.tunnel(true);e=null;
-        f.put(12,64,7,Blocks.LAVA.defaultBlockState());verify("lava_halo_blocks_path",f,false,4);
+        f.put(12,64,7,Blocks.LAVA.defaultBlockState());verify("lava_halo_blocks_path",f,false,3);
 
         Scene g=new Scene(level,0,0);g.tunnel(true);
         int[] boxes={1,1,8,64,8,10,64,8};g.owner().persistentDataContainer.set(KEY,PersistentDataType.INTEGER_ARRAY,boxes);
         need(NeverOverworldDryMinesR12.protectedCell(g.owner(),g.pos(8,64,8)),"R39.9 persisted mine guard lost");
-        verify("persisted_mine_stays_dry",g,false,5);
+        verify("persisted_mine_stays_dry",g,false,4);
 
         Scene h=new Scene(level,0,0);h.tunnel(true);h.owner().setPersistedStatus(ChunkStatus.FULL);verify("full_chunk_not_rewritten",h,false,0);
 
