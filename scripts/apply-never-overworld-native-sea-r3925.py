@@ -113,7 +113,7 @@ def prepare(folia:Path)->dict[Path,str]:
     staged[folia/R15]=r15
 
     r399=(folia/R399).read_text(encoding="utf-8")
-    r399=inject_gate(r399,"public static int apply(WorldGenLevel level,StaticCache2D<GenerationChunkHolder> cache,ChunkAccess owner)","if (NeverOverworldNativeSeaR3925.active(level)) return 0;")
+    r399=inject_gate(r399,"public static int apply(WorldGenLevel world,StaticCache2D<GenerationChunkHolder> cache,ChunkAccess owner)","if (NeverOverworldNativeSeaR3925.active(world)) return 0;")
     staged[folia/R399]=r399
 
     r3913=(folia/R3913).read_text(encoding="utf-8")
@@ -138,7 +138,7 @@ def verify(folia:Path,staged:dict[Path,str]|None=None)->None:
     flood=get(FLOOD);r15=get(R15);r399=get(R399);r3913=get(R3913)
     if flood.count("NeverOverworldNativeSeaR3925.active(level)")<2:fail("owner flood/reweather gates missing")
     if r15.count("NeverOverworldNativeSeaR3925.active(level)")<4:fail("R15 public write gates missing")
-    if "NeverOverworldNativeSeaR3925.active(level)) return 0;" not in r399:fail("R399 native gate missing")
+    if "NeverOverworldNativeSeaR3925.active(world)) return 0;" not in r399:fail("R399 native gate missing")
     if "NeverOverworldNativeSeaR3925.active(level)) return 0;" not in r3913:fail("R3913 native gate missing")
     print("[R3925-NATIVE-SEA] synthetic flood writers retired; native sea level owns Overworld water")
 
