@@ -74,7 +74,7 @@ def replace_light_calls(text:str)->str:
         if matched is None:
             out.append(line);continue
         indent=line[:len(line)-len(line.lstrip())]
-        out.append(indent+MARK+": disabled "+matched)
+        out.append(indent+MARK+": disabled legacy LIGHT water writer")
         replaced+=1
     text="\n".join(out)+("\n" if text.endswith("\n") else "")
     if replaced!=len(CALLS):
