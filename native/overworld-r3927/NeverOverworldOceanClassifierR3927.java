@@ -75,7 +75,7 @@ public final class NeverOverworldOceanClassifierR3927 {
 
             BitSet protectedCells=NeverOverworldDryMinesR12.mask(chunk).envelope;
             CarvingMask carving=null;
-            if(chunk instanceof ProtoChunk proto) {
+            if(chunk instanceof ProtoChunk proto && !(chunk instanceof ImposterProtoChunk)) {
                 carving=proto.getCarvingMask();
                 if(carving!=null)carvingMaskChunks++;
             }
