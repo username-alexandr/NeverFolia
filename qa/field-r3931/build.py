@@ -33,7 +33,7 @@ def main():
     libs=WORK/'libs';libs.mkdir()
     for i,(n,raw) in enumerate(outer.items()):
         if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):(libs/(str(i)+'-'+Path(n).name)).write_bytes(raw)
-    cp=os.pathsep.join(map(str,sorted(libs.glob('*.jar'))));classes=WORK/'classes';classes.mkdir()
+    cp=os.pathsep.join(map(str,sorted(libs.glob('*.jar'))));(WORK/'classpath.txt').write_text(cp);classes=WORK/'classes';classes.mkdir()
     run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),str(ROOT/'native/overworld-r3931/NeverOverworldFlood.java')],'flood-javac.log')
     replacement=(classes/FLOOD).read_bytes();need(int.from_bytes(replacement[6:8],'big')==69,'Wrong Java bytecode')
     packaging=load('r3931_packaging',ROOT/'qa/field-r395/jar_packaging.py');run(['python3',str(ROOT/'qa/field-r395/jar_packaging.py')],'packaging-tests.log')
