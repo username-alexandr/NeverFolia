@@ -2,7 +2,7 @@ import java.util.Arrays;
 import net.minecraft.world.level.chunk.OceanConnectivityR3927;
 public final class OceanConnectivityR3927Test {
  static int n;
- static class G{int w,d,h;byte[] a;G(int w,int d,int h){this.w=w;this.d=d;this.h=h;a=new byte[w*d*h];Arrays.fill(a,OceanConnectivityR3927.SOLID);}int i(int x,int y,int z){return y*w*d+z*w+x;}G s(int x,int y,int z,byte v){a[i(x,y,z)]=v;return this;}G air(int x,int y,int z){return s(x,y,z,OceanConnectivityR3927.AIR);}G cave(int x,int y,int z){return s(x,y,z,OceanConnectivityR3927.CAVE);}var solve(){return OceanConnectivityR3927.solve(w,d,h,a);}}
+ static class G{int w,d,h;byte[] a;G(int w,int d,int h){this.w=w;this.d=d;this.h=h;a=new byte[w*d*h];Arrays.fill(a,OceanConnectivityR3927.SOLID);}int i(int x,int y,int z){return y*w*d+z*w+x;}G s(int x,int y,int z,byte v){a[i(x,y,z)]=v;return this;}G air(int x,int y,int z){return s(x,y,z,OceanConnectivityR3927.AIR);}G cave(int x,int y,int z){return s(x,y,z,OceanConnectivityR3927.CAVE);}OceanConnectivityR3927.Proof solve(){return OceanConnectivityR3927.solve(w,d,h,a);}}
  static void ok(boolean v){if(!v)throw new AssertionError();}static void t(String s,Runnable r){r.run();n++;System.out.println("PASS "+s);}
  public static void main(String[]x){
   t("sea connected cave floods",()->{G g=new G(3,3,8);for(int y=2;y<8;y++)g.cave(1,y,1);ok(g.solve().flood().get(g.i(1,2,1)));});
