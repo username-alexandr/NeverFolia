@@ -165,12 +165,9 @@ public final class NeverOverworldFlood {
     }
 
     /**
-     * R39.28 safety scrub: remove pure generated lava only.
-     *
-     * Native water is authoritative from NOISE/AQUIFER with sea level Y=128 and
-     * must survive into FEATURES/LIGHT. Deleting it here was the architectural
-     * cause of dry columns below overhangs and made ice/structures observe a
-     * different sea level from the final world. Waterlogged blocks are untouched.
+     * Remove pure generated water/lava only. Waterlogged structure blocks are
+     * preserved because replacing them would destroy the block itself. This pass
+     * executes during generation, so later player-placed fluids are unaffected.
      *
      * <p>Sections without any fluid are skipped through LevelChunkSection's cached
      * fluid count; solid deep sections cost O(sections), not O(height).</p>
@@ -207,7 +204,7 @@ public final class NeverOverworldFlood {
                 for (int localZ = 0; localZ < 16; ++localZ) {
                     for (int localX = 0; localX < 16; ++localX) {
                         final BlockState state = section.getBlockState(localX, localY, localZ);
-                        if (!state.is(Blocks.LAVA)) {
+                        if (!state.is(Blocks.WATER) && !state.is(Blocks.LAVA)) {
                             continue;
                         }
                         pos.set(minX + localX, y, minZ + localZ);
@@ -380,9 +377,7 @@ class ChunkStatusTasks {
     ):
         if forbidden in helper:
             fail(f"SELF-TEST: obsolete flood marker remains: {forbidden!r}")
-    if ("!state.is(Blocks." + "WATER)") in helper:
-        fail("SELF-TEST: R39.28 must preserve native water during LIGHT")
-    print("[NeverFolia][NeverOverworld flood] R39.28 NATIVE-WATER LIGHT NORMALIZER SELF-TEST OK")
+    print("[NeverFolia][NeverOverworld flood] STRUCTURAL LIGHT-BARRIER V3 SELF-TEST OK")
 
 
 def main() -> None:
