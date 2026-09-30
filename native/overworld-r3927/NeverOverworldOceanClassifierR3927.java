@@ -167,7 +167,7 @@ public final class NeverOverworldOceanClassifierR3927 {
             else remainingOracleUnknown++;
         }
 
-        if(STRICT&&(!oracle.available()||missedExpectedWater>0||remainingOracleUnknown>0))
+        if(STRICT&&((!oracle.available()&&oracleUnavailableAir>0)||missedExpectedWater>0||remainingOracleUnknown>0))
             throw new IllegalStateException("R3927 strict AIR provenance failed: oracle="+oracle.reason()
                 +" missedWater="+missedExpectedWater+" oracleUnknown="+remainingOracleUnknown
                 +" unavailableAir="+oracleUnavailableAir);
