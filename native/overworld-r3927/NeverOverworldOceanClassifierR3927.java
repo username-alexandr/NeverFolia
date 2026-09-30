@@ -115,7 +115,7 @@ public final class NeverOverworldOceanClassifierR3927 {
         }
 
         int changed=0,connectedFill=0,restoredNoiseWater=0,beforeAquatic=0,preservedAquatic=0;
-        int remainingCarved=0,remainingNoiseAir=0,remainingSolidOrigin=0,remainingUnknown=0,missedExpectedWater=0;
+        int remainingCarved=0,remainingNoiseAir=0,remainingSolidOrigin=0,remainingExpectedLava=0,remainingExpectedOtherFluid=0,remainingOracleUnknown=0,oracleUnavailableAir=0,missedExpectedWater=0;
 
         for(int y=LOW;y<=HIGH;y++)for(int z=0;z<16;z++)for(int x=0;x<16;x++) {
             int local=((y-LOW)<<8)|(z<<4)|x;
@@ -155,19 +155,22 @@ public final class NeverOverworldOceanClassifierR3927 {
                 continue;
             }
             if(!oracle.available()) {
-                remainingUnknown++;
+                oracleUnavailableAir++;
                 continue;
             }
             byte expected=oracle.get(x,y,z);
             if(expected==NeverOverworldNoiseOracleR3927.WATER)missedExpectedWater++;
             else if(expected==NeverOverworldNoiseOracleR3927.AIR)remainingNoiseAir++;
             else if(expected==NeverOverworldNoiseOracleR3927.SOLID)remainingSolidOrigin++;
-            else remainingUnknown++;
+            else if(expected==NeverOverworldNoiseOracleR3927.LAVA)remainingExpectedLava++;
+            else if(expected==NeverOverworldNoiseOracleR3927.OTHER_FLUID)remainingExpectedOtherFluid++;
+            else remainingOracleUnknown++;
         }
 
-        if(STRICT&&(!oracle.available()||missedExpectedWater>0||remainingUnknown>0))
+        if(STRICT&&(!oracle.available()||missedExpectedWater>0||remainingOracleUnknown>0))
             throw new IllegalStateException("R3927 strict AIR provenance failed: oracle="+oracle.reason()
-                +" missedWater="+missedExpectedWater+" unknown="+remainingUnknown);
+                +" missedWater="+missedExpectedWater+" oracleUnknown="+remainingOracleUnknown
+                +" unavailableAir="+oracleUnavailableAir);
 
         if(!REPORT.isEmpty()) {
             JsonObject r=new JsonObject();
@@ -190,7 +193,10 @@ public final class NeverOverworldOceanClassifierR3927 {
             r.addProperty("remaining_carved_air",remainingCarved);
             r.addProperty("remaining_noise_air",remainingNoiseAir);
             r.addProperty("remaining_solid_origin_air",remainingSolidOrigin);
-            r.addProperty("remaining_unknown_air",remainingUnknown);
+            r.addProperty("remaining_expected_lava_air",remainingExpectedLava);
+            r.addProperty("remaining_expected_other_fluid_air",remainingExpectedOtherFluid);
+            r.addProperty("remaining_oracle_unknown_air",remainingOracleUnknown);
+            r.addProperty("oracle_unavailable_air",oracleUnavailableAir);
             r.addProperty("missed_expected_water",missedExpectedWater);
             r.addProperty("read_min_y",LOW);r.addProperty("read_max_y",HIGH);
             r.addProperty("reads_above_sea_level",0);
