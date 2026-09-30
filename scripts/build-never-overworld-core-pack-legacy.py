@@ -174,6 +174,11 @@ def build_pack(root: Path, server_jar: Path) -> None:
             "Unexpected vanilla 26.2 Overworld noise contract: "
             f"min_y={vanilla_noise.get('min_y')} height={vanilla_noise.get('height')}"
         )
+    if noise_settings.get("sea_level") != 63:
+        raise SystemExit(
+            "Unexpected vanilla 26.2 Overworld sea level: "
+            f"{noise_settings.get('sea_level')}"
+        )
 
     # Preserve the complete vanilla 26.2 Overworld above its old floor and only
     # widen the legal dimension/noise interval. These vanilla inputs are extracted
@@ -183,6 +188,10 @@ def build_pack(root: Path, server_jar: Path) -> None:
     dimension_type["logical_height"] = DIM_HEIGHT
     noise_settings["noise"]["min_y"] = DIM_MIN_Y
     noise_settings["noise"]["height"] = DIM_HEIGHT
+    # R39.28: make the raised ocean authoritative during NOISE/AQUIFER and all
+    # later worldgen stages. Features, freezing and structure processors must
+    # see the same sea level that the final world uses.
+    noise_settings["sea_level"] = FLOOD_LEVEL
 
     vanilla_final_density = noise_settings["noise_router"]["final_density"]
 
@@ -290,10 +299,10 @@ def build_pack(root: Path, server_jar: Path) -> None:
             "deep_bottom_y": DEEP_BOTTOM_Y,
             "terrain_mode": "VANILLA_FLOODED",
             "flood_level": FLOOD_LEVEL,
-            "flood_phase": "neverfolia-light-barrier-surface-connected-chunk-owned-v3",
-            "flood_seed": "minecraft:OCEAN_FLOOR_WG-open-columns-at-y128",
-            "sealed_cavity_policy": "remain-dry-without-surface-connected-air-path",
-            "underground_fluid_policy": "remove-generated-water-and-lava-then-refill-surface-connected-air",
+            "flood_phase": "native-sea128-plus-light-additive-normalization-r3928",
+            "flood_seed": "native-aquifer-sea-level-128",
+            "sealed_cavity_policy": "native-aquifer-plus-additive-surface-connectivity",
+            "underground_fluid_policy": "preserve-native-water-scrub-generated-lava-only",
             "blocked_vanilla_fluid_features": sorted(BLOCKED_WORLDGEN_FLUID_FEATURES),
             "removed_fluid_feature_references": removed_fluid_features,
             "upper_generation": "vanilla-26.2-from-built-server-jar",
@@ -326,7 +335,7 @@ def build_zip(server_jar: Path, output: Path) -> None:
     print(f"  worldgen: {WORLDGEN_ID}")
     print(f"  range: Y={DIM_MIN_Y}..{DIM_MAX_Y}")
     print(f"  vanilla upper: Y>={VANILLA_MIN_Y}")
-    print(f"  flood: surface-connected air up to Y={FLOOD_LEVEL}; sealed cavities stay dry")
+    print(f"  sea level: native NOISE/AQUIFER Y={FLOOD_LEVEL}; LIGHT pass is additive only")
     print(f"  output: {output}")
 
 
