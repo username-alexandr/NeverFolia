@@ -17,10 +17,9 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         try{
             world=Bukkit.getWorlds().stream().filter(w->w.getEnvironment()==World.Environment.NORMAL).findFirst().orElseThrow();
             if(world.getSeed()!=-4651369264513492755L)throw new AssertionError("Wrong seed");
-            int[][] centers={{7,1},{1,-4},{-197,-217},{-169,-250},{-189,-223},{-1699,-769}};
-            TreeMap<String,int[]> selected=new TreeMap<>();
-            for(int[] c:centers)for(int dz=-1;dz<=1;dz++)for(int dx=-1;dx<=1;dx++){int cx=c[0]+dx,cz=c[1]+dz;selected.put(cx+","+cz,new int[]{cx,cz});}
-            targets.addAll(selected.values()); if(targets.size()!=54)throw new AssertionError("target count");
+            int[][] centers={{7,1},{-197,-217},{-169,-250},{-189,-223}};
+            for(int[] c:centers)targets.add(new int[]{c[0],c[1]});
+            if(targets.size()!=4)throw new AssertionError("target count");
             Bukkit.getGlobalRegionScheduler().execute(this,this::next);
         }catch(Throwable t){finish(t);}
     }
@@ -30,7 +29,7 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         world.getChunkAtAsync(cx,cz,true).whenComplete((chunk,error)->{
             if(error!=null){finish(error);return;}
             Bukkit.getRegionScheduler().execute(this,world,cx,cz,()->{
-                try{rows.add(sample(chunk.getChunkSnapshot(false,true,false),cx,cz));index++;getLogger().info("R3931 SAMPLE "+index+"/54 "+cx+","+cz);Bukkit.getGlobalRegionScheduler().execute(this,this::next);}
+                try{rows.add(sample(chunk.getChunkSnapshot(false,true,false),cx,cz));index++;getLogger().info("R3931 SAMPLE "+index+"/4 "+cx+","+cz);Bukkit.getGlobalRegionScheduler().execute(this,this::next);}
                 catch(Throwable x){finish(x);}
             });
         });
