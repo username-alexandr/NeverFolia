@@ -48,6 +48,7 @@ def main():
         if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):
             (libs/(str(i)+'-'+Path(n).name)).write_bytes(raw)
     cp=os.pathsep.join(map(str,sorted(libs.glob('*.jar'))));(WORK/'classpath.txt').write_text(cp)
+    compat=ROOT/'.work/r3931-build';compat.mkdir(parents=True,exist_ok=True);(compat/'classpath.txt').write_text(cp)
 
     maker=load('r3933_make_placement',ROOT/'qa/field-r3933/make_placement.py')
     src=WORK/'generated/net/minecraft/world/level/levelgen/structure/structures/NeverOverworldStructurePlacement.java'
