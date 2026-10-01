@@ -13,6 +13,7 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
     private World world;
     private final List<int[]> targets = new ArrayList<>();
     private final JsonArray structures = new JsonArray();
+    private final JsonArray samples = new JsonArray();
     private final Set<String> seen = new HashSet<>();
     private int index;
     private boolean started, finished;
@@ -70,24 +71,47 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
             if (error!=null) { finish(error); return; }
             Bukkit.getRegionScheduler().execute(this,world,cx,cz,()->{
                 try {
-                    chunk.getChunkSnapshot(false,true,false);
+                    var snapshot=chunk.getChunkSnapshot(false,true,false);
                     for (GeneratedStructure gs : chunk.getStructures()) {
                         String id=gs.getStructure().getKey().toString();
                         BoundingBox bb=gs.getBoundingBox();
                         String sig=id+"|"+bb.toString();
-                        if (!seen.add(sig)) continue;
-                        JsonObject row=new JsonObject();
-                        row.addProperty("id",id);
-                        row.addProperty("seen_in_chunk_x",cx);
-                        row.addProperty("seen_in_chunk_z",cz);
-                        row.add("bounding_box",box(bb));
-                        JsonArray pieces=new JsonArray();
-                        for (StructurePiece piece : gs.getPieces()) {
-                            pieces.add(box(piece.getBoundingBox()));
+                        if (seen.add(sig)) {
+                            JsonObject row=new JsonObject();
+                            row.addProperty("id",id);
+                            row.addProperty("seen_in_chunk_x",cx);
+                            row.addProperty("seen_in_chunk_z",cz);
+                            row.add("bounding_box",box(bb));
+                            JsonArray pieces=new JsonArray();
+                            for (StructurePiece piece : gs.getPieces()) {
+                                pieces.add(box(piece.getBoundingBox()));
+                            }
+                            row.add("pieces",pieces);
+                            structures.add(row);
+                            getLogger().info("R3934 STRUCTURE "+id+" bbox="+bb+" pieces="+pieces.size());
                         }
-                        row.add("pieces",pieces);
-                        structures.add(row);
-                        getLogger().info("R3934 STRUCTURE "+id+" bbox="+bb+" pieces="+pieces.size());
+
+                        int chunkMinX=cx<<4,chunkMinZ=cz<<4;
+                        int minX=Math.max(chunkMinX,(int)Math.floor(bb.getMinX()));
+                        int maxX=Math.min(chunkMinX+15,(int)Math.floor(bb.getMaxX()));
+                        int minZ=Math.max(chunkMinZ,(int)Math.floor(bb.getMinZ()));
+                        int maxZ=Math.min(chunkMinZ+15,(int)Math.floor(bb.getMaxZ()));
+                        int minY=Math.max(world.getMinHeight(),(int)Math.floor(bb.getMinY()));
+                        int maxY=Math.min(world.getMaxHeight()-1,(int)Math.floor(bb.getMaxY()));
+                        if (minX<=maxX && minZ<=maxZ && minY<=maxY) {
+                            int air=0,water=0,other=0;
+                            for(int z=minZ;z<=maxZ;++z)for(int x=minX;x<=maxX;++x)for(int y=minY;y<=maxY;++y){
+                                Material m=snapshot.getBlockType(x&15,y,z&15);
+                                if(m.isAir())++air;
+                                else if(aquatic(m))++water;
+                                else ++other;
+                            }
+                            JsonObject sample=new JsonObject();
+                            sample.addProperty("id",id);
+                            sample.addProperty("chunk_x",cx);sample.addProperty("chunk_z",cz);
+                            sample.addProperty("air",air);sample.addProperty("water",water);sample.addProperty("other",other);
+                            samples.add(sample);
+                        }
                     }
                     ++index;
                     Bukkit.getGlobalRegionScheduler().execute(this,this::next);
@@ -96,6 +120,11 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
                 }
             });
         });
+    }
+
+    private static boolean aquatic(Material m) {
+        return m==Material.WATER||m==Material.BUBBLE_COLUMN||m==Material.KELP||m==Material.KELP_PLANT
+            ||m==Material.SEAGRASS||m==Material.TALL_SEAGRASS;
     }
 
     private synchronized void finish(Throwable e) {
@@ -107,6 +136,7 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
         o.addProperty("seed",world==null?0:world.getSeed());
         o.addProperty("generated_chunks",index);
         o.add("structures",structures);
+        o.add("samples",samples);
         if (e!=null) {
             o.addProperty("error",e.toString());
             e.printStackTrace();
