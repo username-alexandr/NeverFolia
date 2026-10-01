@@ -82,5 +82,7 @@ jobs:
           assert b['build_pass'] is True and r['pass'] is True
           assert r['monument']['monument_count'] == 0
           assert r['monument']['steep_candidate_rejected'] is True
+          assert r['monument']['ocean_pillar_structure_void'] == 0
+          assert r['monument']['reported_pillar_cell_aquatic'] is True
           print('R39.34 monument seabed QA passed; manual visual check still required.')
           PY
