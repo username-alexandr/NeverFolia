@@ -122,19 +122,21 @@ def main():
       {nested:modified,'META-INF/versions.list':('\n'.join(rows)+'\n').encode()}
     )
     (CAND/'server.jar').write_bytes(bundled)
-    shutil.copyfile(pack,CAND/'NeverOverworld.zip')
+    run(['python3',str(ROOT/'qa/field-r3934fix/patch_pack.py'),str(pack),str(CAND/'NeverOverworld.zip')],'r3934-pack.log',timeout=420)
     shutil.copyfile(nether,CAND/'NeverNether.zip')
 
     report={
       'build_pass':True,
       'base_r3933_core_sha256':BASE_CORE,
       'candidate_core_sha256':sha(CAND/'server.jar'),
-      'neveroverworld_sha256':BASE_PACK,
+      'base_neveroverworld_sha256':BASE_PACK,
+      'candidate_neveroverworld_sha256':sha(CAND/'NeverOverworld.zip'),
       'nether_sha256':NETHER,
       'changed_kernel_entries':[MONUMENT,HELPER],
       'old_monument_base_y':104,
       'new_monument_policy':'reject relief >12; otherwise OCEAN_FLOOR_WG base=min(median,min+6), capped at 104',
       'sample_spacing':2,'sample_radius':28,'max_seabed_relief':12,
+      'ocean_pillar_structure_void_after':0,'ocean_pillar_water_after':8,
       'production_accepted':False
     }
     (OUT/'build-r3934.json').write_text(json.dumps(report,indent=2)+'\n')
