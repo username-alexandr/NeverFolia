@@ -59,7 +59,8 @@ def _nbt_parse(raw:bytes):
             while True:
                 child=u1()
                 if child==0:return out
-                out[string()]=payload(child)
+                name=string()
+                out[name]=payload(child)
         if t==11:
             count=i4()
             if count<0:raise ValueError('Negative NBT int array')
