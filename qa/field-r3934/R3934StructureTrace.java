@@ -34,8 +34,11 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
                 throw new AssertionError("Wrong seed " + world.getSeed());
             }
 
-            // Screenshot 1: around x=-3138,z=-3449 -> chunk -197,-216.
-            // Screenshot 2: around x=-3264,z=-3573 -> chunk -204/-205,-224.
+            // Current reported defects on R39.33:
+            // 1) giant support columns/platform near x=-3443,z=-3392 -> chunk -216,-212.
+            // 2) water/air artifact near ocean_pillar x=-3141,z=-3455 -> chunk -197,-216.
+            // Keep the old cistern/ruins area too for regression context.
+            addArea(-216, -212, 3);
             addArea(-197, -216, 2);
             addArea(-205, -224, 2);
             Bukkit.getGlobalRegionScheduler().execute(this, this::next);
