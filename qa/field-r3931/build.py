@@ -68,10 +68,14 @@ def main():
     shutil.copyfile(nether,CAND/'NeverNether.zip')
     with zipfile.ZipFile(CAND/'NeverOverworld.zip') as z:
         settings=json.loads(z.read('data/minecraft/worldgen/noise_settings/overworld.json'))
+        ocean_pillar=json.loads(z.read('data/structory_towers/worldgen/structure/ocean_pillar.json'))
     need(settings['sea_level']==128,'Candidate sea level not 128')
+    need(ocean_pillar.get('project_start_to_heightmap')=='OCEAN_FLOOR_WG','Ocean pillar lost seabed projection')
+    need(ocean_pillar.get('terrain_adaptation')=='none','Ocean pillar terrain beard still enabled')
     report={'build_pass':True,'base_core_sha256':BASE,'candidate_core_sha256':sha(CAND/'server.jar'),
       'base_pack_sha256':PACK,'candidate_pack_sha256':sha(CAND/'NeverOverworld.zip'),'nether_sha256':NETHER,
-      'sea_level':128,'retired_light_flood':True,'retired_connectivity_flood':True,'abi_preserved':True,
+      'sea_level':128,'ocean_pillar_heightmap':'OCEAN_FLOOR_WG','ocean_pillar_terrain_adaptation':'none',
+      'retired_light_flood':True,'retired_connectivity_flood':True,'abi_preserved':True,
       'changed_kernel_entries':list(CHANGED),'preserved_hotfix_classes':{k:digest(new[k]) for k in KEEP},'production_accepted':False}
     (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');print('R3931_BUILD '+json.dumps(report),flush=True)
 if __name__=='__main__':main()
