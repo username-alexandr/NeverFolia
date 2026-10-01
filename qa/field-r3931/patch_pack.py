@@ -50,6 +50,9 @@ def _nbt_parse(raw:bytes):
         if t==9:
             element=u1();count=i4()
             if count<0:raise ValueError('Negative NBT list')
+            if element==0:
+                if count!=0:raise ValueError('Non-empty TAG_End list')
+                return []
             return [payload(element) for _ in range(count)]
         if t==10:
             out={}
