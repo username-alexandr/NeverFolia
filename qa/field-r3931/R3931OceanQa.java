@@ -40,7 +40,7 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         JsonObject r=new JsonObject();int isolatedAir=0,iceBelow=0,airBelow=0,waterBelow=0;
         int longAirColumns=0,underRoofAirColumns=0,iceAtSurface=0;
         int plainIceBelow=0,packedIceBelow=0,blueIceBelow=0,frostedIceBelow=0;
-        int plainIce0To62=0,plainIceAt63=0,plainIce64To127=0,plainIceAt128=0;
+        int plainIce0To62=0,plainIceAt63=0,plainIce64To126=0,plainIceAt127=0,plainIceAt128=0;
         for(int z=0;z<16;z++)for(int x=0;x<16;x++){
             int run=0,maxRun=0;boolean roofAbove=false;
             for(int y=129;y<=180;y++){Material m=s.getBlockType(x,y,z);if(!m.isAir()&&!aquatic(m)){roofAbove=true;break;}}
@@ -60,7 +60,8 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
                 if(m==Material.ICE){
                     if(y<=62)plainIce0To62++;
                     else if(y==63)plainIceAt63++;
-                    else if(y<=127)plainIce64To127++;
+                    else if(y<=126)plainIce64To126++;
+                    else if(y==127)plainIceAt127++;
                     else plainIceAt128++;
                 }
                 if(m.isAir()&&x>0&&x<15&&z>0&&z<15&&y>LOW&&y<HIGH
@@ -75,7 +76,7 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         r.addProperty("plain_ice_below_128",plainIceBelow);r.addProperty("packed_ice_below_128",packedIceBelow);
         r.addProperty("blue_ice_below_128",blueIceBelow);r.addProperty("frosted_ice_below_128",frostedIceBelow);
         r.addProperty("plain_ice_0_62",plainIce0To62);r.addProperty("plain_ice_at_63",plainIceAt63);
-        r.addProperty("plain_ice_64_127",plainIce64To127);r.addProperty("plain_ice_at_128",plainIceAt128);
+        r.addProperty("plain_ice_64_126",plainIce64To126);r.addProperty("plain_ice_at_127",plainIceAt127);r.addProperty("plain_ice_at_128",plainIceAt128);
         r.addProperty("long_air_columns_ge16",longAirColumns);r.addProperty("long_air_columns_under_roof",underRoofAirColumns);
         return r;
     }
