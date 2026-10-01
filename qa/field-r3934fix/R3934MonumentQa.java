@@ -86,7 +86,7 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
         if(error==null){
             if(monumentCount<1)error=new AssertionError("monument not generated in deterministic area");
             else if(minBaseY>=100)error=new AssertionError("monument still surface-anchored: baseY="+minBaseY);
-            else if(maxSupportRun>16)error=new AssertionError("monument support column still too long: "+maxSupportRun);
+            else if(maxSupportRun>12)error=new AssertionError("monument support column still too long: "+maxSupportRun);
         }
 
         JsonObject o=new JsonObject();
