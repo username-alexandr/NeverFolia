@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "worldgen_id": "NR-DEV-1",
-  "profile": "native-structures-v1-field-r1",
+  "profile": "native-structures-v1-field-r3936-all-underground-heights",
   "units": {
     "placement_spacing": "chunks",
     "vertical_ranges": "block_y",
@@ -19,7 +19,16 @@
     "generation_time_cross_chunk_writes": false,
     "fast_locate_generates_chunks": false,
     "fast_locate_uses_candidate_grid": true,
-    "reject_bounding_box_intersection": true
+    "reject_bounding_box_intersection": true,
+    "underground_all_heights": {
+      "enabled": true,
+      "minimum_start_y": -480,
+      "maximum_start_y": 480,
+      "surface_heightmap": "OCEAN_FLOOR_WG",
+      "dynamic_surface_cap": true,
+      "distribution": "deterministic_random_start_full_span",
+      "no_per_profile_y_bands": true
+    }
   },
   "vanilla_baseline": {
     "preserve_upper_world_structures": true,
@@ -91,14 +100,20 @@
       "mineshaft": {
         "upper_vanilla_placement_preserved": false,
         "deep_extension_enabled": true,
-        "deep_hard_y": [-448, -112],
+        "deep_hard_y": [
+          -448,
+          -112
+        ],
         "deep_requires_min_rock_thickness": 18,
         "deep_reject_surface_connected_flood": true
       },
       "trial_chambers": {
         "upper_vanilla_placement_preserved": false,
         "deep_extension_enabled": true,
-        "deep_hard_y": [-320, -96],
+        "deep_hard_y": [
+          -320,
+          -96
+        ],
         "deep_requires_min_rock_thickness": 28,
         "deep_requires_stable_floor": true,
         "deep_reject_surface_connected_flood": true,
@@ -124,20 +139,29 @@
         "spread_type": "linear",
         "salt": 147302113
       },
-      "target_successful_distance_blocks": [1200, 2200],
+      "target_successful_distance_blocks": [
+        1200,
+        2200
+      ],
       "major_exclusion_radius_chunks": 28,
       "structures": [
         {
           "id": "neverfolia:buried_sanctum",
           "weight": 4,
           "vertical_profile": "deep_rock_mass",
-          "geology_affinity": ["iron", "gold"]
+          "geology_affinity": [
+            "iron",
+            "gold"
+          ]
         },
         {
           "id": "neverfolia:abyssal_archive",
           "weight": 2,
           "vertical_profile": "deep_cavern_edge",
-          "geology_affinity": ["lapis", "diamond"]
+          "geology_affinity": [
+            "lapis",
+            "diamond"
+          ]
         },
         {
           "id": "neverfolia:ancient_cistern",
@@ -155,7 +179,10 @@
         "spread_type": "linear",
         "salt": 913440721
       },
-      "target_successful_distance_blocks": [550, 1000],
+      "target_successful_distance_blocks": [
+        550,
+        1000
+      ],
       "structures": [
         {
           "id": "neverfolia:collapsed_mine",
@@ -166,7 +193,10 @@
           "id": "neverfolia:geode_vault",
           "weight": 3,
           "vertical_profile": "deep_rock_mass",
-          "geology_affinity": ["copper", "lapis"]
+          "geology_affinity": [
+            "copper",
+            "lapis"
+          ]
         },
         {
           "id": "neverfolia:flooded_ruins",
@@ -184,7 +214,10 @@
         "spread_type": "linear",
         "salt": 1880479151
       },
-      "target_successful_distance_blocks": [250, 500],
+      "target_successful_distance_blocks": [
+        250,
+        500
+      ],
       "structures": [
         {
           "id": "neverfolia:prospector_camp",
@@ -201,44 +234,88 @@
   },
   "vertical_profiles": {
     "deep_rock_mass": {
-      "preferred_y": [-384, -144],
-      "hard_y": [-464, -104],
+      "preferred_y": [
+        -480,
+        480
+      ],
+      "hard_y": [
+        -480,
+        480
+      ],
       "placement": "deterministic_solid_volume_anchor",
       "minimum_rock_above": 24,
       "minimum_rock_below": 12,
       "reject_surface_connected_flood": true,
-      "reject_open_cavern_overlap_ratio_above": 0.30
+      "reject_open_cavern_overlap_ratio_above": 0.3,
+      "vertical_policy": "all_underground_heights",
+      "minimum_surface_cover": 32
     },
     "deep_cavern_edge": {
-      "preferred_y": [-320, -128],
-      "hard_y": [-448, -96],
+      "preferred_y": [
+        -480,
+        480
+      ],
+      "hard_y": [
+        -480,
+        480
+      ],
       "placement": "deterministic_cavern_wall_or_ledge",
       "minimum_rock_shell": 18,
-      "required_open_volume_ratio": [0.12, 0.46],
-      "reject_surface_connected_flood": true
+      "required_open_volume_ratio": [
+        0.12,
+        0.46
+      ],
+      "reject_surface_connected_flood": true,
+      "vertical_policy": "all_underground_heights",
+      "minimum_surface_cover": 24
     },
     "deep_cavern_floor": {
-      "preferred_y": [-300, -112],
-      "hard_y": [-432, -96],
+      "preferred_y": [
+        -480,
+        480
+      ],
+      "hard_y": [
+        -480,
+        480
+      ],
       "placement": "deterministic_cavity_floor",
       "minimum_floor_thickness": 8,
       "minimum_headroom": 7,
-      "reject_surface_connected_flood": true
+      "reject_surface_connected_flood": true,
+      "vertical_policy": "all_underground_heights",
+      "minimum_surface_cover": 16
     },
     "deep_flood_boundary": {
-      "preferred_y": [-220, 96],
-      "hard_y": [-360, 124],
+      "preferred_y": [
+        -480,
+        480
+      ],
+      "hard_y": [
+        -480,
+        480
+      ],
       "placement": "deterministic_water_boundary_anchor",
       "minimum_rock_shell": 16,
       "requires_water_contact": true,
-      "max_submerged_fraction": 0.55
+      "max_submerged_fraction": 0.55,
+      "vertical_policy": "all_underground_heights",
+      "minimum_surface_cover": 20
     },
     "flooded_surface_or_cavern": {
-      "preferred_y": [24, 124],
-      "hard_y": [-96, 128],
+      "preferred_y": [
+        -480,
+        480
+      ],
+      "hard_y": [
+        -480,
+        480
+      ],
       "placement": "surface_or_flooded_cavity_floor",
-      "allows_surface_connected_flood": true,
-      "minimum_floor_thickness": 6
+      "allows_surface_connected_flood": false,
+      "minimum_floor_thickness": 6,
+      "vertical_policy": "all_underground_heights",
+      "minimum_surface_cover": 16,
+      "requires_underground_placement": true
     }
   },
   "candidate_rejection": {
@@ -250,7 +327,9 @@
     "reject_surface_connected_water_unless_allowed": true,
     "reject_if_floor_support_ratio_below": 0.72,
     "reject_if_open_volume_ratio_above": 0.62,
-    "candidate_failure_consumes_no_neighbor_state": true
+    "candidate_failure_consumes_no_neighbor_state": true,
+    "dynamic_surface_cap_heightmap": "OCEAN_FLOOR_WG",
+    "reject_if_start_above_local_floor_minus_cover": true
   },
   "fast_locate": {
     "native": true,
