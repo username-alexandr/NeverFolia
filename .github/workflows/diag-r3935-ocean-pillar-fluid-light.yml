@@ -1,0 +1,64 @@
+name: R3935 ocean pillar fluid light
+on:
+  push:
+    branches: ['diag/neveroverworld-r3935-ocean-pillar-fluid-light']
+    paths:
+      - 'qa/field-r3935/**'
+      - '.github/workflows/diag-r3935-ocean-pillar-fluid-light.yml'
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: r3935-fluid-light-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '25'}
+
+      - name: Download accepted R39.34
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11143542262'
+          run-id: 36821132145
+          github-token: '${{ github.token }}'
+          path: r3934
+          merge-multiple: true
+
+      - name: Prepare candidate and classpath
+        run: |
+          mkdir -p candidate artifacts
+          cp r3934/server.jar candidate/server.jar
+          cp r3934/world/datapacks/NeverOverworld.zip candidate/NeverOverworld.zip
+          cp r3934/world/datapacks/NeverNether.zip candidate/NeverNether.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,zipfile
+          libs=Path('.work/r3935-libs');libs.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile('candidate/server.jar') as z:
+              i=0
+              for n in z.namelist():
+                  if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):
+                      (libs/(str(i)+'-'+Path(n).name)).write_bytes(z.read(n));i+=1
+          Path('.work/r3935-classpath.txt').write_text(os.pathsep.join(map(str,sorted(libs.glob('*.jar')))))
+          print('classpath jars',i)
+          PY
+
+      - name: Run exact fluid-light probe
+        run: |
+          set -o pipefail
+          python3 qa/field-r3935/diag.py 2>&1 | tee artifacts/r3935-command.log
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3935-FLUID-LIGHT-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
