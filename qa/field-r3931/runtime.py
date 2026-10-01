@@ -26,6 +26,7 @@ def phase(name,folder,server):
             for line in proc.stdout:lines.append(line);f.write(line);f.flush();q.put(line)
         q.put(None)
     t=threading.Thread(target=pump,daemon=True);t.start();ok=False;deadline=time.monotonic()+700
+    fatal=('NoSuchMethodError','NoClassDefFoundError','VerifyError','ClassFormatError','Chunk system error')
     try:
         while time.monotonic()<deadline:
             try:line=q.get(timeout=1)
@@ -33,6 +34,7 @@ def phase(name,folder,server):
                 if proc.poll() is not None:break
                 continue
             if line is None:break
+            if any(marker in line for marker in fatal):raise RuntimeError(name+' fatal runtime marker: '+line.rstrip())
             if 'R3931 OCEAN QA ' in line:need('R3931 OCEAN QA PASS '+nonce in line,line.rstrip());ok=True;break
         need(ok,'No QA PASS');rp=folder/'plugins/R3931OceanQa/result.json';need(rp.is_file(),'Missing result');r=json.loads(rp.read_text());need(r.get('pass') and r.get('nonce')==nonce and r.get('completed_chunks')==4,'Bad result')
         proc.stdin.write('stop\n');proc.stdin.flush();code=proc.wait(timeout=120);t.join(timeout=10);need(code==0,'Abnormal stop')
@@ -43,7 +45,10 @@ def phase(name,folder,server):
             except Exception:proc.kill();proc.wait(timeout=10)
         t.join(timeout=10)
 def sums(r):
-    keys=('water_0_128','air_0_128','isolated_air_in_water','ice_below_128','ice_at_128','long_air_columns_ge16','long_air_columns_under_roof')
+    keys=('water_0_128','air_0_128','isolated_air_in_water','ice_below_128','ice_at_128',
+          'plain_ice_below_128','packed_ice_below_128','blue_ice_below_128','frosted_ice_below_128',
+          'plain_ice_0_62','plain_ice_at_63','plain_ice_64_127','plain_ice_at_128',
+          'long_air_columns_ge16','long_air_columns_under_roof')
     return {k:sum(x[k] for x in r['chunks']) for k in keys}
 def main():
     WORK.mkdir(parents=True,exist_ok=False);b=json.loads((OUT/'build.json').read_text());jar=prepare_plugin()
