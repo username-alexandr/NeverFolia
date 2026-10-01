@@ -84,9 +84,12 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
     private synchronized void finish(Throwable error){
         if(finished)return;finished=true;
         if(error==null){
-            if(monumentCount<1)error=new AssertionError("monument not generated in deterministic area");
-            else if(minBaseY>=100)error=new AssertionError("monument still surface-anchored: baseY="+minBaseY);
-            else if(maxSupportRun>12)error=new AssertionError("monument support column still too long: "+maxSupportRun);
+            // This deterministic candidate is the exact steep-seabed Monument
+            // from the user's screenshot. R39.34 must reject it entirely.
+            if(monumentCount!=0)error=new AssertionError(
+                "steep-seabed monument candidate was not rejected: count="+monumentCount+
+                " baseY="+minBaseY+" maxSupport="+maxSupportRun
+            );
         }
 
         JsonObject o=new JsonObject();
@@ -98,6 +101,7 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
         o.addProperty("min_base_y",minBaseY==Integer.MAX_VALUE?0:minBaseY);
         o.addProperty("max_base_y",maxBaseY==Integer.MIN_VALUE?0:maxBaseY);
         o.addProperty("max_support_run",maxSupportRun);
+        o.addProperty("steep_candidate_rejected",monumentCount==0);
         if(error!=null){o.addProperty("error",error.toString());error.printStackTrace();}
         try{
             getDataFolder().mkdirs();
