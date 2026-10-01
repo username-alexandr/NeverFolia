@@ -76,6 +76,9 @@ def main():
     result=phase(prepare(plugin()))
     need(result['monument_count']==0,'reported steep-seabed monument candidate still generated')
     need(result.get('steep_candidate_rejected') is True,'monument rejection evidence missing')
+    need(result.get('ocean_pillar_count',0)>=1,'deterministic ocean_pillar missing')
+    need(result.get('ocean_pillar_structure_void')==0,'structure_void still present in ocean_pillar')
+    need(result.get('reported_pillar_cell_aquatic') is True,'reported ocean_pillar defect cell is not water/aquatic')
     report={
       'pass':True,
       'monument':result,
@@ -83,7 +86,9 @@ def main():
         'old_base_y':104,
         'reported_steep_candidate_rejected':True,
         'max_seabed_relief':12,
-        'accepted_candidates_use_ocean_floor_base':True
+        'accepted_candidates_use_ocean_floor_base':True,
+        'ocean_pillar_structure_void_forbidden':True,
+        'reported_pillar_cell_must_be_aquatic':True
       },
       'manual_visual_acceptance_required':True
     }
