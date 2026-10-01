@@ -1,0 +1,85 @@
+name: R3934 vanilla monument seabed
+on:
+  push:
+    branches: ['fix/neveroverworld-r3934-vanilla-monument-seabed']
+    paths:
+      - 'native/overworld-r3934/**'
+      - 'qa/field-r3934fix/**'
+      - '.github/workflows/never-r3934-vanilla-monument-seabed.yml'
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: r3934-monument-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '25'}
+
+      - name: Download accepted R39.33
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11137018849'
+          run-id: 36805414939
+          github-token: '${{ github.token }}'
+          path: baseline-r3933
+          merge-multiple: true
+
+      - name: Build R39.34 monument candidate
+        id: build
+        run: |
+          mkdir -p artifacts
+          python3 -m py_compile qa/field-r3934fix/*.py
+          set -o pipefail
+          python3 qa/field-r3934fix/build.py 2>&1 | tee artifacts/r3934-build-command.log
+
+      - name: Exact monument runtime QA
+        id: runtime
+        if: steps.build.outcome == 'success'
+        run: |
+          set -o pipefail
+          python3 qa/field-r3934fix/runtime.py 2>&1 | tee artifacts/r3934-runtime-command.log
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: R3934-EVIDENCE-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Package manual test
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: python3 qa/field-r3934fix/package.py
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
+        with:
+          name: NeverFolia-R39.34-Monument-Seabed-TEST-${{ github.sha }}
+          path: test-kit-r3934/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Require accepted automated gates
+        if: always()
+        env:
+          BUILD: '${{ steps.build.outcome }}'
+          RUNTIME: '${{ steps.runtime.outcome }}'
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          assert os.environ['BUILD']=='success' and os.environ['RUNTIME']=='success'
+          b=json.loads(Path('artifacts/build-r3934.json').read_text())
+          r=json.loads(Path('artifacts/runtime-r3934.json').read_text())
+          assert b['build_pass'] is True and r['pass'] is True
+          assert r['monument']['max_support_run'] <= 16
+          print('R39.34 monument seabed QA passed; manual visual check still required.')
+          PY
