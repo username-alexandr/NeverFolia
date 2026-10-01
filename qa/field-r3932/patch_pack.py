@@ -111,8 +111,9 @@ def nbt_family(files,prefix):
     return out
 
 def patch(raw):
-    # Preserve all validated R39.31 native-sea changes first.
-    base=r31.patch(raw)
+    # Input is the already-built R39.31 candidate. Do not reapply its NBT
+    # migration: ocean_pillar cave_air has already become structure_void.
+    base=raw
     with zipfile.ZipFile(io.BytesIO(base)) as z:
         infos=z.infolist()
         files={i.filename:z.read(i.filename) for i in infos if not i.is_dir()}
