@@ -27,21 +27,30 @@ shutil.copyfile(ROOT/'artifacts/runtime-r3934.json',OUT/'runtime-r3934.json')
 )
 (OUT/'start.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\ncd "$(dirname "$0")"\nsha256sum -c BINARIES.sha256\nexec java @jvm.args -jar server.jar --nogui\n')
 (OUT/'start.bat').write_text('@echo off\r\ncd /d "%~dp0"\r\njava "@jvm.args" -jar server.jar --nogui\r\npause\r\n')
-(OUT/'README-RU.md').write_text('''# NeverFolia R39.34 — Vanilla Monument Seabed
+(OUT/'README-RU.md').write_text('''# NeverFolia R39.34 — Monument + Ocean Pillar
 
-Главное исправление:
-- огромные призмариновые колонны на координатах около -3443 / -3392 создавал vanilla minecraft:monument;
-- старый NeverFolia-патч принудительно задавал основание Monument на Y=104;
-- R39.34 больше не использует фиксированный Y=104;
-- основание вычисляется по native OCEAN_FLOOR_WG под footprint Monument;
-- берётся компромисс между медианным дном и минимумом + 8 блоков;
-- Monument остаётся погружённым, но больше не висит в десятках блоков над дном.
+Исправление Monument:
+- огромные призмариновые колонны около -3443 / -3392 создавал vanilla minecraft:monument;
+- старый NeverFolia-патч принудительно держал основание на Y=104;
+- R39.34 проверяет OCEAN_FLOOR_WG под полным footprint Monument;
+- если перепад дна > 12 блоков, кандидат Monument отклоняется;
+- если место подходит, основание рассчитывается около реального дна;
+- искусственная платформа для выравнивания рельефа не создаётся.
 
-NeverOverworld.zip и NeverNether.zip относительно R39.33 не изменены.
-Исправления воды R39.33 сохранены.
+Исправление structory_towers:ocean_pillar:
+- 8 удалённых от основной башни template-cells на local x=10, y=21..23, z=5..7
+  полностью удалены из NBT blocks list;
+- они больше не становятся ни structure_void, ни явным minecraft:water;
+- этот объём мира структура вообще не трогает;
+- поэтому естественная океанская вода должна оставаться непрерывной без отдельного прямоугольного куба.
+
+NeverNether.zip не изменён.
 
 Проверять на НОВОМ мире.
-Особенно координаты около -3443 113 -3392.
+Контроль:
+- около -3443 113 -3392 плохой Monument-кандидат не должен появиться;
+- около -3146 69 -3446 должен быть обычный естественный water/aquatic block,
+  без structure_void и без отдельного принудительно размещённого водного куба.
 ''',encoding='utf-8')
 
 bins=[OUT/'server.jar',p/'NeverOverworld.zip',p/'NeverNether.zip']
