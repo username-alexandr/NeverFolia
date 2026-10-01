@@ -138,12 +138,22 @@ def decode_chunkpos(v):
     return [x,z]
 
 def collect_structures(folder):
-    region_dir=folder/'world/region'
     starts=[];refs=[];chunks=0
+    world=folder/'world'
+    storage_files=[]
+    for p in world.rglob('*'):
+        if p.is_file() and (p.suffix in ('.mca','.mcc','.linear') or 'region' in p.parent.name.lower()):
+            storage_files.append({'path':str(p.relative_to(folder)),'size':p.stat().st_size})
+    # Find the actual chunk-region directory instead of assuming one layout.
+    region_dirs=sorted({p.parent for p in world.rglob('r.*.*.mca') if p.parent.name=='region'})
     for cz in range(CENTER[1]-RADIUS,CENTER[1]+RADIUS+1):
         for cx in range(CENTER[0]-RADIUS,CENTER[0]+RADIUS+1):
-            rp=region_dir/f'r.{cx//32}.{cz//32}.mca'
-            if not rp.is_file():continue
+            rp=None
+            for rd in region_dirs:
+                candidate=rd/f'r.{cx//32}.{cz//32}.mca'
+                if candidate.is_file():
+                    rp=candidate;break
+            if rp is None:continue
             root=read_region_chunk(rp,cx,cz)
             if not root:continue
             chunks+=1
@@ -164,7 +174,13 @@ def collect_structures(folder):
             for key,arr in rm.items():
                 if isinstance(arr,list) and arr:
                     refs.append({'chunk':[cx,cz],'key':key,'start_chunks':[decode_chunkpos(v) for v in arr]})
-    return {'chunks_parsed':chunks,'starts':starts,'references':refs}
+    return {
+      'chunks_parsed':chunks,
+      'starts':starts,
+      'references':refs,
+      'region_dirs':[str(x.relative_to(folder)) for x in region_dirs],
+      'storage_files':storage_files[:200]
+    }
 
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
@@ -175,7 +191,6 @@ def main():
       'chunks_parsed':report['chunks_parsed'],
       'start_count':len(report['starts']),
       'reference_count':len(report['references']),
-      'starts':[{'chunk':x['chunk'],'id':x['id'],'children':x['children']} for x in report['starts']]
-    },ensure_ascii=False))
+      'region_dirs':report.get('region_dirs',[]),\n      'storage_file_count':len(report.get('storage_files',[])),\n      'storage_files':report.get('storage_files',[])[:30],\n      'starts':[{'chunk':x['chunk'],'id':x['id'],'children':x['children']} for x in report['starts']]\n    },ensure_ascii=False))
 
 if __name__=='__main__':main()
