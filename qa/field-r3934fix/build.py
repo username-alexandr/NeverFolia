@@ -95,7 +95,8 @@ def main():
       'net.minecraft.world.level.levelgen.structure.structures.NeverOverworldOceanMonumentR34'
     ],'javap.log')
     javap=(OUT/'javap.log').read_text()
-    need('NeverOverworldOceanMonumentR34.resolveBaseY' in javap,'patched monument does not call R39.34 base helper')\n    need('NeverOverworldOceanMonumentR34.allowsGeneration' in javap,'patched monument does not call R39.34 relief gate')
+    need('NeverOverworldOceanMonumentR34.resolveBaseY' in javap,'patched monument does not call R39.34 base helper')
+    need('NeverOverworldOceanMonumentR34.allowsGeneration' in javap,'patched monument does not call R39.34 relief gate')
     need('OCEAN_FLOOR_WG' in javap,'R39.34 helper lost ocean-floor sampling')
     need('bipush        104' not in javap.split('neverOverworldMonumentBaseY',1)[1].split('createTopPiece',1)[0],
          'old fixed Y=104 resolver survived')
