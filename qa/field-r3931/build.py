@@ -64,17 +64,24 @@ def main():
     need(all(new[k]==inner[k] for k in KEEP),'Inherited hotfix changed')
     need(set(outer)==set(new_outer) and {n for n in outer if outer[n]!=new_outer[n]}=={nested,'META-INF/versions.list'},'Unexpected outer delta')
     (CAND/'server.jar').write_bytes(bundled)
-    patcher=load('r3931_patch_pack',ROOT/'qa/field-r3931/patch_pack.py')\n    run(['python3',str(ROOT/'qa/field-r3931/patch_pack.py'),str(pack),str(CAND/'NeverOverworld.zip')],'pack.log')
+    patcher=load('r3931_patch_pack',ROOT/'qa/field-r3931/patch_pack.py')
+    run(['python3',str(ROOT/'qa/field-r3931/patch_pack.py'),str(pack),str(CAND/'NeverOverworld.zip')],'pack.log')
     shutil.copyfile(nether,CAND/'NeverNether.zip')
     with zipfile.ZipFile(CAND/'NeverOverworld.zip') as z:
         settings=json.loads(z.read('data/minecraft/worldgen/noise_settings/overworld.json'))
-        ocean_pillar=json.loads(z.read('data/structory_towers/worldgen/structure/ocean_pillar.json'))\n        ocean_pillar_nbt=z.read('data/structory_towers/structure/ocean_pillar.nbt')
+        ocean_pillar=json.loads(z.read('data/structory_towers/worldgen/structure/ocean_pillar.json'))
+        ocean_pillar_nbt=z.read('data/structory_towers/structure/ocean_pillar.nbt')
     need(settings['sea_level']==128,'Candidate sea level not 128')
     need(ocean_pillar.get('project_start_to_heightmap')=='OCEAN_FLOOR_WG','Ocean pillar lost seabed projection')
-    need(ocean_pillar.get('terrain_adaptation')=='none','Ocean pillar terrain beard still enabled')\n    pillar_air=patcher._state_geometry(ocean_pillar_nbt,'minecraft:cave_air')\n    pillar_void=patcher._state_geometry(ocean_pillar_nbt,'minecraft:structure_void')\n    need(pillar_air['count']==0,'Ocean pillar still contains cave_air')\n    need(pillar_void['count']==8 and pillar_void['bbox']==[10,10,21,23,5,7],'Ocean pillar water-preservation geometry changed')
+    need(ocean_pillar.get('terrain_adaptation')=='none','Ocean pillar terrain beard still enabled')
+    pillar_air=patcher._state_geometry(ocean_pillar_nbt,'minecraft:cave_air')
+    pillar_void=patcher._state_geometry(ocean_pillar_nbt,'minecraft:structure_void')
+    need(pillar_air['count']==0,'Ocean pillar still contains cave_air')
+    need(pillar_void['count']==8 and pillar_void['bbox']==[10,10,21,23,5,7],'Ocean pillar water-preservation geometry changed')
     report={'build_pass':True,'base_core_sha256':BASE,'candidate_core_sha256':sha(CAND/'server.jar'),
       'base_pack_sha256':PACK,'candidate_pack_sha256':sha(CAND/'NeverOverworld.zip'),'nether_sha256':NETHER,
-      'sea_level':128,'ocean_pillar_heightmap':'OCEAN_FLOOR_WG','ocean_pillar_terrain_adaptation':'none',\n      'ocean_pillar_cave_air':pillar_air['count'],'ocean_pillar_structure_void':pillar_void['count'],
+      'sea_level':128,'ocean_pillar_heightmap':'OCEAN_FLOOR_WG','ocean_pillar_terrain_adaptation':'none',
+      'ocean_pillar_cave_air':pillar_air['count'],'ocean_pillar_structure_void':pillar_void['count'],
       'retired_light_flood':True,'retired_connectivity_flood':True,'abi_preserved':True,
       'changed_kernel_entries':list(CHANGED),'preserved_hotfix_classes':{k:digest(new[k]) for k in KEEP},'production_accepted':False}
     (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');print('R3931_BUILD '+json.dumps(report),flush=True)
