@@ -191,6 +191,10 @@ def main():
       'chunks_parsed':report['chunks_parsed'],
       'start_count':len(report['starts']),
       'reference_count':len(report['references']),
-      'region_dirs':report.get('region_dirs',[]),\n      'storage_file_count':len(report.get('storage_files',[])),\n      'storage_files':report.get('storage_files',[])[:30],\n      'starts':[{'chunk':x['chunk'],'id':x['id'],'children':x['children']} for x in report['starts']]\n    },ensure_ascii=False))
+      'region_dirs':report.get('region_dirs',[]),
+      'storage_file_count':len(report.get('storage_files',[])),
+      'storage_files':report.get('storage_files',[])[:30],
+      'starts':[{'chunk':x['chunk'],'id':x['id'],'children':x['children']} for x in report['starts']]
+    },ensure_ascii=False))
 
 if __name__=='__main__':main()
