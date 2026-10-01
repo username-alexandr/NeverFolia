@@ -185,16 +185,23 @@ def collect_structures(folder):
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
     plugin=prepare_plugin();folder=prepare_server(plugin);run_server(folder)
-    report=collect_structures(folder)
+    rp=folder/'plugins/R3934StructureTrace/result.json'
+    need(rp.is_file(),'missing structure trace result')
+    report=json.loads(rp.read_text())
+    need(report.get('pass') is True,'structure trace plugin failed')
     (OUT/'structure-trace.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print('R3934_TRACE '+json.dumps({
-      'chunks_parsed':report['chunks_parsed'],
-      'start_count':len(report['starts']),
-      'reference_count':len(report['references']),
-      'region_dirs':report.get('region_dirs',[]),
-      'storage_file_count':len(report.get('storage_files',[])),
-      'storage_files':report.get('storage_files',[])[:30],
-      'starts':[{'chunk':x['chunk'],'id':x['id'],'children':x['children']} for x in report['starts']]
+      'generated_chunks':report.get('generated_chunks'),
+      'structure_count':len(report.get('structures',[])),
+      'structures':[
+        {
+          'id':x.get('id'),
+          'seen_in_chunk':[x.get('seen_in_chunk_x'),x.get('seen_in_chunk_z')],
+          'bounding_box':x.get('bounding_box'),
+          'pieces':len(x.get('pieces',[]))
+        }
+        for x in report.get('structures',[])
+      ]
     },ensure_ascii=False))
 
 if __name__=='__main__':main()
