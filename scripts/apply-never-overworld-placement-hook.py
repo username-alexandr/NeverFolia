@@ -98,21 +98,23 @@ def helper_source(spec: dict) -> str:
     rejection = spec["candidate_rejection"]
     min_safe = int(rejection["reject_if_bounding_box_min_y_below"])
     max_safe = int(rejection["reject_if_bounding_box_max_y_above"])
+    underground = spec["global_rules"]["underground_all_heights"]
+    underground_min = int(underground["minimum_start_y"])
+    underground_max = int(underground["maximum_start_y"])
 
     entries: list[str] = []
     for alias, name, profile in build_profiles(spec):
-        preferred = profile["preferred_y"]
-        hard = profile["hard_y"]
         rock_above, rock_below, headroom, water_allowed = profile_args(profile)
+        surface_cover = int(profile.get("minimum_surface_cover", 16))
         entries.append(
             "        Map.entry("
             + java_string(alias)
             + ", new Profile("
             + java_string(name)
-            + f", {preferred[0]}, {preferred[1]}, {hard[0]}, {hard[1]}, Mode.{mode_for(profile)}, "
+            + f", Mode.{mode_for(profile)}, "
             + f"{rock_above}, {rock_below}, {headroom}, "
             + ("true" if water_allowed else "false")
-            + "))"
+            + f", {surface_cover}))"
         )
     map_entries = ",\n".join(entries)
 
@@ -124,11 +126,16 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 
 /**
  * Deterministic NR-DEV-1 placement precheck for NeverOverworld jigsaws.
+ *
+ * <p>R39.36 removes per-structure vertical bands. Custom underground
+ * structures may use any valid underground Y from the world bottom up to the
+ * local OCEAN_FLOOR_WG minus their surface-cover requirement.</p>
  *
  * <p>The resolver samples only ChunkGenerator#getBaseColumn at absolute coordinates.
  * It never requests or loads a generated chunk and therefore remains safe for Folia
@@ -139,20 +146,19 @@ final class NeverOverworldStructurePlacement {{
     static final int REJECT_Y = {REJECT_SENTINEL};
     private static final int MIN_SAFE_Y = {min_safe};
     private static final int MAX_SAFE_Y = {max_safe};
+    private static final int UNDERGROUND_MIN_Y = {underground_min};
+    private static final int UNDERGROUND_MAX_Y = {underground_max};
 
     private enum Mode {{ ROCK_MASS, CAVERN_EDGE, CAVERN_FLOOR, WATER_BOUNDARY, FLOODED_FLOOR }}
 
     private record Profile(
         String name,
-        int preferredMinY,
-        int preferredMaxY,
-        int hardMinY,
-        int hardMaxY,
         Mode mode,
         int rockAbove,
         int rockBelow,
         int headroom,
-        boolean waterAllowed
+        boolean waterAllowed,
+        int surfaceCover
     ) {{}}
 
     private static final Map<String, Profile> PROFILES = Map.ofEntries(
@@ -187,10 +193,26 @@ final class NeverOverworldStructurePlacement {{
                 ^ poolId.hashCode()
         );
 
-        int y = choose(context, anchorX, anchorZ, profile, profile.preferredMinY, profile.preferredMaxY, hash);
-        if (y == REJECT_Y) {{
-            y = choose(context, anchorX, anchorZ, profile, profile.hardMinY, profile.hardMaxY, mix64(hash));
+        // R39.36: no structure-specific Y band. Every custom underground
+        // structure searches the complete underground column. The upper bound is
+        // dynamic: it follows the local solid terrain floor, not a global number.
+        final int terrainFloorY = context.chunkGenerator().getBaseHeight(
+            anchorX,
+            anchorZ,
+            Heightmap.Types.OCEAN_FLOOR_WG,
+            context.heightAccessor(),
+            context.randomState()
+        ) - 1;
+        final int minY = Math.max(MIN_SAFE_Y, UNDERGROUND_MIN_Y);
+        final int maxY = Math.min(
+            Math.min(MAX_SAFE_Y, UNDERGROUND_MAX_Y),
+            terrainFloorY - profile.surfaceCover
+        );
+        if (minY > maxY) {{
+            return REJECT_Y;
         }}
+
+        final int y = choose(context, anchorX, anchorZ, profile, minY, maxY, hash);
         return isSafe(y) ? y : REJECT_Y;
     }}
 
@@ -422,6 +444,10 @@ def self_test() -> None:
         "getBaseColumn(",
         "FluidTags.WATER",
         "Require a real rock ceiling above the local water.",
+        "Heightmap.Types.OCEAN_FLOOR_WG",
+        "UNDERGROUND_MIN_Y = -480",
+        "UNDERGROUND_MAX_Y = 480",
+        "terrainFloorY - profile.surfaceCover",
         f"REJECT_Y = {REJECT_SENTINEL}",
     ):
         if marker not in helper:
@@ -429,6 +455,9 @@ def self_test() -> None:
     for forbidden in ("getChunk(", "getChunkNow(", "getChunkAt(", "setBlock(", "setBlockState("):
         if forbidden in helper:
             fail(f"SELF-TEST: generation-time chunk dependency present: {forbidden!r}")
+    for obsolete_band in ("-384", "-320", "-300", "-220", "preferredMinY", "hardMinY"):
+        if obsolete_band in helper:
+            fail(f"SELF-TEST: obsolete per-profile Y band survived: {obsolete_band!r}")
     print("[NeverFolia][NeverOverworld placement hook] SELF-TEST OK")
 
 
