@@ -217,18 +217,40 @@ def copy_core(pack: PackFiles, core: Path) -> None:
         pack.put(path, payload)
 
 
-def sanitize_processor_lists(pack: PackFiles) -> int:
-    """Legacy entry point, now fail-closed: never drop unsupported behavior."""
+def sanitize_processor_lists(
+    pack: PackFiles,
+    trusted_core_paths: set[PurePosixPath] | None = None,
+) -> int:
+    """Fail closed for imported processors while preserving verified core bytes.
+
+    NeverNether Core already contains NeverFolia-owned processor lists backed by
+    native kernel registrations (height/field guards, etc.). Source archives
+    are forbidden from overwriting those paths by copy_allowed_source_files(),
+    so a byte-identical core resource can be trusted here. Any processor list
+    newly introduced by a third-party source still goes through the strict
+    codec allow-list below.
+    """
+    trusted = trusted_core_paths or set()
     for path, payload in pack.files.items():
         tail = resource_tail(path)
         if not tail or not tail.startswith("worldgen/processor_list/") or path.suffix != ".json":
+            continue
+        if path in trusted:
             continue
         value = read_json_bytes(payload, str(path))
         for processor in value.get("processors", []):
             if isinstance(processor, dict):
                 ptype = processor.get("processor_type") or processor.get("type")
-                if isinstance(ptype, str) and ":" in ptype and not ptype.startswith("minecraft:") and ptype not in PROCESSORS.values():
-                    raise SystemExit(f"Unsupported processor {ptype} in {path}; no processor was removed")
+                if (
+                    isinstance(ptype, str)
+                    and ":" in ptype
+                    and not ptype.startswith("minecraft:")
+                    and ptype not in PROCESSORS.values()
+                ):
+                    raise SystemExit(
+                        f"Unsupported processor {ptype} in imported {path}; "
+                        "no processor was removed"
+                    )
     return 0
 
 
@@ -366,6 +388,7 @@ def build(
     placement = json.loads(PLACEMENT_SPEC.read_text(encoding="utf-8"))
     pack = PackFiles()
     copy_core(pack, core)
+    trusted_core_paths = set(pack.files)
 
     source_records: list[SourceArchive] = []
     for key in REQUIRED_SOURCES:
@@ -376,7 +399,7 @@ def build(
         source_records.append(record)
         copy_allowed_source_files(pack, record)
 
-    removed_processors = sanitize_processor_lists(pack)
+    removed_processors = sanitize_processor_lists(pack, trusted_core_paths)
     rewritten = rewrite_approved_structures(pack, placement)
     write_structure_sets(pack, placement)
 
