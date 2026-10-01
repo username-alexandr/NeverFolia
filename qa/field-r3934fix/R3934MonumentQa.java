@@ -17,6 +17,10 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
     private int minBaseY=Integer.MAX_VALUE;
     private int maxBaseY=Integer.MIN_VALUE;
     private int maxSupportRun;
+    private int oceanPillarCount;
+    private int oceanPillarStructureVoidCount;
+    private String reportedPillarCell="";
+    private boolean reportedPillarCellAquatic;
     private boolean started,finished;
     private final String nonce=System.getProperty("neverfolia.qaNonce","");
 
@@ -31,6 +35,8 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
             if(world.getSeed()!=-4651369264513492755L)throw new AssertionError("wrong seed");
             // Known deterministic vanilla monument from the user's current screenshot.
             for(int dz=-4;dz<=4;++dz)for(int dx=-4;dx<=4;++dx)targets.add(new int[]{-212+dx,-212+dz});
+            // Known deterministic Structory ocean_pillar from the user's current screenshot.
+            for(int dz=-2;dz<=2;++dz)for(int dx=-2;dx<=2;++dx)targets.add(new int[]{-197+dx,-216+dz});
             Bukkit.getGlobalRegionScheduler().execute(this,this::next);
         }catch(Throwable t){finish(t);}
     }
@@ -45,30 +51,59 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
                 try{
                     var snap=chunk.getChunkSnapshot(false,true,false);
                     for(GeneratedStructure gs:chunk.getStructures()){
-                        if(!"minecraft:monument".equals(gs.getStructure().getKey().toString()))continue;
+                        String id=gs.getStructure().getKey().toString();
                         BoundingBox bb=gs.getBoundingBox();
-                        String sig=bb.toString();
-                        if(sampled.add(sig)){
-                            ++monumentCount;
-                            minBaseY=Math.min(minBaseY,(int)Math.floor(bb.getMinY()));
-                            maxBaseY=Math.max(maxBaseY,(int)Math.floor(bb.getMinY()));
-                            getLogger().info("R3934 MONUMENT bbox="+bb);
+
+                        if("minecraft:monument".equals(id)){
+                            String sig=id+"|"+bb.toString();
+                            if(sampled.add(sig)){
+                                ++monumentCount;
+                                minBaseY=Math.min(minBaseY,(int)Math.floor(bb.getMinY()));
+                                maxBaseY=Math.max(maxBaseY,(int)Math.floor(bb.getMinY()));
+                                getLogger().info("R3934 MONUMENT bbox="+bb);
+                            }
+
+                            int minX=Math.max(cx<<4,(int)Math.floor(bb.getMinX()));
+                            int maxX=Math.min((cx<<4)+15,(int)Math.floor(bb.getMaxX()));
+                            int minZ=Math.max(cz<<4,(int)Math.floor(bb.getMinZ()));
+                            int maxZ=Math.min((cz<<4)+15,(int)Math.floor(bb.getMaxZ()));
+                            int base=(int)Math.floor(bb.getMinY());
+                            for(int z=minZ;z<=maxZ;++z)for(int x=minX;x<=maxX;++x){
+                                int run=0;
+                                for(int y=base-1;y>=Math.max(world.getMinHeight(),base-64);--y){
+                                    Material m=snap.getBlockType(x&15,y,z&15);
+                                    if(isFoundation(m))++run;
+                                    else break;
+                                }
+                                maxSupportRun=Math.max(maxSupportRun,run);
+                            }
                         }
 
-                        int minX=Math.max(cx<<4,(int)Math.floor(bb.getMinX()));
-                        int maxX=Math.min((cx<<4)+15,(int)Math.floor(bb.getMaxX()));
-                        int minZ=Math.max(cz<<4,(int)Math.floor(bb.getMinZ()));
-                        int maxZ=Math.min((cz<<4)+15,(int)Math.floor(bb.getMaxZ()));
-                        int base=(int)Math.floor(bb.getMinY());
-                        for(int z=minZ;z<=maxZ;++z)for(int x=minX;x<=maxX;++x){
-                            int run=0;
-                            for(int y=base-1;y>=Math.max(world.getMinHeight(),base-64);--y){
-                                Material m=snap.getBlockType(x&15,y,z&15);
-                                if(isFoundation(m))++run;
-                                else break;
+                        if("structory_towers:ocean_pillar".equals(id)){
+                            String sig=id+"|"+bb.toString();
+                            if(sampled.add(sig)){
+                                ++oceanPillarCount;
+                                getLogger().info("R3934 OCEAN_PILLAR bbox="+bb);
                             }
-                            maxSupportRun=Math.max(maxSupportRun,run);
+                            int minX=Math.max(cx<<4,(int)Math.floor(bb.getMinX()));
+                            int maxX=Math.min((cx<<4)+15,(int)Math.floor(bb.getMaxX()));
+                            int minZ=Math.max(cz<<4,(int)Math.floor(bb.getMinZ()));
+                            int maxZ=Math.min((cz<<4)+15,(int)Math.floor(bb.getMaxZ()));
+                            int minY=Math.max(world.getMinHeight(),(int)Math.floor(bb.getMinY()));
+                            int maxY=Math.min(world.getMaxHeight()-1,(int)Math.floor(bb.getMaxY()));
+                            for(int z=minZ;z<=maxZ;++z)for(int x=minX;x<=maxX;++x)for(int y=minY;y<=maxY;++y){
+                                if(snap.getBlockType(x&15,y,z&15)==Material.STRUCTURE_VOID){
+                                    ++oceanPillarStructureVoidCount;
+                                }
+                            }
                         }
+                    }
+
+                    if(cx==-197 && cz==-216){
+                        Material m=snap.getBlockType((-3146)&15,69,(-3446)&15);
+                        reportedPillarCell=m.getKey().toString();
+                        reportedPillarCellAquatic=aquatic(m);
+                        getLogger().info("R3934 REPORTED PILLAR CELL "+reportedPillarCell);
                     }
                     ++index;
                     Bukkit.getGlobalRegionScheduler().execute(this,this::next);
@@ -81,6 +116,11 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
         return m==Material.PRISMARINE||m==Material.PRISMARINE_BRICKS||m==Material.DARK_PRISMARINE;
     }
 
+    private static boolean aquatic(Material m){
+        return m==Material.WATER||m==Material.BUBBLE_COLUMN||m==Material.KELP||m==Material.KELP_PLANT
+            ||m==Material.SEAGRASS||m==Material.TALL_SEAGRASS;
+    }
+
     private synchronized void finish(Throwable error){
         if(finished)return;finished=true;
         if(error==null){
@@ -89,6 +129,13 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
             if(monumentCount!=0)error=new AssertionError(
                 "steep-seabed monument candidate was not rejected: count="+monumentCount+
                 " baseY="+minBaseY+" maxSupport="+maxSupportRun
+            );
+            else if(oceanPillarCount<1)error=new AssertionError("deterministic ocean_pillar not generated");
+            else if(oceanPillarStructureVoidCount!=0)error=new AssertionError(
+                "ocean_pillar still placed structure_void blocks: "+oceanPillarStructureVoidCount
+            );
+            else if(!reportedPillarCellAquatic)error=new AssertionError(
+                "reported ocean_pillar defect cell is not aquatic: "+reportedPillarCell
             );
         }
 
@@ -102,6 +149,10 @@ public final class R3934MonumentQa extends JavaPlugin implements Listener {
         o.addProperty("max_base_y",maxBaseY==Integer.MIN_VALUE?0:maxBaseY);
         o.addProperty("max_support_run",maxSupportRun);
         o.addProperty("steep_candidate_rejected",monumentCount==0);
+        o.addProperty("ocean_pillar_count",oceanPillarCount);
+        o.addProperty("ocean_pillar_structure_void",oceanPillarStructureVoidCount);
+        o.addProperty("reported_pillar_cell",reportedPillarCell);
+        o.addProperty("reported_pillar_cell_aquatic",reportedPillarCellAquatic);
         if(error!=null){o.addProperty("error",error.toString());error.printStackTrace();}
         try{
             getDataFolder().mkdirs();
