@@ -160,14 +160,18 @@ def verify(raw):
     need(fp0==fp1,'fingerprint documents differ')
     need(fp0.get('content_sha256')==r31.content_fingerprint(files),'fingerprint mismatch')
 
-    base_audit=r32.verify(raw)
+    _pools,trident_elements=r32.patch_trident_pools(dict(files))
+    conduit_elements=r32.audit_conduit_pools(files)
+    pillar_air=r31._state_geometry(files['data/structory_towers/structure/ocean_pillar.nbt'],'minecraft:cave_air')
+    pillar_void=r31._state_geometry(files['data/structory_towers/structure/ocean_pillar.nbt'],'minecraft:structure_void')
+    need(pillar_air['count']==0 and pillar_void['count']==8,'R39.31 ocean_pillar NBT repair regressed')
     return {
       'trident_definition':trident,
       'conduit_definition':conduit,
       'ocean_pillar_definition':pillar,
-      'trident_pool_elements':base_audit['trident_pool_elements'],
-      'conduit_pool_elements':base_audit['conduit_pool_elements'],
-      'ocean_pillar':base_audit['ocean_pillar'],
+      'trident_pool_elements':trident_elements,
+      'conduit_pool_elements':conduit_elements,
+      'ocean_pillar':{'cave_air':pillar_air['count'],'structure_void':pillar_void['count']},
       'small_structure_water_guards':{
         'ocean_pillar_pool':'neverfolia:underwater_preserve_water',
         'conduit_air':True,
