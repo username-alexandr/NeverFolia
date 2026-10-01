@@ -47,7 +47,7 @@ def phase(name,folder,server):
 def sums(r):
     keys=('water_0_128','air_0_128','isolated_air_in_water','ice_below_128','ice_at_128',
           'plain_ice_below_128','packed_ice_below_128','blue_ice_below_128','frosted_ice_below_128',
-          'plain_ice_0_62','plain_ice_at_63','plain_ice_64_127','plain_ice_at_128',
+          'plain_ice_0_62','plain_ice_at_63','plain_ice_64_126','plain_ice_at_127','plain_ice_at_128',
           'long_air_columns_ge16','long_air_columns_under_roof')
     return {k:sum(x[k] for x in r['chunks']) for k in keys}
 def main():
