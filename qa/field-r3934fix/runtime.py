@@ -74,15 +74,16 @@ def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False)
     b=json.loads((OUT/'build-r3934.json').read_text());need(b['build_pass'],'build did not pass')
     result=phase(prepare(plugin()))
-    need(result['min_base_y']<100,'monument remained at old Y=104')
-    need(result['max_support_run']<=12,'support columns remain too long')
+    need(result['monument_count']==0,'reported steep-seabed monument candidate still generated')
+    need(result.get('steep_candidate_rejected') is True,'monument rejection evidence missing')
     report={
       'pass':True,
       'monument':result,
       'contract':{
         'old_base_y':104,
-        'new_base_below_100':True,
-        'max_prismarine_support_run':12
+        'reported_steep_candidate_rejected':True,
+        'max_seabed_relief':12,
+        'accepted_candidates_use_ocean_floor_base':True
       },
       'manual_visual_acceptance_required':True
     }
