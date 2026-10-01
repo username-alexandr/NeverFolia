@@ -19,8 +19,8 @@ public final class NeverOverworldOceanMonumentR34 {
     private static final int EXPECTED_MIN_Y = -512;
     private static final int EXPECTED_HEIGHT = 1024;
     private static final int LEGACY_FLOOD_BASE_Y = 104;
-    private static final int MAX_SUPPORT_BUDGET = 8;
-    private static final int[] OFFSETS = {-28, -20, -12, -4, 4, 12, 20, 28};
+    private static final int MAX_SUPPORT_BUDGET = 6;
+    private static final int[] OFFSETS = {-28, -24, -20, -16, -12, -8, -4, 0, 4, 8, 12, 16, 20, 24, 28};
 
     private NeverOverworldOceanMonumentR34() {}
 
@@ -57,7 +57,7 @@ public final class NeverOverworldOceanMonumentR34 {
         final int medianFloor = floors[floors.length / 2];
 
         // Prefer the median seabed so the monument is not buried by one isolated
-        // low point, but never allow more than 8 sampled blocks of unsupported
+        // low point, but never allow more than 6 sampled blocks of unsupported
         // depth beneath the base. This keeps the natural terrain intact while
         // eliminating the old 40-80 block prismarine stilts.
         int baseY = Math.min(medianFloor, minFloor + MAX_SUPPORT_BUDGET);
