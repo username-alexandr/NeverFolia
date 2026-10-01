@@ -95,7 +95,7 @@ def main():
       'net.minecraft.world.level.levelgen.structure.structures.NeverOverworldOceanMonumentR34'
     ],'javap.log')
     javap=(OUT/'javap.log').read_text()
-    need('NeverOverworldOceanMonumentR34.resolveBaseY' in javap,'patched monument does not call R39.34 helper')
+    need('NeverOverworldOceanMonumentR34.resolveBaseY' in javap,'patched monument does not call R39.34 base helper')\n    need('NeverOverworldOceanMonumentR34.allowsGeneration' in javap,'patched monument does not call R39.34 relief gate')
     need('OCEAN_FLOOR_WG' in javap,'R39.34 helper lost ocean-floor sampling')
     need('bipush        104' not in javap.split('neverOverworldMonumentBaseY',1)[1].split('createTopPiece',1)[0],
          'old fixed Y=104 resolver survived')
@@ -132,8 +132,8 @@ def main():
       'nether_sha256':NETHER,
       'changed_kernel_entries':[MONUMENT,HELPER],
       'old_monument_base_y':104,
-      'new_monument_policy':'OCEAN_FLOOR_WG footprint; base=min(median,min+6), capped at 104',
-      'sample_offsets':[-28,-24,-20,-16,-12,-8,-4,0,4,8,12,16,20,24,28],
+      'new_monument_policy':'reject relief >12; otherwise OCEAN_FLOOR_WG base=min(median,min+6), capped at 104',
+      'sample_spacing':2,'sample_radius':28,'max_seabed_relief':12,
       'production_accepted':False
     }
     (OUT/'build-r3934.json').write_text(json.dumps(report,indent=2)+'\n')
