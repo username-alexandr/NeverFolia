@@ -6,6 +6,8 @@ BASE='c8886cb5927370e47bfaf8a3ecd274f72880868e0eb2e8fb15bfddde162c7b67'
 PACK='a5fb99cd0b15efc2ec78a1f155c763112f3e3d2669c1519aae69e468de7902be'
 NETHER='5e47f953cadbd5451b04d1682642417c9a40c726cf06e935c02cecdcb5eb2a10'
 FLOOD='net/minecraft/world/level/chunk/NeverOverworldFlood.class'
+CONNECTIVITY='net/minecraft/world/level/chunk/NeverOverworldFloodConnectivityR15.class'
+CHANGED=(FLOOD,CONNECTIVITY)
 KEEP=('net/minecraft/world/level/chunk/NeverOverworldWaterPolicyR38.class',
       'net/minecraft/world/level/chunk/NeverOverworldDryMinesR12.class',
       'net/minecraft/world/level/chunk/NeverOverworldDryMinesR12$Mask.class')
@@ -29,15 +31,26 @@ def main():
     need(sha(base)==BASE,'Wrong R39.9 baseline');need(sha(pack)==PACK and sha(nether)==NETHER,'Wrong paired packs')
     outer=members(base.read_bytes());nested=[n for n in outer if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
     need(len(nested)==1,'Unexpected bundled kernel');nested=nested[0];inner=members(outer[nested])
-    need(FLOOD in inner,'Historical flood class missing');need(all(k in inner for k in KEEP),'R39.9 hotfix missing')
+    need(all(k in inner for k in CHANGED),'Historical flood classes missing');need(all(k in inner for k in KEEP),'R39.9 hotfix missing')
     libs=WORK/'libs';libs.mkdir()
     for i,(n,raw) in enumerate(outer.items()):
         if n.endswith('.jar') and n.startswith(('META-INF/versions/','META-INF/libraries/')):(libs/(str(i)+'-'+Path(n).name)).write_bytes(raw)
     cp=os.pathsep.join(map(str,sorted(libs.glob('*.jar'))));(WORK/'classpath.txt').write_text(cp);classes=WORK/'classes';classes.mkdir()
-    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),str(ROOT/'native/overworld-r3931/NeverOverworldFlood.java')],'flood-javac.log')
-    replacement=(classes/FLOOD).read_bytes();need(int.from_bytes(replacement[6:8],'big')==69,'Wrong Java bytecode')
+    sources=[ROOT/'native/overworld-r3931/NeverOverworldFlood.java',ROOT/'native/overworld-r3931/NeverOverworldFloodConnectivityR15.java']
+    run(['javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),*map(str,sources)],'native-sea-javac.log')
+    replacements={k:(classes/k).read_bytes() for k in CHANGED}
+    need(all(int.from_bytes(raw[6:8],'big')==69 for raw in replacements.values()),'Wrong Java bytecode')
+    run(['javap','-classpath',str(classes),'-public','net.minecraft.world.level.chunk.NeverOverworldFlood','net.minecraft.world.level.chunk.NeverOverworldFloodConnectivityR15'],'native-sea-abi.log')
+    abi=(OUT/'native-sea-abi.log').read_text()
+    for marker in ('void apply(net.minecraft.world.level.WorldGenLevel, net.minecraft.world.level.chunk.ChunkAccess)',
+                   'void reweatherSubmergedSurface(net.minecraft.world.level.WorldGenLevel, net.minecraft.world.level.chunk.ChunkAccess)',
+                   'void traceNativeWaterR37(java.lang.String, net.minecraft.world.level.chunk.ChunkAccess)',
+                   'int reconcileSeams(net.minecraft.world.level.WorldGenLevel, net.minecraft.util.StaticCache2D<net.minecraft.server.level.GenerationChunkHolder>, net.minecraft.world.level.chunk.ChunkAccess)',
+                   'void publishFeatureBoundarySeeds(net.minecraft.server.level.ServerLevel, net.minecraft.world.level.chunk.ChunkAccess)',
+                   'void onFullChunk(net.minecraft.server.level.ServerLevel, net.minecraft.world.level.chunk.LevelChunk)'):
+        need(marker in abi,'Missing ABI entry: '+marker)
     packaging=load('r3931_packaging',ROOT/'qa/field-r395/jar_packaging.py');run(['python3',str(ROOT/'qa/field-r395/jar_packaging.py')],'packaging-tests.log')
-    modified=packaging.rewrite_zip(outer[nested],{FLOOD:replacement})
+    modified=packaging.rewrite_zip(outer[nested],replacements)
     rows=[];seen=0
     for line in outer['META-INF/versions.list'].decode().splitlines():
         f=line.split('\t');need(len(f)==3,'Bad versions row')
@@ -47,7 +60,7 @@ def main():
     need(seen==1,'Missing versions row')
     bundled=packaging.rewrite_zip(base.read_bytes(),{nested:modified,'META-INF/versions.list':('\n'.join(rows)+'\n').encode()})
     new=members(modified);new_outer=members(bundled)
-    need({n for n in inner if inner[n]!=new[n]}=={FLOOD},'Unexpected kernel delta')
+    need({n for n in inner if inner[n]!=new[n]}==set(CHANGED),'Unexpected kernel delta')
     need(all(new[k]==inner[k] for k in KEEP),'Inherited hotfix changed')
     need(set(outer)==set(new_outer) and {n for n in outer if outer[n]!=new_outer[n]}=={nested,'META-INF/versions.list'},'Unexpected outer delta')
     (CAND/'server.jar').write_bytes(bundled)
@@ -58,7 +71,7 @@ def main():
     need(settings['sea_level']==128,'Candidate sea level not 128')
     report={'build_pass':True,'base_core_sha256':BASE,'candidate_core_sha256':sha(CAND/'server.jar'),
       'base_pack_sha256':PACK,'candidate_pack_sha256':sha(CAND/'NeverOverworld.zip'),'nether_sha256':NETHER,
-      'sea_level':128,'retired_light_flood':True,'changed_kernel_entries':[FLOOD],
-      'preserved_hotfix_classes':{k:digest(new[k]) for k in KEEP},'production_accepted':False}
+      'sea_level':128,'retired_light_flood':True,'retired_connectivity_flood':True,'abi_preserved':True,
+      'changed_kernel_entries':list(CHANGED),'preserved_hotfix_classes':{k:digest(new[k]) for k in KEEP},'production_accepted':False}
     (OUT/'build.json').write_text(json.dumps(report,indent=2)+'\n');print('R3931_BUILD '+json.dumps(report),flush=True)
 if __name__=='__main__':main()
