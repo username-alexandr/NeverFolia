@@ -110,6 +110,45 @@ public final class R3934StructureTrace extends JavaPlugin implements Listener {
                             sample.addProperty("id",id);
                             sample.addProperty("chunk_x",cx);sample.addProperty("chunk_z",cz);
                             sample.addProperty("air",air);sample.addProperty("water",water);sample.addProperty("other",other);
+
+                            // R39.34: the previous audit only looked inside the structure bbox.
+                            // The reported water void is visibly adjacent to ocean_pillar, so also
+                            // inspect a 12-block horizontal collar from the structure base up to
+                            // the native sea surface. This catches water carved outside the bbox.
+                            if ("structory_towers:ocean_pillar".equals(id)) {
+                                final int collar=12;
+                                int exMinX=Math.max(chunkMinX,(int)Math.floor(bb.getMinX())-collar);
+                                int exMaxX=Math.min(chunkMinX+15,(int)Math.floor(bb.getMaxX())+collar);
+                                int exMinZ=Math.max(chunkMinZ,(int)Math.floor(bb.getMinZ())-collar);
+                                int exMaxZ=Math.min(chunkMinZ+15,(int)Math.floor(bb.getMaxZ())+collar);
+                                int exMinY=Math.max(world.getMinHeight(),(int)Math.floor(bb.getMinY()));
+                                int exMaxY=Math.min(127,world.getMaxHeight()-1);
+                                int collarAir=0,collarWater=0,outsideAir=0;
+                                int airMinX=Integer.MAX_VALUE,airMinY=Integer.MAX_VALUE,airMinZ=Integer.MAX_VALUE;
+                                int airMaxX=Integer.MIN_VALUE,airMaxY=Integer.MIN_VALUE,airMaxZ=Integer.MIN_VALUE;
+                                for(int z=exMinZ;z<=exMaxZ;++z)for(int x=exMinX;x<=exMaxX;++x)for(int y=exMinY;y<=exMaxY;++y){
+                                    Material m=snapshot.getBlockType(x&15,y,z&15);
+                                    if(m.isAir()){
+                                        ++collarAir;
+                                        boolean outside=x<bb.getMinX()||x>bb.getMaxX()||z<bb.getMinZ()||z>bb.getMaxZ()||y<bb.getMinY()||y>bb.getMaxY();
+                                        if(outside)++outsideAir;
+                                        airMinX=Math.min(airMinX,x);airMaxX=Math.max(airMaxX,x);
+                                        airMinY=Math.min(airMinY,y);airMaxY=Math.max(airMaxY,y);
+                                        airMinZ=Math.min(airMinZ,z);airMaxZ=Math.max(airMaxZ,z);
+                                    } else if(aquatic(m)) {
+                                        ++collarWater;
+                                    }
+                                }
+                                sample.addProperty("collar_air",collarAir);
+                                sample.addProperty("collar_water",collarWater);
+                                sample.addProperty("outside_bbox_air",outsideAir);
+                                if(collarAir>0){
+                                    JsonArray abb=new JsonArray();
+                                    abb.add(airMinX);abb.add(airMinY);abb.add(airMinZ);
+                                    abb.add(airMaxX);abb.add(airMaxY);abb.add(airMaxZ);
+                                    sample.add("air_bounds",abb);
+                                }
+                            }
                             samples.add(sample);
                         }
                     }
