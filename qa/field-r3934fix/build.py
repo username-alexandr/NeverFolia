@@ -132,8 +132,8 @@ def main():
       'nether_sha256':NETHER,
       'changed_kernel_entries':[MONUMENT,HELPER],
       'old_monument_base_y':104,
-      'new_monument_policy':'OCEAN_FLOOR_WG footprint; base=min(median,min+8), capped at 104',
-      'sample_offsets':[-28,-20,-12,-4,4,12,20,28],
+      'new_monument_policy':'OCEAN_FLOOR_WG footprint; base=min(median,min+6), capped at 104',
+      'sample_offsets':[-28,-24,-20,-16,-12,-8,-4,0,4,8,12,16,20,24,28],
       'production_accepted':False
     }
     (OUT/'build-r3934.json').write_text(json.dumps(report,indent=2)+'\n')
