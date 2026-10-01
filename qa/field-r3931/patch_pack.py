@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,hashlib,io,json,zipfile,struct
 
 TARGET='data/minecraft/worldgen/noise_settings/overworld.json'
+OCEAN_PILLAR='data/structory_towers/worldgen/structure/ocean_pillar.json'
 FP_ROOT='neveroverworld-worldgen-fingerprint.json'
 FP_RESOURCE='data/neverfolia/neveroverworld/worldgen_fingerprint.json'
 
@@ -23,12 +24,22 @@ def patch(raw:bytes)->bytes:
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         files={info.filename:z.read(info.filename) for info in z.infolist() if not info.is_dir()}
         if TARGET not in files:raise ValueError('NeverOverworld noise settings missing')
+        if OCEAN_PILLAR not in files:raise ValueError('Structory ocean_pillar structure settings missing')
         if FP_ROOT not in files or FP_RESOURCE not in files:raise ValueError('NeverOverworld fingerprint documents missing')
+
         data=json.loads(files[TARGET])
         if data.get('sea_level') not in (63,128):
             raise ValueError('Unexpected existing sea_level: '+repr(data.get('sea_level')))
         data['sea_level']=128
         files[TARGET]=(json.dumps(data,ensure_ascii=False,indent=2)+'\n').encode()
+
+        pillar=json.loads(files[OCEAN_PILLAR])
+        if pillar.get('project_start_to_heightmap')!='OCEAN_FLOOR_WG':
+            raise ValueError('Unexpected ocean_pillar heightmap: '+repr(pillar.get('project_start_to_heightmap')))
+        if pillar.get('terrain_adaptation') not in ('beard_thin','none'):
+            raise ValueError('Unexpected ocean_pillar terrain adaptation: '+repr(pillar.get('terrain_adaptation')))
+        pillar['terrain_adaptation']='none'
+        files[OCEAN_PILLAR]=(json.dumps(pillar,ensure_ascii=False,indent=2)+'\n').encode()
 
         fp=content_fingerprint(files)
         for name in (FP_ROOT,FP_RESOURCE):
@@ -49,10 +60,13 @@ def main():
     raw=a.src.read_bytes();out=patch(raw);a.dst.parent.mkdir(parents=True,exist_ok=True);a.dst.write_bytes(out)
     with zipfile.ZipFile(io.BytesIO(out)) as z:
         data=json.loads(z.read(TARGET))
+        pillar=json.loads(z.read(OCEAN_PILLAR))
         root=json.loads(z.read(FP_ROOT))
         resource=json.loads(z.read(FP_RESOURCE))
         files={info.filename:z.read(info.filename) for info in z.infolist() if not info.is_dir()}
     assert data['sea_level']==128
+    assert pillar['project_start_to_heightmap']=='OCEAN_FLOOR_WG'
+    assert pillar['terrain_adaptation']=='none'
     assert root==resource
     assert root['entry_count_excluding_fingerprint']==len(files)-2
     assert root['content_sha256']==content_fingerprint(files)
@@ -60,6 +74,8 @@ def main():
         'input_sha256':sha(raw),
         'output_sha256':sha(out),
         'sea_level':128,
+        'ocean_pillar_heightmap':'OCEAN_FLOOR_WG',
+        'ocean_pillar_terrain_adaptation':'none',
         'content_fingerprint':root['content_sha256'],
         'entry_count':root['entry_count_excluding_fingerprint']
     }))
