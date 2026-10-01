@@ -2,7 +2,6 @@ import com.google.gson.*;
 import java.nio.file.Files;
 import java.util.*;
 import org.bukkit.*;
-import org.bukkit.block.data.Levelled;
 import org.bukkit.event.*;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -29,14 +28,19 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         world.getChunkAtAsync(cx,cz,true).whenComplete((chunk,error)->{
             if(error!=null){finish(error);return;}
             Bukkit.getRegionScheduler().execute(this,world,cx,cz,()->{
-                try{rows.add(sample(chunk.getChunkSnapshot(false,true,false),cx,cz));index++;getLogger().info("R3931 SAMPLE "+index+"/4 "+cx+","+cz);Bukkit.getGlobalRegionScheduler().execute(this,this::next);}
-                catch(Throwable x){finish(x);}
+                try{
+                    JsonObject row=sample(chunk.getChunkSnapshot(false,true,false),cx,cz);rows.add(row);index++;
+                    getLogger().info("R3931 SAMPLE "+index+"/4 "+cx+","+cz+" "+row);
+                    Bukkit.getGlobalRegionScheduler().execute(this,this::next);
+                }catch(Throwable x){finish(x);}
             });
         });
     }
     private JsonObject sample(ChunkSnapshot s,int cx,int cz){
         JsonObject r=new JsonObject();int isolatedAir=0,iceBelow=0,airBelow=0,waterBelow=0;
         int longAirColumns=0,underRoofAirColumns=0,iceAtSurface=0;
+        int plainIceBelow=0,packedIceBelow=0,blueIceBelow=0,frostedIceBelow=0;
+        int plainIce0To62=0,plainIceAt63=0,plainIce64To127=0,plainIceAt128=0;
         for(int z=0;z<16;z++)for(int x=0;x<16;x++){
             int run=0,maxRun=0;boolean roofAbove=false;
             for(int y=129;y<=180;y++){Material m=s.getBlockType(x,y,z);if(!m.isAir()&&!aquatic(m)){roofAbove=true;break;}}
@@ -44,7 +48,21 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
                 Material m=s.getBlockType(x,y,z);
                 if(m.isAir()){airBelow++;run++;maxRun=Math.max(maxRun,run);}else run=0;
                 if(aquatic(m))waterBelow++;
-                if(frozen(m)){if(y<128)iceBelow++;else iceAtSurface++;}
+                if(frozen(m)){
+                    if(y<128){
+                        iceBelow++;
+                        if(m==Material.ICE)plainIceBelow++;
+                        else if(m==Material.PACKED_ICE)packedIceBelow++;
+                        else if(m==Material.BLUE_ICE)blueIceBelow++;
+                        else if(m==Material.FROSTED_ICE)frostedIceBelow++;
+                    }else iceAtSurface++;
+                }
+                if(m==Material.ICE){
+                    if(y<=62)plainIce0To62++;
+                    else if(y==63)plainIceAt63++;
+                    else if(y<=127)plainIce64To127++;
+                    else plainIceAt128++;
+                }
                 if(m.isAir()&&x>0&&x<15&&z>0&&z<15&&y>LOW&&y<HIGH
                     &&aquatic(s.getBlockType(x-1,y,z))&&aquatic(s.getBlockType(x+1,y,z))
                     &&aquatic(s.getBlockType(x,y-1,z))&&aquatic(s.getBlockType(x,y+1,z))
@@ -54,6 +72,10 @@ public final class R3931OceanQa extends JavaPlugin implements Listener {
         }
         r.addProperty("chunk_x",cx);r.addProperty("chunk_z",cz);r.addProperty("water_0_128",waterBelow);r.addProperty("air_0_128",airBelow);
         r.addProperty("isolated_air_in_water",isolatedAir);r.addProperty("ice_below_128",iceBelow);r.addProperty("ice_at_128",iceAtSurface);
+        r.addProperty("plain_ice_below_128",plainIceBelow);r.addProperty("packed_ice_below_128",packedIceBelow);
+        r.addProperty("blue_ice_below_128",blueIceBelow);r.addProperty("frosted_ice_below_128",frostedIceBelow);
+        r.addProperty("plain_ice_0_62",plainIce0To62);r.addProperty("plain_ice_at_63",plainIceAt63);
+        r.addProperty("plain_ice_64_127",plainIce64To127);r.addProperty("plain_ice_at_128",plainIceAt128);
         r.addProperty("long_air_columns_ge16",longAirColumns);r.addProperty("long_air_columns_under_roof",underRoofAirColumns);
         return r;
     }
