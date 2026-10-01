@@ -103,9 +103,26 @@ def main():
     out=files(final_pack)
 
     # NeverNether terrain/core bytes are immutable through structure integration.
+    # The two fingerprint documents are intentionally re-signed against the
+    # final pack and therefore are the only inherited entries allowed to change.
+    fingerprint_names={
+      'nevernether-worldgen-fingerprint.json',
+      'data/neverfolia/nevernether/worldgen_fingerprint.json',
+    }
+    preserved_base=0
     for name,payload in base.items():
         need(name in out,'base NeverNether entry disappeared: '+name)
+        if name in fingerprint_names:
+            continue
         need(out[name]==payload,'base NeverNether entry changed: '+name)
+        preserved_base+=1
+    need(preserved_base==len(base)-2,'unexpected inherited core preservation count')
+
+    fp_docs=[json.loads(out[name]) for name in sorted(fingerprint_names)]
+    need(fp_docs[0]==fp_docs[1],'NeverNether fingerprint documents differ')
+    need(fp_docs[0].get('algorithm')=='sha256-path-and-content-v1','wrong fingerprint algorithm')
+    need(fp_docs[0].get('entry_count_excluding_fingerprint')==len(out)-2,
+         'fingerprint entry count mismatch')
 
     spec=json.loads((ROOT/'worldgen-spec/never-nether-structures.json').read_text())
     ids=[]
@@ -173,7 +190,7 @@ def main():
       'approved_custom_structures':sorted(ids),
       'approved_custom_structure_count':20,
       'structure_set_count':4,
-      'base_nether_entries_preserved':len(base),
+      'base_nether_entries_preserved':preserved_base,\n      'fingerprint_documents_resigned':2,
       'final_nether_entries':len(out),
       'third_party_structure_sets_imported':False,
       'kernel_netherit_placement_aliases':20,
