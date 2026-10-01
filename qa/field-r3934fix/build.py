@@ -136,7 +136,7 @@ def main():
       'old_monument_base_y':104,
       'new_monument_policy':'reject relief >12; otherwise OCEAN_FLOOR_WG base=min(median,min+6), capped at 104',
       'sample_spacing':2,'sample_radius':28,'max_seabed_relief':12,
-      'ocean_pillar_structure_void_after':0,'ocean_pillar_water_after':8,
+      'ocean_pillar_detached_cells_after':0,'ocean_pillar_explicit_water_after':0,
       'production_accepted':False
     }
     (OUT/'build-r3934.json').write_text(json.dumps(report,indent=2)+'\n')
