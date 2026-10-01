@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 permissions: {contents: read, actions: read}
 concurrency:
-  group: r3932-underwater-\${{ github.ref }}
+  group: r3932-underwater-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   candidate:
@@ -24,7 +24,7 @@ jobs:
         with:
           artifact-ids: '10939310250'
           run-id: 36340789810
-          github-token: '\${{ github.token }}'
+          github-token: '${{ github.token }}'
           path: baseline
           merge-multiple: true
       - name: Build R39.32 underwater candidate
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: R3932-EVIDENCE-\${{ github.sha }}
+          name: R3932-EVIDENCE-${{ github.sha }}
           path: artifacts/
           retention-days: 14
           if-no-files-found: error
@@ -53,15 +53,15 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: steps.build.outcome == 'success' && steps.runtime.outcome == 'success'
         with:
-          name: NeverFolia-R39.32-Underwater-Structures-TEST-\${{ github.sha }}
+          name: NeverFolia-R39.32-Underwater-Structures-TEST-${{ github.sha }}
           path: test-kit-r3932/
           retention-days: 14
           if-no-files-found: error
       - name: Require accepted automated gates
         if: always()
         env:
-          BUILD: '\${{ steps.build.outcome }}'
-          RUNTIME: '\${{ steps.runtime.outcome }}'
+          BUILD: '${{ steps.build.outcome }}'
+          RUNTIME: '${{ steps.runtime.outcome }}'
         run: |
           python3 - <<'PY'
           import json,os
