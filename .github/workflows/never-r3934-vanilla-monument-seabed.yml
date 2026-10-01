@@ -80,6 +80,6 @@ jobs:
           b=json.loads(Path('artifacts/build-r3934.json').read_text())
           r=json.loads(Path('artifacts/runtime-r3934.json').read_text())
           assert b['build_pass'] is True and r['pass'] is True
-          assert r['monument']['max_support_run'] <= 16
+          assert r['monument']['max_support_run'] <= 12
           print('R39.34 monument seabed QA passed; manual visual check still required.')
           PY
