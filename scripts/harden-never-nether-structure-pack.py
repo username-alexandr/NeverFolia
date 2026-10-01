@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import struct
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -23,6 +25,47 @@ MONUMENT_BIOMES = (
     "minecraft:warped_forest",
     "minecraft:basalt_deltas",
 )
+
+
+FINGERPRINT_ROOT = PurePosixPath("nevernether-worldgen-fingerprint.json")
+FINGERPRINT_RESOURCE = PurePosixPath(
+    "data/neverfolia/nevernether/worldgen_fingerprint.json"
+)
+FINGERPRINT_PATHS = (FINGERPRINT_ROOT, FINGERPRINT_RESOURCE)
+
+
+def content_fingerprint(files: dict[PurePosixPath, bytes]) -> str:
+    """Mirror NeverNetherFingerprintGuard sha256-path-and-content-v1 exactly."""
+    h = hashlib.sha256()
+    for path in sorted((p for p in files if p not in FINGERPRINT_PATHS), key=str):
+        name = str(path).replace("\\", "/").encode("utf-8")
+        payload = files[path]
+        h.update(struct.pack(">i", len(name)))
+        h.update(name)
+        h.update(struct.pack(">q", len(payload)))
+        h.update(payload)
+    return h.hexdigest()
+
+
+def refresh_fingerprint(files: dict[PurePosixPath, bytes]) -> None:
+    present = [p for p in FINGERPRINT_PATHS if p in files]
+    if not present:
+        return
+    if len(present) != len(FINGERPRINT_PATHS):
+        fail("NeverNether fingerprint documents are incomplete")
+    fp = content_fingerprint(files)
+    count = len(files) - len(FINGERPRINT_PATHS)
+    docs = []
+    for path in FINGERPRINT_PATHS:
+        doc = read_json(files[path], str(path))
+        if doc.get("algorithm") != "sha256-path-and-content-v1":
+            fail(f"unsupported NeverNether fingerprint algorithm in {path}")
+        doc["content_sha256"] = fp
+        doc["entry_count_excluding_fingerprint"] = count
+        files[path] = json_bytes(doc)
+        docs.append(doc)
+    if docs[0] != docs[1]:
+        fail("NeverNether fingerprint documents diverged after refresh")
 
 
 def fail(message: str) -> None:
@@ -147,6 +190,11 @@ def harden(input_pack: Path, output_pack: Path) -> None:
         }
         files[manifest_path] = json_bytes(manifest)
 
+    # Hardening mutates structure JSONs and adds NeverFolia-owned registry data.
+    # Re-sign the final pack only after all mutations are complete so the
+    # runtime fingerprint guard validates the exact shipped bytes.
+    refresh_fingerprint(files)
+
     validate(files, ids, padding)
     write_zip(output_pack, files)
     print(f"Hardened {output_pack}")
@@ -172,6 +220,16 @@ def validate(
     tag = read_json(files[MONUMENT_BIOME_TAG_PATH], str(MONUMENT_BIOME_TAG_PATH))
     if tuple(tag.get("values", ())) != MONUMENT_BIOMES:
         fail("Nether Monument biome tag values changed unexpectedly")
+
+    if all(path in files for path in FINGERPRINT_PATHS):
+        expected = content_fingerprint(files)
+        docs = [read_json(files[path], str(path)) for path in FINGERPRINT_PATHS]
+        if docs[0] != docs[1]:
+            fail("NeverNether fingerprint documents differ")
+        if docs[0].get("content_sha256") != expected:
+            fail("NeverNether fingerprint does not match final pack bytes")
+        if docs[0].get("entry_count_excluding_fingerprint") != len(files) - len(FINGERPRINT_PATHS):
+            fail("NeverNether fingerprint entry count mismatch")
 
 
 def self_test() -> None:
