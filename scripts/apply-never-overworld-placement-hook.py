@@ -272,8 +272,24 @@ final class NeverOverworldStructurePlacement {{
         if (!isCavernFloor(column, floorY, Math.max(1, shell / 2), Math.max(1, headroom), true)) {{
             return false;
         }}
+        boolean sawWater = false;
         for (int dy = 1; dy <= Math.max(2, headroom + 2); ++dy) {{
             if (isWater(column.getBlock(floorY + dy))) {{
+                sawWater = true;
+                break;
+            }}
+        }}
+        if (!sawWater) {{
+            return false;
+        }}
+
+        // R39.32: WATER_BOUNDARY is for a flooded cavern/cistern, not the open
+        // ocean water column. Require a real rock ceiling above the local water.
+        // Ocean-specific structures are anchored separately to OCEAN_FLOOR_WG.
+        final int roofFrom = floorY + Math.max(4, headroom + 3);
+        final int roofTo = Math.min(127, floorY + 64);
+        for (int y = roofFrom; y <= roofTo; ++y) {{
+            if (isDryHost(column.getBlock(y))) {{
                 return true;
             }}
         }}
@@ -405,6 +421,7 @@ def self_test() -> None:
         "Mode.FLOODED_FLOOR",
         "getBaseColumn(",
         "FluidTags.WATER",
+        "Require a real rock ceiling above the local water.",
         f"REJECT_Y = {REJECT_SENTINEL}",
     ):
         if marker not in helper:
