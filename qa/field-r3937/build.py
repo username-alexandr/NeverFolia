@@ -67,6 +67,12 @@ def main():
     # Fetch exact user-approved source releases and verify pinned SHA256.
     run(['python3',str(ROOT/'qa/field-r3937/fetch_sources.py'),str(SRC)],'sources.log',timeout=600)
 
+    # Fetch the pinned Repurposed Structures monument supplement blobs used by
+    # the compatibility rewrite. Their Git blob identities are verified by the
+    # fetcher before the source archive is touched.
+    run(['python3',str(ROOT/'scripts/fetch-never-nether-monument-loot-r5.py')],
+        'monument-supplements.log',timeout=300)
+
     # Builder/hardener own synthetic regression suites must remain green.
     run(['python3',str(ROOT/'scripts/build-never-nether-structure-pack.py'),'--self-test'],
         'builder-selftest.log',timeout=300)
