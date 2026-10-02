@@ -44,7 +44,8 @@ def phase(folder):
     nonce=uuid.uuid4().hex;q=queue.Queue()
     p=subprocess.Popen([
       'java','-XX:ActiveProcessorCount=4','-Xms512M','-Xmx4G',
-      f'-Dneverfolia.qaNonce={nonce}','-jar',str(CAND/'server.jar'),'--nogui'
+      f'-Dneverfolia.qaNonce={nonce}','-Dneverfolia.r3938Trace=true',
+      '-jar',str(CAND/'server.jar'),'--nogui'
     ],cwd=folder,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
       text=True,encoding='utf-8',errors='replace',bufsize=1)
 
