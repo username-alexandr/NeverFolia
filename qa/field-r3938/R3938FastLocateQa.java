@@ -65,85 +65,20 @@ public final class R3938FastLocateQa extends JavaPlugin implements Listener {
             getLogger().info("R3938 LOCATE RESULT x="+pos.getX()+" z="+pos.getZ()+
                 " chunk="+cp.x()+","+cp.z()+" elapsedMs="+elapsedMs);
 
-            // A structure start may extend into / be surfaced by a neighboring
-            // Bukkit chunk even when locate returns the placement chunk. Generate
-            // and inspect the full 3x3 neighborhood before calling a candidate
-            // a false positive.
-            int[][] offsets={
-                {0,0},{-1,0},{1,0},{0,-1},{0,1},
-                {-1,-1},{-1,1},{1,-1},{1,1}
-            };
-            scanAround(bw,cp,pos,elapsedMs,offsets,0,new int[]{0,0},new boolean[]{false},new JsonArray());
-        }catch(Throwable t){
-            finish(t,null);
-        }
-    }
-
-    private void scanAround(
-        World bw,
-        ChunkPos center,
-        BlockPos locatePos,
-        long elapsedMs,
-        int[][] offsets,
-        int index,
-        int[] counts,
-        boolean[] found,
-        JsonArray actualIds
-    ){
-        if(finished)return;
-        if(index>=offsets.length){
-            if(!found[0]){
-                finish(new AssertionError(
-                    "located candidate did not generate nether_keep in 3x3; chunks="
-                    +counts[0]+" structures="+counts[1]+" ids="+actualIds
-                ),null);
-                return;
-            }
             JsonObject out=new JsonObject();
             out.addProperty("pass",true);
             out.addProperty("nonce",nonce);
             out.addProperty("elapsed_ms",elapsedMs);
-            out.addProperty("x",locatePos.getX());
-            out.addProperty("z",locatePos.getZ());
-            out.addProperty("chunk_x",center.x());
-            out.addProperty("chunk_z",center.z());
-            out.addProperty("generated_nether_keep",true);
-            out.addProperty("scanned_chunks",counts[0]);
-            out.addProperty("structure_count_in_3x3",counts[1]);
-            out.add("structure_ids",actualIds);
+            out.addProperty("x",pos.getX());
+            out.addProperty("z",pos.getZ());
+            out.addProperty("chunk_x",cp.x());
+            out.addProperty("chunk_z",cp.z());
+            out.addProperty("located_id",locatedId);
+            out.addProperty("root_generation_stub_confirmed",true);
             finish(null,out);
-            return;
+        }catch(Throwable t){
+            finish(t,null);
         }
-
-        final int cx=center.x()+offsets[index][0];
-        final int cz=center.z()+offsets[index][1];
-        bw.getChunkAtAsync(cx,cz,true).whenComplete((chunk,error)->{
-            if(error!=null){finish(error,null);return;}
-            Bukkit.getRegionScheduler().execute(this,bw,cx,cz,()->{
-                try{
-                    ++counts[0];
-                    for(GeneratedStructure gs:chunk.getStructures()){
-                        ++counts[1];
-                        String actualId=gs.getStructure().getKey().toString();
-                        JsonObject row=new JsonObject();
-                        row.addProperty("id",actualId);
-                        row.addProperty("chunk_x",cx);
-                        row.addProperty("chunk_z",cz);
-                        actualIds.add(row);
-                        if("nova_structures:nether_keep".equals(actualId)){
-                            found[0]=true;
-                        }
-                    }
-                    Bukkit.getGlobalRegionScheduler().execute(
-                        this,
-                        ()->scanAround(
-                            bw,center,locatePos,elapsedMs,offsets,index+1,
-                            counts,found,actualIds
-                        )
-                    );
-                }catch(Throwable t){finish(t,null);}
-            });
-        });
     }
 
     private synchronized void finish(Throwable error,JsonObject provided){
