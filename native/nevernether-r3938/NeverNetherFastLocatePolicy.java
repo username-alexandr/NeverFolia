@@ -62,6 +62,17 @@ final class NeverNetherFastLocatePolicy {
         return any;
     }
 
+    static int clampLocateRadius(HolderSet<Structure> holders, int requestedRadius) {
+        if (!handles(holders)) {
+            return requestedRadius;
+        }
+        // NeverNether custom sets are intentionally sparse (20/44/80/192 chunk
+        // spacing). Searching hundreds of rings on a Folia tick thread is not a
+        // valid fallback. Six rings already covers ~7680 blocks for custom_major,
+        // well beyond the 1000-1600 block target-success distance in the spec.
+        return Math.min(requestedRadius, 6);
+    }
+
     static boolean isCustomNether(Holder<Structure> holder) {
         final String id = structureId(holder);
         return id != null && CUSTOM_IDS.contains(id);
