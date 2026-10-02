@@ -4,6 +4,10 @@ on:
     branches: ['fix/nevernether-r3938-fast-locate']
     paths:
       - 'scripts/apply-never-nether-placement-hook.py'
+      - 'scripts/harden-never-nether-structure-pack.py'
+      - 'scripts/validate-never-nether-spec.py'
+      - 'worldgen-spec/never-nether.json'
+      - 'worldgen-spec/never-nether-structures.json'
       - 'native/nevernether-r3938/**'
       - 'qa/field-r3938/**'
       - '.github/workflows/never-r3938-fast-locate.yml'
