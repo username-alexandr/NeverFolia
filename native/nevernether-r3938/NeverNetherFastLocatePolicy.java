@@ -3,6 +3,7 @@ package net.minecraft.world.level.chunk;
 import java.util.Set;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
+import net.minecraft.core.QuartPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -92,9 +93,25 @@ final class NeverNetherFastLocatePolicy {
             structure.biomes()::contains
         );
 
-        return NeverNetherStructurePlacement.fastLocatePasses(
+        final int startY = NeverNetherStructurePlacement.resolveStartY(
             context,
-            jigsaw.getStartPool()
+            jigsaw.getStartPool(),
+            0
+        );
+        if (startY == NeverNetherStructurePlacement.REJECT_Y) {
+            return false;
+        }
+
+        // Mirror Structure.isValidBiome() at the Jigsaw start position without
+        // building any Jigsaw pieces. This removes a major source of locate
+        // false positives while remaining O(1).
+        return structure.biomes().contains(
+            generator.getBiomeSource().getNoiseBiome(
+                QuartPos.fromBlock(chunkPos.getMinBlockX()),
+                QuartPos.fromBlock(startY),
+                QuartPos.fromBlock(chunkPos.getMinBlockZ()),
+                state.randomState().sampler()
+            )
         );
     }
 
