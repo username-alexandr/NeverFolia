@@ -84,6 +84,7 @@ jobs:
           assert b['vanilla_locate_path_preserved'] is True
           assert b['generation_and_locate_share_resolver'] is True
           assert b['resolve_start_y_full_base_column_scan_removed'] is True
+          assert b['noise_chunk_interpolation_removed'] is True
           assert r['fast_locate']['elapsed_ms'] < 4000
           assert r['fast_locate']['generated_nether_keep'] is True
           print('R39.38 NeverNether fast-locate gates passed.')
