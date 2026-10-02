@@ -87,6 +87,8 @@ jobs:
           assert b['coarse_vertical_step'] == 8
           assert b['exact_jigsaw_assembly_during_locate'] is False
           assert b['root_generation_stub_confirmation'] is True
+          assert b['locate_radius_cap_rings'] == 6
+          assert b['start_y_root_confirmation_cache'] is True
           assert b['existing_fast_locate_engine_reused'] is True
           assert r['fast_locate']['elapsed_ms'] < 4000
           assert r['fast_locate']['generated_nether_keep'] is True
