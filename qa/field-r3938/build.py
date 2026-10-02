@@ -115,7 +115,8 @@ def main():
     jp=(OUT/'javap.log').read_text()
     need('NeverNetherFastLocatePolicy.handles' in jp,'fast locate handles router missing')
     need('NeverNetherFastLocatePolicy.passesNetherTerrain' in jp,'Nether terrain policy missing')
-    need('NeverNetherStructurePlacement.fastLocatePasses' in jp,'shared resolver locate entry missing')
+    need('NeverNetherStructurePlacement.resolveStartY' in jp,'shared resolver locate entry missing')
+    need('QuartPos.fromBlock' in jp,'fast locate biome check missing')
     need('getBaseColumn' not in jp,'getBaseColumn survived compiled R39.38 placement/locate path')
     need('getInterpolatedNoiseValue' not in jp,'interpolated NoiseChunk path survived compiled R39.38')
 
