@@ -26,12 +26,15 @@ shutil.copyfile(ROOT/'artifacts/runtime-r3938.json',OUT/'runtime-r3938.json')
   'view-distance=4\nsimulation-distance=3\npause-when-empty-seconds=-1\n'
 )
 (OUT/'README-RU.md').write_text(
-  '# NeverFolia R39.38 — NeverNether Fast Locate\n\n'
+  '# NeverFolia R39.38 — NeverNether Locate/Placement Performance\n\n'
   'Исправляет зависание /locate structure для 20 custom NeverNether structures. '
-  'Старый путь запускал полный getBaseColumn для каждого кандидата поиска и мог '
-  'занимать region thread десятки секунд. Новый путь перебирает точные '
-  'RandomSpread-кандидаты и использует ограниченный density predictor; обычная '
-  'генерация структуры по-прежнему использует полный точный resolveStartY. '
+  'Стандартный vanilla/Folia locate path сохранён: он по-прежнему выполняет '
+  'полные Jigsaw, biome и dimension-padding проверки и возвращает только '
+  'действительно генерируемый кандидат. Оптимизирован общий '
+  'NeverNetherStructurePlacement.resolveStartY: вместо полного getBaseColumn '
+  'на каждом кандидате используется bounded final-density scan с точечной '
+  'интерполяционной проверкой. Тот же resolver используется и locate, и '
+  'обычной генерацией, поэтому отдельного приближённого locate predictor нет. '
   'Runtime QA требует locate <4 секунд и затем генерирует найденный chunk, '
   'проверяя что nova_structures:nether_keep действительно появился. '
   'NeverNether.zip R39.37 и NeverOverworld.zip R39.36 не меняются.\n',
