@@ -10,7 +10,7 @@
     "generated_min_y": -128,
     "generated_max_y": 383,
     "roof_build_min_y": 384,
-    "roof_build_max_y": 895,
+    "roof_build_max_y": 512,
     "normal_structures_above_generated_body": false,
     "fast_locate_generates_chunks": false,
     "deterministic_candidate_rejection": true,
@@ -18,7 +18,8 @@
     "small_structures_may_neighbor_major": true,
     "small_structures_may_intersect_major": false,
     "medium_structures_may_neighbor_major": true,
-    "medium_structures_may_intersect_major": false
+    "medium_structures_may_intersect_major": false,
+    "technical_max_y": 527
   },
   "vanilla_baseline": {
     "preserve_source_placement_for_test1": true,
@@ -42,7 +43,10 @@
         "spread_type": "linear",
         "salt": 56447193
       },
-      "target_successful_distance_blocks": [1000, 1600],
+      "target_successful_distance_blocks": [
+        1000,
+        1600
+      ],
       "major_exclusion_radius_chunks": 24,
       "structures": [
         {
@@ -70,17 +74,56 @@
         "spread_type": "linear",
         "salt": 616309338
       },
-      "target_successful_distance_blocks": [500, 900],
+      "target_successful_distance_blocks": [
+        500,
+        900
+      ],
       "structures": [
-        {"id": "nova_structures:nether_port", "weight": 4, "vertical_profile": "lower_main_surface"},
-        {"id": "nova_structures:hamlet", "weight": 5, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:piglin_outstation", "weight": 4, "vertical_profile": "main_upper_surface"},
-        {"id": "explorify:black_spiral", "weight": 3, "vertical_profile": "main_surface"},
-        {"id": "hearths:crimson_tower", "weight": 3, "vertical_profile": "main_upper_surface"},
-        {"id": "hearths:warped_tower", "weight": 3, "vertical_profile": "main_upper_surface"},
-        {"id": "structory_towers:nether/fortress_tower", "weight": 3, "vertical_profile": "main_upper_surface"},
-        {"id": "structory_towers:nether/strange_outpost", "weight": 2, "vertical_profile": "main_upper_surface"},
-        {"id": "structory_towers:nether/warped_outpost", "weight": 2, "vertical_profile": "main_upper_surface"}
+        {
+          "id": "nova_structures:nether_port",
+          "weight": 4,
+          "vertical_profile": "lower_main_surface"
+        },
+        {
+          "id": "nova_structures:hamlet",
+          "weight": 5,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:piglin_outstation",
+          "weight": 4,
+          "vertical_profile": "main_upper_surface"
+        },
+        {
+          "id": "explorify:black_spiral",
+          "weight": 3,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "hearths:crimson_tower",
+          "weight": 3,
+          "vertical_profile": "main_upper_surface"
+        },
+        {
+          "id": "hearths:warped_tower",
+          "weight": 3,
+          "vertical_profile": "main_upper_surface"
+        },
+        {
+          "id": "structory_towers:nether/fortress_tower",
+          "weight": 3,
+          "vertical_profile": "main_upper_surface"
+        },
+        {
+          "id": "structory_towers:nether/strange_outpost",
+          "weight": 2,
+          "vertical_profile": "main_upper_surface"
+        },
+        {
+          "id": "structory_towers:nether/warped_outpost",
+          "weight": 2,
+          "vertical_profile": "main_upper_surface"
+        }
       ]
     },
     "custom_ambient": {
@@ -91,15 +134,46 @@
         "spread_type": "linear",
         "salt": 1845125230
       },
-      "target_successful_distance_blocks": [250, 450],
+      "target_successful_distance_blocks": [
+        250,
+        450
+      ],
       "structures": [
-        {"id": "hearths:netherrack_spiral", "weight": 3, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:nether_skeleton_tower_fort", "weight": 2, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:nether_skeleton_tower_warped", "weight": 2, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:nether_skeleton_tower_crimson", "weight": 2, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:nether_skeleton_tower_soul", "weight": 2, "vertical_profile": "main_surface"},
-        {"id": "nova_structures:piglin_camp", "weight": 4, "vertical_profile": "lower_main_surface"},
-        {"id": "nova_structures:piglin_camp_collony", "weight": 1, "vertical_profile": "lower_main_surface"}
+        {
+          "id": "hearths:netherrack_spiral",
+          "weight": 3,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_fort",
+          "weight": 2,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_warped",
+          "weight": 2,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_crimson",
+          "weight": 2,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:nether_skeleton_tower_soul",
+          "weight": 2,
+          "vertical_profile": "main_surface"
+        },
+        {
+          "id": "nova_structures:piglin_camp",
+          "weight": 4,
+          "vertical_profile": "lower_main_surface"
+        },
+        {
+          "id": "nova_structures:piglin_camp_collony",
+          "weight": 1,
+          "vertical_profile": "lower_main_surface"
+        }
       ]
     },
     "nether_monument": {
@@ -110,7 +184,10 @@
         "spread_type": "linear",
         "salt": 1243969273
       },
-      "target_successful_distance_blocks": [3000, 4000],
+      "target_successful_distance_blocks": [
+        3000,
+        4000
+      ],
       "major_exclusion_radius_chunks": 32,
       "structures": [
         {
@@ -124,38 +201,74 @@
   },
   "vertical_profiles": {
     "deep_lower_underground": {
-      "preferred_y": [-96, 64],
-      "hard_y": [-112, 120],
+      "preferred_y": [
+        -96,
+        64
+      ],
+      "hard_y": [
+        -112,
+        120
+      ],
       "placement": "deterministic_cavity_floor",
       "requires_clearance": true
     },
     "lower_main_underground": {
-      "preferred_y": [-16, 128],
-      "hard_y": [-80, 192],
+      "preferred_y": [
+        -16,
+        128
+      ],
+      "hard_y": [
+        -80,
+        192
+      ],
       "placement": "deterministic_cavity_floor",
       "requires_clearance": true
     },
     "lower_main_surface": {
-      "preferred_y": [16, 176],
-      "hard_y": [-32, 260],
+      "preferred_y": [
+        16,
+        176
+      ],
+      "hard_y": [
+        -32,
+        260
+      ],
       "placement": "terrain_surface_or_cavern_floor",
       "requires_clearance": true
     },
     "main_surface": {
-      "preferred_y": [64, 240],
-      "hard_y": [16, 300],
+      "preferred_y": [
+        64,
+        240
+      ],
+      "hard_y": [
+        16,
+        300
+      ],
       "placement": "terrain_surface_or_cavern_floor",
       "requires_clearance": true
     },
     "main_upper_surface": {
-      "preferred_y": [112, 320],
-      "hard_y": [64, 360],
+      "preferred_y": [
+        112,
+        320
+      ],
+      "hard_y": [
+        64,
+        360
+      ],
       "placement": "terrain_surface_or_cavern_floor",
       "requires_clearance": true
     },
     "lava_sea_landmark": {
-      "preferred_y": [16, 40],
-      "hard_y": [-32, 64],
+      "preferred_y": [
+        16,
+        40
+      ],
+      "hard_y": [
+        -32,
+        64
+      ],
       "placement": "large_lava_basin_floor",
       "lava_surface_y": 32,
       "requires_clearance": true,
