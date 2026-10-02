@@ -142,23 +142,32 @@ public final class NeverNetherStructurePlacement {{
         );
 
         if (profile.mode == Mode.LAVA_BASIN) {{
-            if (profile.requireLargeLavaBasin && !hasLargeLavaBasin(context, anchorX, anchorZ)) {{
+            if (profile.requireLargeLavaBasin && !fastLargeLavaBasin(
+                context, anchorX, anchorZ, profile, hash
+            )) {{
                 return REJECT_Y;
             }}
-            final int lavaFloor = findLavaFloor(context, anchorX, anchorZ, profile);
+            final int lavaFloor = fastLavaFloor(context, anchorX, anchorZ, profile, hash);
             return isSafe(lavaFloor) ? lavaFloor : REJECT_Y;
         }}
 
-        final NoiseColumn column = context.chunkGenerator().getBaseColumn(
+        int y = chooseCavernFloorFast(
+            context,
             anchorX,
             anchorZ,
-            context.heightAccessor(),
-            context.randomState()
+            profile.preferredMinY,
+            profile.preferredMaxY,
+            hash
         );
-
-        int y = chooseCavernFloor(column, profile.preferredMinY, profile.preferredMaxY, hash);
         if (y == REJECT_Y) {{
-            y = chooseCavernFloor(column, profile.hardMinY, profile.hardMaxY, mix64(hash));
+            y = chooseCavernFloorFast(
+                context,
+                anchorX,
+                anchorZ,
+                profile.hardMinY,
+                profile.hardMaxY,
+                mix64(hash)
+            );
         }}
         return isSafe(y) ? y : REJECT_Y;
     }}
@@ -175,33 +184,86 @@ public final class NeverNetherStructurePlacement {{
         Structure.GenerationContext context,
         Holder<StructureTemplatePool> startPool
     ) {{
-        final String poolId = startPool.unwrapKey()
-            .map(key -> key.identifier().toString())
-            .orElse("");
-        final Profile profile = PROFILES.get(poolId);
-        if (profile == null) {{
-            return false;
-        }}
-
-        final ChunkPos chunkPos = context.chunkPos();
-        final int anchorX = chunkPos.getMinBlockX();
-        final int anchorZ = chunkPos.getMinBlockZ();
-        final int chunkX = anchorX >> 4;
-        final int chunkZ = anchorZ >> 4;
-        final long hash = mix64(
-            context.seed()
-                ^ ((long) chunkX * 0x9E3779B97F4A7C15L)
-                ^ ((long) chunkZ * 0xC2B2AE3D27D4EB4FL)
-                ^ poolId.hashCode()
-        );
-
-        if (profile.mode == Mode.LAVA_BASIN) {{
-            return fastLargeLavaBasin(context, anchorX, anchorZ, profile, hash);
-        }}
-        return fastCavernFloor(context, anchorX, anchorZ, profile, hash);
+        // R39.38 uses the exact same bounded-density resolver for locate and
+        // actual generation. This prevents fast-locate false positives.
+        return resolveStartY(context, startPool, 0) != REJECT_Y;
     }}
 
-    private static boolean fastCavernFloor(
+    private static int chooseCavernFloorFast(
+        Structure.GenerationContext context,
+        int x,
+        int z,
+        int minY,
+        int maxY,
+        long hash
+    ) {{
+        final int lo = Math.max(Math.max(MIN_SAFE_Y, minY), LAVA_SURFACE_Y);
+        final int hi = Math.min(MAX_SAFE_Y - MIN_CLEARANCE, maxY);
+        if (lo > hi) {{
+            return REJECT_Y;
+        }}
+
+        final DensityFunction density = context.randomState().router().finalDensity();
+        final List<Integer> candidates = new ArrayList<>();
+        double here = rawDensity(density, x, lo, z);
+        for (int y = lo; y <= hi; ++y) {{
+            final double above = rawDensity(density, x, y + 1, z);
+            if (here > 0.0 && above <= 0.0
+                && rawDensity(density, x, y + 4, z) <= 0.0
+                && rawDensity(density, x, y + MIN_CLEARANCE, z) <= 0.0) {{
+                candidates.add(y);
+            }}
+            here = above;
+        }}
+        if (candidates.isEmpty()) {{
+            return REJECT_Y;
+        }}
+
+        final int start = Math.floorMod(
+            (int) (hash ^ (hash >>> 32)),
+            candidates.size()
+        );
+        for (int i = 0; i < candidates.size(); ++i) {{
+            final int floorY = candidates.get((start + i) % candidates.size());
+            if (exactDryOpening(context, x, floorY, z)) {{
+                return floorY + 1;
+            }}
+        }}
+        return REJECT_Y;
+    }}
+
+    private static int fastLavaFloor(
+        Structure.GenerationContext context,
+        int x,
+        int z,
+        Profile profile,
+        long hash
+    ) {{
+        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
+        final int maxY = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
+        if (minY > maxY) {{
+            return REJECT_Y;
+        }}
+
+        if (exactDensity(context, x, LAVA_SURFACE_Y - 1, z) > 0.0) {{
+            return REJECT_Y;
+        }}
+
+        final DensityFunction density = context.randomState().router().finalDensity();
+        for (int y = maxY; y >= minY; --y) {{
+            if (rawDensity(density, x, y, z) > 0.0
+                && exactDensity(context, x, y, z) > 0.0) {{
+                return y + 1;
+            }}
+        }}
+        return REJECT_Y;
+    }}
+
+    private static double rawDensity(DensityFunction density, int x, int y, int z) {{
+        return density.compute(new DensityFunction.SinglePointContext(x, y, z));
+    }}
+
+    private static boolean legacySparseCavernProbe(
         Structure.GenerationContext context,
         int x,
         int z,
