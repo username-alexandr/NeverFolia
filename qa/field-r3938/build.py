@@ -69,7 +69,6 @@ def main():
     helper=placement.helper_source(spec)
     for marker in (
       'public static boolean fastLocatePasses',
-      'getInterpolatedNoiseValue',
       'finalDensity()',
       'public static int resolveStartY'
     ):
@@ -97,11 +96,12 @@ def main():
       'net.minecraft.world.level.levelgen.structure.structures.NeverNetherStructurePlacement'
     ],'javap.log')
     jp=(OUT/'javap.log').read_text()
-    need('getInterpolatedNoiseValue' in jp and 'finalDensity' in jp,
-         'bounded-density resolver missing')
+    need('finalDensity' in jp,'direct-density resolver missing')
     resolve_section=jp.split('public static int resolveStartY',1)[1].split('private static',1)[0]
     need('getBaseColumn' not in resolve_section,
          'resolveStartY still performs full getBaseColumn scan')
+    need('getInterpolatedNoiseValue' not in jp,
+         'NoiseChunk interpolation survived in NeverNether placement helper')
 
     packaging=load('r3938_packaging',ROOT/'qa/field-r395/jar_packaging.py')
     modified=packaging.rewrite_zip(outer[nested],replacements)
@@ -147,6 +147,7 @@ def main():
       'vanilla_locate_path_preserved':True,
       'generation_and_locate_share_resolver':True,
       'resolve_start_y_full_base_column_scan_removed':True,
+      'noise_chunk_interpolation_removed':True,
       'production_accepted':False
     }
     (OUT/'build-r3938.json').write_text(json.dumps(report,indent=2)+'\n')
