@@ -135,9 +135,9 @@ def calculate_padding(structure_spec: dict, world_spec: dict) -> dict[str, int]:
 
     bottom = allowed_min_y - dimension_min_y
     top = dimension_max_y - allowed_max_y
-    if bottom != 5 or top != 517:
+    if bottom != 5 or top != 149:
         fail(
-            "approved geometry must resolve to dimension_padding bottom=5/top=517; "
+            "R14 geometry must resolve to dimension_padding bottom=5/top=149; "
             f"got bottom={bottom}, top={top}"
         )
     return {"bottom": bottom, "top": top}
@@ -271,7 +271,7 @@ def self_test() -> None:
 
         harden(source, output)
         files = load_zip(output)
-        padding = {"bottom": 5, "top": 517}
+        padding = {"bottom": 5, "top": 149}
         validate(files, ids, padding)
         monument = read_json(files[structure_path(MONUMENT_ID)], MONUMENT_ID)
         if monument["biomes"] != MONUMENT_BIOME_TAG:
