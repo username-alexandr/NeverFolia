@@ -29,6 +29,14 @@ public final class R3938PatchOverworldFastLocate {
         + "Lnet/minecraft/core/Holder;)Z";
     private static final String CUSTOM_DESC =
         "(Lnet/minecraft/core/Holder;)Z";
+    private static final String CLAMP_DESC =
+        "(Lnet/minecraft/core/HolderSet;I)I";
+    private static final String FIND_DESC =
+        "(Lnet/minecraft/world/level/chunk/ChunkGenerator;"
+        + "Lnet/minecraft/server/level/ServerLevel;"
+        + "Lnet/minecraft/core/HolderSet;"
+        + "Lnet/minecraft/core/BlockPos;I)"
+        + "Lcom/mojang/datafixers/util/Pair;";
 
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
@@ -44,6 +52,7 @@ public final class R3938PatchOverworldFastLocate {
 
         int handlesPatched = 0;
         int terrainPatched = 0;
+        int findPatched = 0;
 
         for (MethodNode method : node.methods) {
             if ("handles".equals(method.name) && HANDLES_DESC.equals(method.desc)) {
@@ -65,6 +74,23 @@ public final class R3938PatchOverworldFastLocate {
                 method.maxStack = 1;
                 method.maxLocals = 1;
                 ++handlesPatched;
+                continue;
+            }
+
+            if ("find".equals(method.name) && FIND_DESC.equals(method.desc)) {
+                InsnList clamp = new InsnList();
+                clamp.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                clamp.add(new VarInsnNode(Opcodes.ILOAD, 4));
+                clamp.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    POLICY,
+                    "clampLocateRadius",
+                    CLAMP_DESC,
+                    false
+                ));
+                clamp.add(new VarInsnNode(Opcodes.ISTORE, 4));
+                method.instructions.insertBefore(method.instructions.getFirst(), clamp);
+                ++findPatched;
                 continue;
             }
 
@@ -104,10 +130,10 @@ public final class R3938PatchOverworldFastLocate {
             }
         }
 
-        if (handlesPatched != 1 || terrainPatched != 1) {
+        if (handlesPatched != 1 || terrainPatched != 1 || findPatched != 1) {
             throw new IllegalStateException(
-                "expected handles/terrain patches once, got "
-                + handlesPatched + "/" + terrainPatched
+                "expected handles/terrain/find patches once, got "
+                + handlesPatched + "/" + terrainPatched + "/" + findPatched
             );
         }
 
@@ -117,7 +143,7 @@ public final class R3938PatchOverworldFastLocate {
         Files.createDirectories(output.getParent());
         Files.write(output, writer.toByteArray());
         System.out.println(
-            "R3938_ASM_PATCH NeverOverworldFastLocate extended for custom NeverNether"
+            "R3938_ASM_PATCH NeverOverworldFastLocate extended + radius-clamped for custom NeverNether"
         );
     }
 }
