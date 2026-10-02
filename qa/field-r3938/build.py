@@ -155,14 +155,19 @@ def main():
     )
     (CAND/'server.jar').write_bytes(bundled)
     shutil.copyfile(over,CAND/'NeverOverworld.zip')
-    shutil.copyfile(nether,CAND/'NeverNether.zip')
+    run([
+      'python3',str(ROOT/'qa/field-r3938/patch_nether_pack.py'),
+      str(nether),str(CAND/'NeverNether.zip')
+    ],'nether-pack-r14-padding.log',timeout=420)
 
     report={
       'build_pass':True,
       'base_core_sha256':BASE_CORE,
       'candidate_core_sha256':sha(CAND/'server.jar'),
       'overworld_sha256':BASE_OVERWORLD,
-      'nether_sha256':BASE_NETHER,
+      'base_nether_sha256':BASE_NETHER,
+      'candidate_nether_sha256':sha(CAND/'NeverNether.zip'),
+      'nether_dimension_padding':{'bottom':5,'top':149},
       'changed_kernel_entries':sorted(CHANGED),
       'generation_and_locate_share_resolver':True,
       'resolve_start_y_full_base_column_scan_removed':True,
