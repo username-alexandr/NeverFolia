@@ -73,17 +73,19 @@ public final class R3938FastLocateQa extends JavaPlugin implements Listener {
                     try{
                         boolean found=false;
                         int structures=0;
+                        JsonArray actualIds=new JsonArray();
                         for(GeneratedStructure gs:chunk.getStructures()){
                             ++structures;
-                            if("nova_structures:nether_keep".equals(
-                                gs.getStructure().getKey().toString()
-                            )){
+                            String actualId=gs.getStructure().getKey().toString();
+                            actualIds.add(actualId);
+                            if("nova_structures:nether_keep".equals(actualId)){
                                 found=true;
                             }
                         }
                         if(!found){
                             throw new AssertionError(
-                                "located candidate did not generate nether_keep; structures="+structures
+                                "located candidate did not generate nether_keep; structures="
+                                +structures+" ids="+actualIds
                             );
                         }
                         JsonObject out=new JsonObject();
