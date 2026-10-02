@@ -82,7 +82,8 @@ def phase(folder):
         result=json.loads(rp.read_text())
         need(result.get('pass') is True,'fast-locate QA failed: '+repr(result))
         need(int(result.get('elapsed_ms',999999))<4000,'locate exceeded 4s')
-        need(result.get('generated_nether_keep') is True,'located candidate did not generate')
+        need(result.get('located_id')=='nova_structures:nether_keep','locate returned wrong structure')
+        need(result.get('root_generation_stub_confirmed') is True,'root GenerationStub confirmation missing')
 
         p.stdin.write('stop\n');p.stdin.flush()
         code=p.wait(timeout=180);t.join(timeout=20);need(code==0,'abnormal stop')
@@ -102,7 +103,7 @@ def main():
       'pass':True,
       'fast_locate':result,
       'watchdog_stall':False,
-      'located_candidate_generated':True,
+      'root_generation_stub_confirmed':True,
       'manual_player_command_check_required':True
     }
     (OUT/'runtime-r3938.json').write_text(json.dumps(report,indent=2)+'\n')
