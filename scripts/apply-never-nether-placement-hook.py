@@ -78,6 +78,8 @@ import net.minecraft.core.Holder;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.NoiseColumn;
+import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
@@ -89,7 +91,7 @@ import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
  * load, or generate a neighboring chunk. Returning REJECT_Y tells JigsawStructure
  * to reject this candidate without searching for a replacement nearby.</p>
  */
-final class NeverNetherStructurePlacement {{
+public final class NeverNetherStructurePlacement {{
     static final int REJECT_Y = Integer.MIN_VALUE + 31926;
     private static final int LAVA_SURFACE_Y = 32;
     private static final int MIN_SAFE_Y = -123;
@@ -114,7 +116,7 @@ final class NeverNetherStructurePlacement {{
 
     private NeverNetherStructurePlacement() {{}}
 
-    static int resolveStartY(
+    public static int resolveStartY(
         Structure.GenerationContext context,
         Holder<StructureTemplatePool> startPool,
         int vanillaStartY
@@ -159,6 +161,154 @@ final class NeverNetherStructurePlacement {{
             y = chooseCavernFloor(column, profile.hardMinY, profile.hardMaxY, mix64(hash));
         }}
         return isSafe(y) ? y : REJECT_Y;
+    }}
+
+    /**
+     * Bounded terrain predictor for /locate. Unlike resolveStartY(), this never
+     * builds a complete 656-block NoiseColumn for every searched structure-set
+     * candidate. It first scans raw final-density at an 8-block stride and only
+     * performs exact single-point interpolation around promising floors.
+     *
+     * <p>Normal chunk generation continues to use resolveStartY() unchanged.</p>
+     */
+    public static boolean fastLocatePasses(
+        Structure.GenerationContext context,
+        Holder<StructureTemplatePool> startPool
+    ) {{
+        final String poolId = startPool.unwrapKey()
+            .map(key -> key.identifier().toString())
+            .orElse("");
+        final Profile profile = PROFILES.get(poolId);
+        if (profile == null) {{
+            return false;
+        }}
+
+        final ChunkPos chunkPos = context.chunkPos();
+        final int anchorX = chunkPos.getMinBlockX();
+        final int anchorZ = chunkPos.getMinBlockZ();
+        final int chunkX = anchorX >> 4;
+        final int chunkZ = anchorZ >> 4;
+        final long hash = mix64(
+            context.seed()
+                ^ ((long) chunkX * 0x9E3779B97F4A7C15L)
+                ^ ((long) chunkZ * 0xC2B2AE3D27D4EB4FL)
+                ^ poolId.hashCode()
+        );
+
+        if (profile.mode == Mode.LAVA_BASIN) {{
+            return fastLargeLavaBasin(context, anchorX, anchorZ, profile, hash);
+        }}
+        return fastCavernFloor(context, anchorX, anchorZ, profile, hash);
+    }}
+
+    private static boolean fastCavernFloor(
+        Structure.GenerationContext context,
+        int x,
+        int z,
+        Profile profile,
+        long hash
+    ) {{
+        // Empty Nether cells at/below the global lava surface are fluid rather
+        // than dry air, so dry structures cannot use those floor candidates.
+        final int lo = Math.max(Math.max(MIN_SAFE_Y, profile.hardMinY), LAVA_SURFACE_Y);
+        final int hi = Math.min(MAX_SAFE_Y - MIN_CLEARANCE, profile.hardMaxY);
+        if (lo > hi) {{
+            return false;
+        }}
+
+        final DensityFunction density = context.randomState().router().finalDensity();
+        final int step = 8;
+        final int offset = Math.floorMod((int) (hash ^ (hash >>> 32)), step);
+        int y = lo + offset;
+        if (y > hi) {{
+            y = lo;
+        }}
+
+        for (; y <= hi; y += step) {{
+            if (!rawSolid(density, x, y, z)) {{
+                continue;
+            }}
+            if (rawSolid(density, x, y + 1, z)
+                || rawSolid(density, x, y + 4, z)
+                || rawSolid(density, x, y + MIN_CLEARANCE, z)) {{
+                continue;
+            }}
+            if (exactDryOpening(context, x, y, z)) {{
+                return true;
+            }}
+        }}
+        return false;
+    }}
+
+    private static boolean fastLargeLavaBasin(
+        Structure.GenerationContext context,
+        int anchorX,
+        int anchorZ,
+        Profile profile,
+        long hash
+    ) {{
+        final DensityFunction density = context.randomState().router().finalDensity();
+        int rawOpen = 0;
+        for (int dx = -24; dx <= 24; dx += 24) {{
+            for (int dz = -24; dz <= 24; dz += 24) {{
+                if (!rawSolid(density, anchorX + dx, LAVA_SURFACE_Y - 1, anchorZ + dz)) {{
+                    ++rawOpen;
+                }}
+            }}
+        }}
+        if (profile.requireLargeLavaBasin && rawOpen < 7) {{
+            return false;
+        }}
+
+        // Confirm the anchor is a real interpolated opening at the lava surface
+        // and that a solid floor exists somewhere below it.
+        if (exactDensity(context, anchorX, LAVA_SURFACE_Y - 1, anchorZ) > 0.0) {{
+            return false;
+        }}
+        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
+        final int maxY = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
+        final int step = 4;
+        final int offset = Math.floorMod((int) mix64(hash), step);
+        for (int y = maxY - offset; y >= minY; y -= step) {{
+            if (rawSolid(density, anchorX, y, anchorZ)
+                && exactDensity(context, anchorX, y, anchorZ) > 0.0) {{
+                return true;
+            }}
+        }}
+        return false;
+    }}
+
+    private static boolean rawSolid(DensityFunction density, int x, int y, int z) {{
+        return density.compute(new DensityFunction.SinglePointContext(x, y, z)) > 0.0;
+    }}
+
+    private static boolean exactDryOpening(
+        Structure.GenerationContext context,
+        int x,
+        int floorY,
+        int z
+    ) {{
+        return exactDensity(context, x, floorY, z) > 0.0
+            && exactDensity(context, x, floorY + 1, z) <= 0.0
+            && exactDensity(context, x, floorY + 4, z) <= 0.0
+            && exactDensity(context, x, floorY + MIN_CLEARANCE, z) <= 0.0;
+    }}
+
+    private static double exactDensity(
+        Structure.GenerationContext context,
+        int x,
+        int y,
+        int z
+    ) {{
+        if (context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise) {{
+            return noise.getInterpolatedNoiseValue(
+                context.randomState(),
+                new DensityFunction.SinglePointContext(x, y, z)
+            );
+        }}
+        return context.randomState().router().finalDensity().compute(
+            new DensityFunction.SinglePointContext(x, y, z)
+        );
     }}
 
     private static int chooseCavernFloor(NoiseColumn column, int minY, int maxY, long hash) {{
