@@ -9,14 +9,10 @@ BASE_CORE='c717e3e444fbec7c5d0f3c0d08d24e2c0a221c1ac37d59551edbb3c500bb2ff0'
 BASE_OVERWORLD='d4771781192ce17b73e3bc46443c4d66adceb6c3c78d3dd8008708db5a1f71ef'
 BASE_NETHER='f7d71702f2b0261762a70b019a5cae6862228d040dd89544d755853fb773b7ce'
 
-OW_FAST='net/minecraft/world/level/chunk/NeverOverworldFastLocate.class'
-NN_FAST='net/minecraft/world/level/chunk/NeverNetherFastLocate.class'
-NN_FAST_SET='net/minecraft/world/level/chunk/NeverNetherFastLocate$SetRef.class'
-NN_FAST_CAND='net/minecraft/world/level/chunk/NeverNetherFastLocate$Candidate.class'
 NN_PLACE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement.class'
 NN_MODE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement$Mode.class'
 NN_PROFILE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement$Profile.class'
-CHANGED={OW_FAST,NN_FAST,NN_FAST_SET,NN_FAST_CAND,NN_PLACE,NN_MODE,NN_PROFILE}
+CHANGED={NN_PLACE,NN_MODE,NN_PROFILE}
 
 def need(v,m):
     if not v: raise ValueError(m)
@@ -53,9 +49,8 @@ def main():
     nested=[n for n in outer if n.startswith('META-INF/versions/') and n.endswith('/folia-26.2.jar')]
     need(len(nested)==1,'unexpected bundled kernel');nested=nested[0]
     inner=members(outer[nested])
-    for name in (OW_FAST,NN_PLACE,NN_MODE,NN_PROFILE):
+    for name in (NN_PLACE,NN_MODE,NN_PROFILE):
         need(name in inner,'baseline kernel missing '+name)
-    need(NN_FAST not in inner,'NeverNetherFastLocate already present unexpectedly')
 
     libs=WORK/'libs';libs.mkdir()
     for i,(n,raw) in enumerate(outer.items()):
@@ -84,27 +79,13 @@ def main():
     classes=WORK/'classes';classes.mkdir()
     run([
       'javac','--release','25','-proc:none','-cp',cp,'-d',str(classes),
-      str(src),str(ROOT/'native/nevernether-r3938/NeverNetherFastLocate.java'),
-      str(ROOT/'qa/field-r3938/R3938PatchOverworldFastLocate.java')
+      str(src)
     ],'javac.log',timeout=300)
 
-    # Patch the already-shipped Overworld fast-locate router, preserving its
-    # original code path and only adding an early NeverNether delegation.
-    old_ow=WORK/'NeverOverworldFastLocate.class';old_ow.write_bytes(inner[OW_FAST])
-    new_ow=WORK/'patched/NeverOverworldFastLocate.class'
-    run([
-      'java','-cp',str(classes)+os.pathsep+cp,
-      'R3938PatchOverworldFastLocate',str(old_ow),str(new_ow)
-    ],'asm-patch.log')
-
     replacements={
-      OW_FAST:new_ow.read_bytes(),
       NN_PLACE:(classes/NN_PLACE).read_bytes(),
       NN_MODE:(classes/NN_MODE).read_bytes(),
       NN_PROFILE:(classes/NN_PROFILE).read_bytes(),
-      NN_FAST:(classes/NN_FAST).read_bytes(),
-      NN_FAST_SET:(classes/NN_FAST_SET).read_bytes(),
-      NN_FAST_CAND:(classes/NN_FAST_CAND).read_bytes(),
     }
     need(all(int.from_bytes(v[6:8],'big')==69 for v in replacements.values()),'wrong bytecode version')
 
@@ -113,15 +94,14 @@ def main():
         p=inspect/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
     run([
       'javap','-classpath',str(inspect)+os.pathsep+cp,'-p','-c',
-      'net.minecraft.world.level.chunk.NeverOverworldFastLocate',
-      'net.minecraft.world.level.chunk.NeverNetherFastLocate',
       'net.minecraft.world.level.levelgen.structure.structures.NeverNetherStructurePlacement'
     ],'javap.log')
     jp=(OUT/'javap.log').read_text()
-    need('NeverNetherFastLocate.handles' in jp and 'NeverNetherFastLocate.find' in jp,
-         'Overworld router missing Nether delegation')
-    need('fastLocatePasses' in jp and 'getInterpolatedNoiseValue' in jp,
-         'fast terrain predictor missing')
+    need('getInterpolatedNoiseValue' in jp and 'finalDensity' in jp,
+         'bounded-density resolver missing')
+    resolve_section=jp.split('public static int resolveStartY',1)[1].split('private static',1)[0]
+    need('getBaseColumn' not in resolve_section,
+         'resolveStartY still performs full getBaseColumn scan')
 
     packaging=load('r3938_packaging',ROOT/'qa/field-r395/jar_packaging.py')
     modified=packaging.rewrite_zip(outer[nested],replacements)
@@ -164,9 +144,9 @@ def main():
       'overworld_sha256':BASE_OVERWORLD,
       'nether_sha256':BASE_NETHER,
       'changed_kernel_entries':sorted(CHANGED),
-      'normal_generation_resolver_preserved':True,
-      'locate_full_base_column_scan_removed':True,
-      'fast_locate_max_rings':100,
+      'vanilla_locate_path_preserved':True,
+      'generation_and_locate_share_resolver':True,
+      'resolve_start_y_full_base_column_scan_removed':True,
       'production_accepted':False
     }
     (OUT/'build-r3938.json').write_text(json.dumps(report,indent=2)+'\n')
