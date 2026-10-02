@@ -117,6 +117,7 @@ def main():
     need('NeverNetherFastLocatePolicy.passesNetherTerrain' in jp,'Nether terrain policy missing')
     need('NeverNetherStructurePlacement.resolveStartY' in jp,'shared resolver locate entry missing')
     need('QuartPos.fromBlock' in jp,'fast locate biome check missing')
+    need('findValidGenerationPoint' in jp,'root GenerationStub confirmation missing')
     need('getBaseColumn' not in jp,'getBaseColumn survived compiled R39.38 placement/locate path')
     need('getInterpolatedNoiseValue' not in jp,'interpolated NoiseChunk path survived compiled R39.38')
 
@@ -165,6 +166,7 @@ def main():
       'noise_chunk_interpolation_removed':True,
       'coarse_vertical_step':8,
       'exact_jigsaw_assembly_during_locate':False,
+      'root_generation_stub_confirmation':True,
       'existing_fast_locate_engine_reused':True,
       'production_accepted':False
     }
