@@ -10,13 +10,17 @@
     },
     "roof_construction_zone": {
       "min_y": 384,
-      "max_y": 527
+      "max_y": 512
     },
     "primary_lava_level": 32,
     "bedrock_profile": "vanilla_irregular",
     "technical_max_y": 527,
     "bedrock_roof_y": 512,
-    "building_max_y": 512
+    "building_max_y": 512,
+    "technical_padding_zone": {
+      "min_y": 513,
+      "max_y": 527
+    }
   },
   "bands": {
     "deep": {
