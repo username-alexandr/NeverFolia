@@ -69,7 +69,9 @@ def main():
       'public static boolean fastLocatePasses',
       'COARSE_STEP = 8',
       'finalDensity()',
-      'public static int resolveStartY'
+      'public static int resolveStartY',
+      'LOCATE_CACHE_KEY',
+      'LOCATE_CACHE_Y'
     ):
         need(marker in helper,'generated placement helper missing '+marker)
     need('getBaseColumn' not in helper,'full NoiseColumn scan survived in R39.38 helper')
@@ -115,6 +117,7 @@ def main():
     jp=(OUT/'javap.log').read_text()
     need('NeverNetherFastLocatePolicy.handles' in jp,'fast locate handles router missing')
     need('NeverNetherFastLocatePolicy.passesNetherTerrain' in jp,'Nether terrain policy missing')
+    need('NeverNetherFastLocatePolicy.clampLocateRadius' in jp,'Nether locate radius clamp missing')
     need('NeverNetherStructurePlacement.resolveStartY' in jp,'shared resolver locate entry missing')
     need('QuartPos.fromBlock' in jp,'fast locate biome check missing')
     need('findValidGenerationPoint' in jp,'root GenerationStub confirmation missing')
@@ -167,6 +170,8 @@ def main():
       'coarse_vertical_step':8,
       'exact_jigsaw_assembly_during_locate':False,
       'root_generation_stub_confirmation':True,
+      'locate_radius_cap_rings':6,
+      'start_y_root_confirmation_cache':True,
       'existing_fast_locate_engine_reused':True,
       'production_accepted':False
     }
