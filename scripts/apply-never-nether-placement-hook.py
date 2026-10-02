@@ -79,7 +79,6 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.levelgen.DensityFunction;
-import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
@@ -223,13 +222,7 @@ public final class NeverNetherStructurePlacement {{
             (int) (hash ^ (hash >>> 32)),
             candidates.size()
         );
-        for (int i = 0; i < candidates.size(); ++i) {{
-            final int floorY = candidates.get((start + i) % candidates.size());
-            if (exactDryOpening(context, x, floorY, z)) {{
-                return floorY + 1;
-            }}
-        }}
-        return REJECT_Y;
+        return candidates.get(start) + 1;
     }}
 
     private static int fastLavaFloor(
@@ -245,14 +238,12 @@ public final class NeverNetherStructurePlacement {{
             return REJECT_Y;
         }}
 
-        if (exactDensity(context, x, LAVA_SURFACE_Y - 1, z) > 0.0) {{
+        final DensityFunction density = context.randomState().router().finalDensity();
+        if (rawDensity(density, x, LAVA_SURFACE_Y - 1, z) > 0.0) {{
             return REJECT_Y;
         }}
-
-        final DensityFunction density = context.randomState().router().finalDensity();
         for (int y = maxY; y >= minY; --y) {{
-            if (rawDensity(density, x, y, z) > 0.0
-                && exactDensity(context, x, y, z) > 0.0) {{
+            if (rawDensity(density, x, y, z) > 0.0) {{
                 return y + 1;
             }}
         }}
@@ -322,18 +313,12 @@ public final class NeverNetherStructurePlacement {{
             return false;
         }}
 
-        // Confirm the anchor is a real interpolated opening at the lava surface
-        // and that a solid floor exists somewhere below it.
-        if (exactDensity(context, anchorX, LAVA_SURFACE_Y - 1, anchorZ) > 0.0) {{
-            return false;
-        }}
         final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
         final int maxY = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
         final int step = 4;
         final int offset = Math.floorMod((int) mix64(hash), step);
         for (int y = maxY - offset; y >= minY; y -= step) {{
-            if (rawSolid(density, anchorX, y, anchorZ)
-                && exactDensity(context, anchorX, y, anchorZ) > 0.0) {{
+            if (rawSolid(density, anchorX, y, anchorZ)) {{
                 return true;
             }}
         }}
@@ -342,35 +327,6 @@ public final class NeverNetherStructurePlacement {{
 
     private static boolean rawSolid(DensityFunction density, int x, int y, int z) {{
         return density.compute(new DensityFunction.SinglePointContext(x, y, z)) > 0.0;
-    }}
-
-    private static boolean exactDryOpening(
-        Structure.GenerationContext context,
-        int x,
-        int floorY,
-        int z
-    ) {{
-        return exactDensity(context, x, floorY, z) > 0.0
-            && exactDensity(context, x, floorY + 1, z) <= 0.0
-            && exactDensity(context, x, floorY + 4, z) <= 0.0
-            && exactDensity(context, x, floorY + MIN_CLEARANCE, z) <= 0.0;
-    }}
-
-    private static double exactDensity(
-        Structure.GenerationContext context,
-        int x,
-        int y,
-        int z
-    ) {{
-        if (context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise) {{
-            return noise.getInterpolatedNoiseValue(
-                context.randomState(),
-                new DensityFunction.SinglePointContext(x, y, z)
-            );
-        }}
-        return context.randomState().router().finalDensity().compute(
-            new DensityFunction.SinglePointContext(x, y, z)
-        );
     }}
 
     private static int chooseCavernFloor(NoiseColumn column, int minY, int maxY, long hash) {{
