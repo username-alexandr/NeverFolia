@@ -75,26 +75,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.core.Holder;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.NoiseColumn;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 
 /**
  * NeverFolia-owned deterministic vertical placement for imported NeverNether jigsaws.
  *
- * <p>This helper only samples ChunkGenerator#getBaseColumn. It must never request,
- * load, or generate a neighboring chunk. Returning REJECT_Y tells JigsawStructure
- * to reject this candidate without searching for a replacement nearby.</p>
+ * <p>R39.38 never builds a complete NoiseColumn while checking a structure
+ * candidate. It scans final density at an 8-block stride, refines only intervals
+ * that contain a solid-to-cavity transition, and performs the same bounded
+ * resolver for normal generation and fast locate.</p>
  */
-final class NeverNetherStructurePlacement {{
-    static final int REJECT_Y = Integer.MIN_VALUE + 31926;
+public final class NeverNetherStructurePlacement {{
+    public static final int REJECT_Y = Integer.MIN_VALUE + 31926;
     private static final int LAVA_SURFACE_Y = 32;
     private static final int MIN_SAFE_Y = -123;
     private static final int MAX_SAFE_Y = 378;
     private static final int MIN_CLEARANCE = 8;
+    private static final int COARSE_STEP = 8;
 
     private enum Mode {{ CAVERN_FLOOR, LAVA_BASIN }}
 
@@ -114,7 +114,7 @@ final class NeverNetherStructurePlacement {{
 
     private NeverNetherStructurePlacement() {{}}
 
-    static int resolveStartY(
+    public static int resolveStartY(
         Structure.GenerationContext context,
         Holder<StructureTemplatePool> startPool,
         int vanillaStartY
@@ -140,58 +140,100 @@ final class NeverNetherStructurePlacement {{
         );
 
         if (profile.mode == Mode.LAVA_BASIN) {{
-            if (profile.requireLargeLavaBasin && !hasLargeLavaBasin(context, anchorX, anchorZ)) {{
+            if (profile.requireLargeLavaBasin
+                && !hasLargeLavaBasin(context, anchorX, anchorZ)) {{
                 return REJECT_Y;
             }}
-            final int lavaFloor = findLavaFloor(context, anchorX, anchorZ, profile);
-            return isSafe(lavaFloor) ? lavaFloor : REJECT_Y;
+            final int floor = findLavaFloor(context, anchorX, anchorZ, profile, hash);
+            return isSafe(floor) ? floor : REJECT_Y;
         }}
 
-        final NoiseColumn column = context.chunkGenerator().getBaseColumn(
+        int y = chooseCavernFloor(
+            context,
             anchorX,
             anchorZ,
-            context.heightAccessor(),
-            context.randomState()
+            profile.preferredMinY,
+            profile.preferredMaxY,
+            hash
         );
-
-        int y = chooseCavernFloor(column, profile.preferredMinY, profile.preferredMaxY, hash);
         if (y == REJECT_Y) {{
-            y = chooseCavernFloor(column, profile.hardMinY, profile.hardMaxY, mix64(hash));
+            y = chooseCavernFloor(
+                context,
+                anchorX,
+                anchorZ,
+                profile.hardMinY,
+                profile.hardMaxY,
+                mix64(hash)
+            );
         }}
         return isSafe(y) ? y : REJECT_Y;
     }}
 
-    private static int chooseCavernFloor(NoiseColumn column, int minY, int maxY, long hash) {{
-        final int lo = Math.max(MIN_SAFE_Y, minY);
-        final int hi = Math.min(MAX_SAFE_Y, maxY);
+    public static boolean fastLocatePasses(
+        Structure.GenerationContext context,
+        Holder<StructureTemplatePool> startPool
+    ) {{
+        return resolveStartY(context, startPool, 0) != REJECT_Y;
+    }}
+
+    private static int chooseCavernFloor(
+        Structure.GenerationContext context,
+        int x,
+        int z,
+        int minY,
+        int maxY,
+        long hash
+    ) {{
+        final int lo = Math.max(Math.max(MIN_SAFE_Y, minY), LAVA_SURFACE_Y);
+        final int hi = Math.min(MAX_SAFE_Y - MIN_CLEARANCE, maxY);
         if (lo > hi) {{
             return REJECT_Y;
         }}
 
+        final DensityFunction density = context.randomState().router().finalDensity();
         final List<Integer> candidates = new ArrayList<>();
-        for (int y = lo; y <= hi; ++y) {{
-            if (isDryFloorWithClearance(column, y)) {{
-                candidates.add(y + 1);
+
+        int previousY = lo;
+        double previous = density(density, x, previousY, z);
+
+        for (int probeY = lo + COARSE_STEP; probeY <= hi + COARSE_STEP; probeY += COARSE_STEP) {{
+            final int currentY = Math.min(probeY, hi + 1);
+            final double current = density(density, x, currentY, z);
+
+            if (previous > 0.0 && current <= 0.0) {{
+                final int refineEnd = Math.min(currentY - 1, hi);
+                for (int floorY = previousY; floorY <= refineEnd; ++floorY) {{
+                    if (isDryFloorWithClearance(density, x, floorY, z)) {{
+                        candidates.add(floorY + 1);
+                    }}
+                }}
             }}
+
+            if (currentY >= hi + 1) {{
+                break;
+            }}
+            previousY = currentY;
+            previous = current;
         }}
+
         if (candidates.isEmpty()) {{
             return REJECT_Y;
         }}
-        return candidates.get(Math.floorMod((int) (hash ^ (hash >>> 32)), candidates.size()));
+        return candidates.get(
+            Math.floorMod((int) (hash ^ (hash >>> 32)), candidates.size())
+        );
     }}
 
-    private static boolean isDryFloorWithClearance(NoiseColumn column, int floorY) {{
-        final BlockState floor = column.getBlock(floorY);
-        if (floor.isAir() || !floor.getFluidState().isEmpty()) {{
-            return false;
-        }}
-        for (int dy = 1; dy <= MIN_CLEARANCE; ++dy) {{
-            final BlockState state = column.getBlock(floorY + dy);
-            if (!state.isAir()) {{
-                return false;
-            }}
-        }}
-        return true;
+    private static boolean isDryFloorWithClearance(
+        DensityFunction density,
+        int x,
+        int floorY,
+        int z
+    ) {{
+        return density(density, x, floorY, z) > 0.0
+            && density(density, x, floorY + 1, z) <= 0.0
+            && density(density, x, floorY + 4, z) <= 0.0
+            && density(density, x, floorY + MIN_CLEARANCE, z) <= 0.0;
     }}
 
     private static boolean hasLargeLavaBasin(
@@ -199,56 +241,54 @@ final class NeverNetherStructurePlacement {{
         int anchorX,
         int anchorZ
     ) {{
-        int lavaColumns = 0;
+        final DensityFunction density = context.randomState().router().finalDensity();
+        int openColumns = 0;
         for (int dx = -24; dx <= 24; dx += 24) {{
             for (int dz = -24; dz <= 24; dz += 24) {{
-                final NoiseColumn column = context.chunkGenerator().getBaseColumn(
-                    anchorX + dx,
-                    anchorZ + dz,
-                    context.heightAccessor(),
-                    context.randomState()
-                );
-                if (isLava(column.getBlock(LAVA_SURFACE_Y - 1))) {{
-                    ++lavaColumns;
+                if (density(density, anchorX + dx, LAVA_SURFACE_Y - 1, anchorZ + dz) <= 0.0) {{
+                    ++openColumns;
                 }}
             }}
         }}
-        return lavaColumns >= 7;
+        return openColumns >= 7;
     }}
 
     private static int findLavaFloor(
         Structure.GenerationContext context,
-        int anchorX,
-        int anchorZ,
-        Profile profile
+        int x,
+        int z,
+        Profile profile,
+        long hash
     ) {{
-        final NoiseColumn column = context.chunkGenerator().getBaseColumn(
-            anchorX,
-            anchorZ,
-            context.heightAccessor(),
-            context.randomState()
-        );
-        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
-        final int maxY = Math.min(LAVA_SURFACE_Y - 1, profile.hardMaxY);
-        boolean sawLava = false;
-        for (int y = maxY; y >= minY; --y) {{
-            final BlockState state = column.getBlock(y);
-            if (isLava(state)) {{
-                sawLava = true;
+        final int lo = Math.max(MIN_SAFE_Y, profile.hardMinY);
+        final int hi = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
+        if (lo > hi) {{
+            return REJECT_Y;
+        }}
+
+        final DensityFunction density = context.randomState().router().finalDensity();
+        if (density(density, x, LAVA_SURFACE_Y - 1, z) > 0.0) {{
+            return REJECT_Y;
+        }}
+
+        final int offset = Math.floorMod((int) mix64(hash), 4);
+        for (int probeY = hi - offset; probeY >= lo; probeY -= 4) {{
+            if (density(density, x, probeY, z) <= 0.0) {{
                 continue;
             }}
-            if (sawLava && !state.isAir() && state.getFluidState().isEmpty()) {{
-                return y + 1;
-            }}
-            if (sawLava && state.isAir()) {{
-                return REJECT_Y;
+            final int refineTop = Math.min(hi, probeY + 3);
+            for (int floorY = refineTop; floorY >= probeY; --floorY) {{
+                if (density(density, x, floorY, z) > 0.0
+                    && density(density, x, floorY + 1, z) <= 0.0) {{
+                    return floorY + 1;
+                }}
             }}
         }}
         return REJECT_Y;
     }}
 
-    private static boolean isLava(BlockState state) {{
-        return state.getFluidState().is(FluidTags.LAVA);
+    private static double density(DensityFunction density, int x, int y, int z) {{
+        return density.compute(new DensityFunction.SinglePointContext(x, y, z));
     }}
 
     private static boolean isSafe(int y) {{
@@ -262,7 +302,6 @@ final class NeverNetherStructurePlacement {{
     }}
 }}
 '''
-
 
 def patch_jigsaw(source: str) -> tuple[str, str, str]:
     if "NeverNetherStructurePlacement.resolveStartY" in source:
