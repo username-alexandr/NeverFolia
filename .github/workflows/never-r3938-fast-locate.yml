@@ -81,11 +81,12 @@ jobs:
           b=json.loads(Path('artifacts/build-r3938.json').read_text())
           r=json.loads(Path('artifacts/runtime-r3938.json').read_text())
           assert b['build_pass'] is True and r['pass'] is True
-          assert b['normal_generation_resolver_preserved'] is True
+          assert b['generation_and_locate_share_resolver'] is True
+          assert b['resolve_start_y_full_base_column_scan_removed'] is True
+          assert b['noise_chunk_interpolation_removed'] is True
+          assert b['coarse_vertical_step'] == 8
+          assert b['exact_jigsaw_assembly_during_locate'] is False
           assert b['existing_fast_locate_engine_reused'] is True
-          assert b['nether_sparse_density_prefilter'] is True
-          assert b['nether_exact_generation_confirmation'] is True
-          assert b['full_jigsaw_check_only_after_prefilter'] is True
           assert r['fast_locate']['elapsed_ms'] < 4000
           assert r['fast_locate']['generated_nether_keep'] is True
           print('R39.38 NeverNether fast-locate gates passed.')
