@@ -16,19 +16,19 @@ import org.objectweb.asm.tree.VarInsnNode;
 public final class R3938PatchOverworldFastLocate {
     private static final String TARGET =
         "net/minecraft/world/level/chunk/NeverOverworldFastLocate";
-    private static final String NETHER =
-        "net/minecraft/world/level/chunk/NeverNetherFastLocate";
+    private static final String POLICY =
+        "net/minecraft/world/level/chunk/NeverNetherFastLocatePolicy";
 
     private static final String HANDLES_DESC =
         "(Lnet/minecraft/core/HolderSet;)Z";
-    private static final String HANDLES_LEVEL_DESC =
-        "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/HolderSet;)Z";
-    private static final String FIND_DESC =
+    private static final String TERRAIN_DESC =
         "(Lnet/minecraft/world/level/chunk/ChunkGenerator;"
         + "Lnet/minecraft/server/level/ServerLevel;"
-        + "Lnet/minecraft/core/HolderSet;"
-        + "Lnet/minecraft/core/BlockPos;I)"
-        + "Lcom/mojang/datafixers/util/Pair;";
+        + "Lnet/minecraft/world/level/chunk/ChunkGeneratorStructureState;"
+        + "Lnet/minecraft/world/level/ChunkPos;"
+        + "Lnet/minecraft/core/Holder;)Z";
+    private static final String CUSTOM_DESC =
+        "(Lnet/minecraft/core/Holder;)Z";
 
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
@@ -43,67 +43,71 @@ public final class R3938PatchOverworldFastLocate {
         }
 
         int handlesPatched = 0;
-        int findPatched = 0;
+        int terrainPatched = 0;
 
         for (MethodNode method : node.methods) {
             if ("handles".equals(method.name) && HANDLES_DESC.equals(method.desc)) {
-                LabelNode original = new LabelNode();
                 InsnList code = new InsnList();
                 code.add(new VarInsnNode(Opcodes.ALOAD, 0));
                 code.add(new MethodInsnNode(
                     Opcodes.INVOKESTATIC,
-                    NETHER,
+                    POLICY,
                     "handles",
                     HANDLES_DESC,
                     false
                 ));
-                code.add(new JumpInsnNode(Opcodes.IFEQ, original));
-                code.add(new InsnNode(Opcodes.ICONST_1));
                 code.add(new InsnNode(Opcodes.IRETURN));
-                code.add(original);
-                code.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
-                method.instructions.insertBefore(method.instructions.getFirst(), code);
+
+                method.instructions.clear();
+                method.instructions.add(code);
+                method.tryCatchBlocks.clear();
+                if (method.localVariables != null) method.localVariables.clear();
+                method.maxStack = 1;
+                method.maxLocals = 1;
                 ++handlesPatched;
                 continue;
             }
 
-            if ("find".equals(method.name) && FIND_DESC.equals(method.desc)) {
+            if ("passesNeverOverworldTerrain".equals(method.name)
+                && TERRAIN_DESC.equals(method.desc)) {
                 LabelNode original = new LabelNode();
-                InsnList code = new InsnList();
-                code.add(new VarInsnNode(Opcodes.ALOAD, 1));
-                code.add(new VarInsnNode(Opcodes.ALOAD, 2));
-                code.add(new MethodInsnNode(
+                InsnList guard = new InsnList();
+
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 4));
+                guard.add(new MethodInsnNode(
                     Opcodes.INVOKESTATIC,
-                    NETHER,
-                    "handles",
-                    HANDLES_LEVEL_DESC,
+                    POLICY,
+                    "isCustomNether",
+                    CUSTOM_DESC,
                     false
                 ));
-                code.add(new JumpInsnNode(Opcodes.IFEQ, original));
-                code.add(new VarInsnNode(Opcodes.ALOAD, 0));
-                code.add(new VarInsnNode(Opcodes.ALOAD, 1));
-                code.add(new VarInsnNode(Opcodes.ALOAD, 2));
-                code.add(new VarInsnNode(Opcodes.ALOAD, 3));
-                code.add(new VarInsnNode(Opcodes.ILOAD, 4));
-                code.add(new MethodInsnNode(
+                guard.add(new JumpInsnNode(Opcodes.IFEQ, original));
+
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 4));
+                guard.add(new MethodInsnNode(
                     Opcodes.INVOKESTATIC,
-                    NETHER,
-                    "find",
-                    FIND_DESC,
+                    POLICY,
+                    "passesNetherTerrain",
+                    TERRAIN_DESC,
                     false
                 ));
-                code.add(new InsnNode(Opcodes.ARETURN));
-                code.add(original);
-                code.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
-                method.instructions.insertBefore(method.instructions.getFirst(), code);
-                ++findPatched;
+                guard.add(new InsnNode(Opcodes.IRETURN));
+                guard.add(original);
+                guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+
+                method.instructions.insertBefore(method.instructions.getFirst(), guard);
+                ++terrainPatched;
             }
         }
 
-        if (handlesPatched != 1 || findPatched != 1) {
+        if (handlesPatched != 1 || terrainPatched != 1) {
             throw new IllegalStateException(
-                "expected handles/find patches once, got "
-                + handlesPatched + "/" + findPatched
+                "expected handles/terrain patches once, got "
+                + handlesPatched + "/" + terrainPatched
             );
         }
 
@@ -112,6 +116,8 @@ public final class R3938PatchOverworldFastLocate {
         Path output = Path.of(args[1]);
         Files.createDirectories(output.getParent());
         Files.write(output, writer.toByteArray());
-        System.out.println("R3938_ASM_PATCH NeverOverworldFastLocate -> NeverNetherFastLocate delegation");
+        System.out.println(
+            "R3938_ASM_PATCH NeverOverworldFastLocate extended for custom NeverNether"
+        );
     }
 }
