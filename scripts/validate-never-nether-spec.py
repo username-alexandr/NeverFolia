@@ -42,27 +42,39 @@ def validate_core_spec(data: dict) -> tuple[int, int, dict, dict]:
 
     if min_y != -128:
         fail(f"dimension.min_y must be -128, got {min_y}")
-    if height != 1024:
-        fail(f"dimension.height must be 1024, got {height}")
-    if max_y != 895:
-        fail(f"dimension max Y must resolve to 895, got {max_y}")
+    if height != 656:
+        fail(f"dimension.height must be 656 for R14, got {height}")
+    if max_y != 527:
+        fail(f"dimension max Y must resolve to 527 for R14, got {max_y}")
+    if dim.get("technical_max_y") != 527:
+        fail(f"dimension.technical_max_y must be 527, got {dim.get('technical_max_y')}")
+    if dim.get("bedrock_roof_y") != 512:
+        fail(f"dimension.bedrock_roof_y must be 512, got {dim.get('bedrock_roof_y')}")
+    if dim.get("building_max_y") != 512:
+        fail(f"dimension.building_max_y must be 512, got {dim.get('building_max_y')}")
 
     body = dim["generated_body"]
     roof = dim["roof_construction_zone"]
+    padding = dim["technical_padding_zone"]
 
     if (body["min_y"], body["max_y"]) != (-128, 383):
         fail(f"generated body must be -128..383, got {body}")
     if inclusive_size(body["min_y"], body["max_y"]) != 512:
         fail("generated body must be exactly 512 blocks tall")
 
-    if (roof["min_y"], roof["max_y"]) != (384, 895):
-        fail(f"roof construction zone must be 384..895, got {roof}")
-    if inclusive_size(roof["min_y"], roof["max_y"]) != 512:
-        fail("roof construction zone must be exactly 512 blocks tall")
+    if (roof["min_y"], roof["max_y"]) != (384, 512):
+        fail(f"roof construction zone must be 384..512, got {roof}")
     if body["max_y"] + 1 != roof["min_y"]:
         fail("generated body and roof construction zone must be contiguous")
-    if roof["max_y"] != max_y:
-        fail("roof construction zone must end at the dimension maximum Y")
+
+    if (padding["min_y"], padding["max_y"]) != (513, 527):
+        fail(f"technical padding zone must be 513..527, got {padding}")
+    if inclusive_size(padding["min_y"], padding["max_y"]) != 15:
+        fail("technical padding zone must be exactly 15 blocks tall")
+    if roof["max_y"] + 1 != padding["min_y"]:
+        fail("roof construction and technical padding zones must be contiguous")
+    if padding["max_y"] != max_y:
+        fail("technical padding zone must end at the dimension maximum Y")
 
     lava = dim["primary_lava_level"]
     if lava != 32:
@@ -147,6 +159,8 @@ def validate_structure_spec(data: dict, core: dict) -> None:
         fail("structure manifest generated body must match core spec")
     if rules["roof_build_min_y"] != roof["min_y"] or rules["roof_build_max_y"] != roof["max_y"]:
         fail("structure manifest roof build zone must match core spec")
+    if rules.get("technical_max_y") != core["dimension"]["technical_max_y"]:
+        fail("structure manifest technical max Y must match core spec")
     if rules["normal_structures_above_generated_body"] is not False:
         fail("normal structures must remain disabled above the generated body")
     if rules["fast_locate_generates_chunks"] is not False:
@@ -242,9 +256,10 @@ def main() -> int:
 
     lava = core["dimension"]["primary_lava_level"]
     print("[NeverFolia][NeverNether spec] OK")
-    print(f"  dimension: Y={min_y}..{max_y} (1024 blocks)")
+    print(f"  dimension: Y={min_y}..{max_y} (656 blocks)")
     print(f"  generated body: Y={body['min_y']}..{body['max_y']} (512 blocks)")
-    print(f"  roof construction zone: Y={roof['min_y']}..{roof['max_y']} (512 blocks)")
+    print(f"  roof construction zone: Y={roof['min_y']}..{roof['max_y']} (through bedrock roof)")
+    print("  technical padding zone: Y=513..527 (15 non-buildable cells)")
     print(f"  primary lava level: Y={lava}")
     print("  custom structures: 20 across 4 deterministic placement groups")
     return 0
