@@ -31,7 +31,7 @@ import net.minecraft.world.level.levelgen.structure.structures.NeverNetherStruct
  * NeverNether that included full 656-block getBaseColumn scans and could pin a
  * Folia region thread for tens of seconds. This helper enumerates the exact
  * RandomSpread candidates and weighted structure selection, then uses the
- * bounded NeverNether fast terrain predictor instead.</p>
+ * bounded NeverNether fast terrain predictor first, followed by the exact\n * generation predicate only for the rare candidates that survive the prefilter.</p>
  */
 final class NeverNetherFastLocate {
     private static final int MAX_CANDIDATE_RINGS = 100;
@@ -270,10 +270,20 @@ final class NeverNetherFastLocate {
             structure.biomes()::contains
         );
 
-        return NeverNetherStructurePlacement.fastLocatePasses(
+        if (!NeverNetherStructurePlacement.fastLocatePasses(
             context,
             jigsaw.getStartPool()
-        );
+        )) {
+            return false;
+        }
+
+        // The density scan is intentionally only a prefilter. A Jigsaw can
+        // still fail because of its exact start-Y, bounding box, pool expansion,
+        // or other normal structure predicates. Confirm the rare surviving
+        // candidate with the real generation predicate before /locate returns
+        // it. This keeps locate exact without running full Jigsaw assembly for
+        // every RandomSpread candidate in the search radius.
+        return structure.findValidGenerationPoint(context).isPresent();
     }
 
     private static String structureId(Holder<Structure> holder) {
