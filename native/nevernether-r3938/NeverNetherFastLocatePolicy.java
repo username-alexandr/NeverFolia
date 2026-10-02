@@ -22,6 +22,8 @@ import net.minecraft.world.level.levelgen.structure.structures.NeverNetherStruct
  * invalid. Recursive Jigsaw expansion is not executed while locating.</p>
  */
 final class NeverNetherFastLocatePolicy {
+    private static final boolean TRACE = Boolean.getBoolean("neverfolia.r3938Trace");
+    private static int traceLines;
     private static final Set<String> CUSTOM_IDS = Set.of(
         "nova_structures:nether_keep",
         "nova_structures:piglin_donjon",
@@ -113,12 +115,14 @@ final class NeverNetherFastLocatePolicy {
             structure.biomes()::contains
         );
 
+        final long started = TRACE ? System.nanoTime() : 0L;
         final int startY = NeverNetherStructurePlacement.resolveStartY(
             context,
             jigsaw.getStartPool(),
             0
         );
         if (startY == NeverNetherStructurePlacement.REJECT_Y) {
+            trace(holder, chunkPos, "terrain_reject", startY, started);
             return false;
         }
 
@@ -131,17 +135,36 @@ final class NeverNetherFastLocatePolicy {
                 state.randomState().sampler()
             )
         )) {
+            trace(holder, chunkPos, "biome_reject", startY, started);
             return false;
         }
 
-        // R39.38 root confirmation. With the old getBaseColumn resolver this
-        // call was too expensive; with the shared coarse-to-fine resolver it is
-        // bounded. findValidGenerationPoint creates only the GenerationStub:
-        // it validates the selected root pool element, start_jigsaw_name,
-        // rotation/bounding box, dimension padding and biome. The size=11
-        // recursive Jigsaw expansion is stored in the stub's consumer and is
-        // NOT executed by /locate.
-        return structure.findValidGenerationPoint(context).isPresent();
+        // R39.38 root confirmation. The immediately repeated start-Y lookup is
+        // served from the one-shot cache in NeverNetherStructurePlacement.
+        final boolean root = structure.findValidGenerationPoint(context).isPresent();
+        trace(holder, chunkPos, root ? "accepted" : "root_reject", startY, started);
+        return root;
+    }
+
+    private static void trace(
+        Holder<Structure> holder,
+        ChunkPos chunkPos,
+        String result,
+        int startY,
+        long started
+    ) {
+        if (!TRACE || traceLines >= 96) {
+            return;
+        }
+        ++traceLines;
+        final long micros = (System.nanoTime() - started) / 1_000L;
+        System.out.println(
+            "[NeverFolia][R3938Trace] id=" + structureId(holder)
+                + " chunk=" + chunkPos.x() + "," + chunkPos.z()
+                + " y=" + startY
+                + " result=" + result
+                + " us=" + micros
+        );
     }
 
     private static String structureId(Holder<Structure> holder) {
