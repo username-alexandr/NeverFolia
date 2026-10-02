@@ -63,7 +63,15 @@ final class NeverNetherFastLocatePolicy {
     }
 
     static int clampLocateRadius(HolderSet<Structure> holders, int requestedRadius) {
-        if (!handles(holders)) {
+        boolean any = false;
+        for (Holder<Structure> holder : holders) {
+            final String id = structureId(holder);
+            if (id == null || !CUSTOM_IDS.contains(id)) {
+                return requestedRadius;
+            }
+            any = true;
+        }
+        if (!any) {
             return requestedRadius;
         }
         // NeverNether custom sets are intentionally sparse (20/44/80/192 chunk
