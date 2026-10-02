@@ -78,7 +78,6 @@ import net.minecraft.core.Holder;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.NoiseColumn;
-import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
@@ -86,13 +85,11 @@ import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 /**
  * NeverFolia-owned deterministic vertical placement for imported NeverNether jigsaws.
  *
- * <p>R39.38 evaluates the already-bound final density function directly and
- * never constructs a full NoiseColumn while structure candidates are checked.
- * It must never request, load, or generate a neighboring chunk. Returning
- * REJECT_Y tells JigsawStructure to reject this candidate without searching
- * for a replacement nearby.</p>
+ * <p>This helper only samples ChunkGenerator#getBaseColumn. It must never request,
+ * load, or generate a neighboring chunk. Returning REJECT_Y tells JigsawStructure
+ * to reject this candidate without searching for a replacement nearby.</p>
  */
-public final class NeverNetherStructurePlacement {{
+final class NeverNetherStructurePlacement {{
     static final int REJECT_Y = Integer.MIN_VALUE + 31926;
     private static final int LAVA_SURFACE_Y = 32;
     private static final int MIN_SAFE_Y = -123;
@@ -117,7 +114,7 @@ public final class NeverNetherStructurePlacement {{
 
     private NeverNetherStructurePlacement() {{}}
 
-    public static int resolveStartY(
+    static int resolveStartY(
         Structure.GenerationContext context,
         Holder<StructureTemplatePool> startPool,
         int vanillaStartY
@@ -143,153 +140,115 @@ public final class NeverNetherStructurePlacement {{
         );
 
         if (profile.mode == Mode.LAVA_BASIN) {{
-            if (profile.requireLargeLavaBasin && !fastLargeLavaBasin(
-                context, anchorX, anchorZ, profile, hash
-            )) {{
+            if (profile.requireLargeLavaBasin && !hasLargeLavaBasin(context, anchorX, anchorZ)) {{
                 return REJECT_Y;
             }}
-            final int lavaFloor = fastLavaFloor(context, anchorX, anchorZ, profile, hash);
+            final int lavaFloor = findLavaFloor(context, anchorX, anchorZ, profile);
             return isSafe(lavaFloor) ? lavaFloor : REJECT_Y;
         }}
 
-        int y = chooseCavernFloorFast(
-            context,
+        final NoiseColumn column = context.chunkGenerator().getBaseColumn(
             anchorX,
             anchorZ,
-            profile.preferredMinY,
-            profile.preferredMaxY,
-            hash
+            context.heightAccessor(),
+            context.randomState()
         );
+
+        int y = chooseCavernFloor(column, profile.preferredMinY, profile.preferredMaxY, hash);
         if (y == REJECT_Y) {{
-            y = chooseCavernFloorFast(
-                context,
-                anchorX,
-                anchorZ,
-                profile.hardMinY,
-                profile.hardMaxY,
-                mix64(hash)
-            );
+            y = chooseCavernFloor(column, profile.hardMinY, profile.hardMaxY, mix64(hash));
         }}
         return isSafe(y) ? y : REJECT_Y;
     }}
 
-    /**
-     * Bounded terrain predictor for /locate. Unlike resolveStartY(), this never
-     * builds a complete 656-block NoiseColumn for every searched structure-set
-     * candidate. It first scans raw final-density at an 8-block stride and only
-     * performs exact single-point interpolation around promising floors.
-     *
-     * <p>Normal chunk generation continues to use resolveStartY() unchanged.</p>
-     */
-    public static boolean fastLocatePasses(
-        Structure.GenerationContext context,
-        Holder<StructureTemplatePool> startPool
-    ) {{
-        // R39.38 uses the exact same bounded-density resolver for locate and
-        // actual generation. This prevents fast-locate false positives.
-        return resolveStartY(context, startPool, 0) != REJECT_Y;
-    }}
-
-    private static int chooseCavernFloorFast(
-        Structure.GenerationContext context,
-        int x,
-        int z,
-        int minY,
-        int maxY,
-        long hash
-    ) {{
-        final int lo = Math.max(Math.max(MIN_SAFE_Y, minY), LAVA_SURFACE_Y);
-        final int hi = Math.min(MAX_SAFE_Y - MIN_CLEARANCE, maxY);
+    private static int chooseCavernFloor(NoiseColumn column, int minY, int maxY, long hash) {{
+        final int lo = Math.max(MIN_SAFE_Y, minY);
+        final int hi = Math.min(MAX_SAFE_Y, maxY);
         if (lo > hi) {{
             return REJECT_Y;
         }}
 
-        final DensityFunction density = context.randomState().router().finalDensity();
         final List<Integer> candidates = new ArrayList<>();
-        double here = rawDensity(density, x, lo, z);
         for (int y = lo; y <= hi; ++y) {{
-            final double above = rawDensity(density, x, y + 1, z);
-            if (here > 0.0 && above <= 0.0
-                && rawDensity(density, x, y + 4, z) <= 0.0
-                && rawDensity(density, x, y + MIN_CLEARANCE, z) <= 0.0) {{
-                candidates.add(y);
+            if (isDryFloorWithClearance(column, y)) {{
+                candidates.add(y + 1);
             }}
-            here = above;
         }}
         if (candidates.isEmpty()) {{
             return REJECT_Y;
         }}
-
-        final int start = Math.floorMod(
-            (int) (hash ^ (hash >>> 32)),
-            candidates.size()
-        );
-        return candidates.get(start) + 1;
+        return candidates.get(Math.floorMod((int) (hash ^ (hash >>> 32)), candidates.size()));
     }}
 
-    private static int fastLavaFloor(
-        Structure.GenerationContext context,
-        int x,
-        int z,
-        Profile profile,
-        long hash
-    ) {{
-        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
-        final int maxY = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
-        if (minY > maxY) {{
-            return REJECT_Y;
+    private static boolean isDryFloorWithClearance(NoiseColumn column, int floorY) {{
+        final BlockState floor = column.getBlock(floorY);
+        if (floor.isAir() || !floor.getFluidState().isEmpty()) {{
+            return false;
         }}
+        for (int dy = 1; dy <= MIN_CLEARANCE; ++dy) {{
+            final BlockState state = column.getBlock(floorY + dy);
+            if (!state.isAir()) {{
+                return false;
+            }}
+        }}
+        return true;
+    }}
 
-        final DensityFunction density = context.randomState().router().finalDensity();
-        if (rawDensity(density, x, LAVA_SURFACE_Y - 1, z) > 0.0) {{
-            return REJECT_Y;
+    private static boolean hasLargeLavaBasin(
+        Structure.GenerationContext context,
+        int anchorX,
+        int anchorZ
+    ) {{
+        int lavaColumns = 0;
+        for (int dx = -24; dx <= 24; dx += 24) {{
+            for (int dz = -24; dz <= 24; dz += 24) {{
+                final NoiseColumn column = context.chunkGenerator().getBaseColumn(
+                    anchorX + dx,
+                    anchorZ + dz,
+                    context.heightAccessor(),
+                    context.randomState()
+                );
+                if (isLava(column.getBlock(LAVA_SURFACE_Y - 1))) {{
+                    ++lavaColumns;
+                }}
+            }}
         }}
+        return lavaColumns >= 7;
+    }}
+
+    private static int findLavaFloor(
+        Structure.GenerationContext context,
+        int anchorX,
+        int anchorZ,
+        Profile profile
+    ) {{
+        final NoiseColumn column = context.chunkGenerator().getBaseColumn(
+            anchorX,
+            anchorZ,
+            context.heightAccessor(),
+            context.randomState()
+        );
+        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
+        final int maxY = Math.min(LAVA_SURFACE_Y - 1, profile.hardMaxY);
+        boolean sawLava = false;
         for (int y = maxY; y >= minY; --y) {{
-            if (rawDensity(density, x, y, z) > 0.0) {{
+            final BlockState state = column.getBlock(y);
+            if (isLava(state)) {{
+                sawLava = true;
+                continue;
+            }}
+            if (sawLava && !state.isAir() && state.getFluidState().isEmpty()) {{
                 return y + 1;
+            }}
+            if (sawLava && state.isAir()) {{
+                return REJECT_Y;
             }}
         }}
         return REJECT_Y;
     }}
 
-    private static double rawDensity(DensityFunction density, int x, int y, int z) {{
-        return density.compute(new DensityFunction.SinglePointContext(x, y, z));
-    }}
-
-    private static boolean fastLargeLavaBasin(
-        Structure.GenerationContext context,
-        int anchorX,
-        int anchorZ,
-        Profile profile,
-        long hash
-    ) {{
-        final DensityFunction density = context.randomState().router().finalDensity();
-        int rawOpen = 0;
-        for (int dx = -24; dx <= 24; dx += 24) {{
-            for (int dz = -24; dz <= 24; dz += 24) {{
-                if (!rawSolid(density, anchorX + dx, LAVA_SURFACE_Y - 1, anchorZ + dz)) {{
-                    ++rawOpen;
-                }}
-            }}
-        }}
-        if (profile.requireLargeLavaBasin && rawOpen < 7) {{
-            return false;
-        }}
-
-        final int minY = Math.max(MIN_SAFE_Y, profile.hardMinY);
-        final int maxY = Math.min(LAVA_SURFACE_Y - 2, profile.hardMaxY);
-        final int step = 4;
-        final int offset = Math.floorMod((int) mix64(hash), step);
-        for (int y = maxY - offset; y >= minY; y -= step) {{
-            if (rawSolid(density, anchorX, y, anchorZ)) {{
-                return true;
-            }}
-        }}
-        return false;
-    }}
-
-    private static boolean rawSolid(DensityFunction density, int x, int y, int z) {{
-        return density.compute(new DensityFunction.SinglePointContext(x, y, z)) > 0.0;
+    private static boolean isLava(BlockState state) {{
+        return state.getFluidState().is(FluidTags.LAVA);
     }}
 
     private static boolean isSafe(int y) {{
