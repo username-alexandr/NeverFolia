@@ -42,6 +42,8 @@ def run(args,name,timeout=300):
 def main():
     OUT.mkdir(exist_ok=True);WORK.mkdir(parents=True,exist_ok=False);CAND.mkdir(exist_ok=True)
     server=BASE/'server.jar';over=BASE/'world/datapacks/NeverOverworld.zip';nether=BASE/'world/datapacks/NeverNether.zip'
+    run(['python3',str(ROOT/'scripts/validate-never-nether-spec.py')],'r3938-spec-validation.log')
+    run(['python3',str(ROOT/'scripts/harden-never-nether-structure-pack.py'),'--self-test'],'r3938-hardener-selftest.log')
     need(server.is_file() and over.is_file() and nether.is_file(),'R39.37 baseline incomplete')
     need(sha(server)==BASE_CORE,'wrong R39.37 server')
     need(sha(over)==BASE_OVERWORLD,'wrong R39.37 NeverOverworld')
