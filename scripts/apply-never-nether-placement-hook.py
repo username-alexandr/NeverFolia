@@ -95,6 +95,8 @@ public final class NeverNetherStructurePlacement {{
     private static final int MAX_SAFE_Y = 378;
     private static final int MIN_CLEARANCE = 8;
     private static final int COARSE_STEP = 8;
+    private static final ThreadLocal<Long> LOCATE_CACHE_KEY = new ThreadLocal<>();
+    private static final ThreadLocal<Integer> LOCATE_CACHE_Y = new ThreadLocal<>();
 
     private enum Mode {{ CAVERN_FLOOR, LAVA_BASIN }}
 
@@ -125,6 +127,17 @@ public final class NeverNetherStructurePlacement {{
         final Profile profile = PROFILES.get(poolId);
         if (profile == null) {{
             return vanillaStartY;
+        }}
+
+        final long cacheKey = locateKey(context, poolId);
+        final Long cachedKey = LOCATE_CACHE_KEY.get();
+        if (cachedKey != null && cachedKey.longValue() == cacheKey) {{
+            final Integer cachedY = LOCATE_CACHE_Y.get();
+            LOCATE_CACHE_KEY.remove();
+            LOCATE_CACHE_Y.remove();
+            if (cachedY != null) {{
+                return cachedY.intValue();
+            }}
         }}
 
         final ChunkPos chunkPos = context.chunkPos();
@@ -173,7 +186,21 @@ public final class NeverNetherStructurePlacement {{
         Structure.GenerationContext context,
         Holder<StructureTemplatePool> startPool
     ) {{
-        return resolveStartY(context, startPool, 0) != REJECT_Y;
+        final String poolId = startPool.unwrapKey()
+            .map(key -> key.identifier().toString())
+            .orElse("");
+        final int y = resolveStartY(context, startPool, 0);
+        if (y == REJECT_Y || !PROFILES.containsKey(poolId)) {{
+            LOCATE_CACHE_KEY.remove();
+            LOCATE_CACHE_Y.remove();
+            return false;
+        }}
+        // findValidGenerationPoint() immediately calls resolveStartY() again for
+        // the same candidate. Hand that exact deterministic result across once
+        // instead of repeating the density scan on the Folia scheduler thread.
+        LOCATE_CACHE_KEY.set(locateKey(context, poolId));
+        LOCATE_CACHE_Y.set(y);
+        return true;
     }}
 
     private static int chooseCavernFloor(
@@ -293,6 +320,19 @@ public final class NeverNetherStructurePlacement {{
 
     private static boolean isSafe(int y) {{
         return y != REJECT_Y && y >= MIN_SAFE_Y && y <= MAX_SAFE_Y;
+    }}
+
+    private static long locateKey(
+        Structure.GenerationContext context,
+        String poolId
+    ) {{
+        final ChunkPos chunkPos = context.chunkPos();
+        return mix64(
+            context.seed()
+                ^ ((long) chunkPos.x() * 0x9E3779B97F4A7C15L)
+                ^ ((long) chunkPos.z() * 0xC2B2AE3D27D4EB4FL)
+                ^ poolId.hashCode()
+        );
     }}
 
     private static long mix64(long z) {{
