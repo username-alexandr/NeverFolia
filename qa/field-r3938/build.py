@@ -11,10 +11,12 @@ BASE_NETHER='f7d71702f2b0261762a70b019a5cae6862228d040dd89544d755853fb773b7ce'
 
 OW_FAST='net/minecraft/world/level/chunk/NeverOverworldFastLocate.class'
 NN_POLICY='net/minecraft/world/level/chunk/NeverNetherFastLocatePolicy.class'
+NN_POLICY_MODE='net/minecraft/world/level/chunk/NeverNetherFastLocatePolicy$Mode.class'
+NN_POLICY_PROFILE='net/minecraft/world/level/chunk/NeverNetherFastLocatePolicy$Profile.class'
 NN_PLACE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement.class'
 NN_MODE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement$Mode.class'
 NN_PROFILE='net/minecraft/world/level/levelgen/structure/structures/NeverNetherStructurePlacement$Profile.class'
-CHANGED={OW_FAST,NN_POLICY}
+CHANGED={OW_FAST,NN_POLICY,NN_POLICY_MODE,NN_POLICY_PROFILE}
 
 def need(v,m):
     if not v: raise ValueError(m)
@@ -53,7 +55,8 @@ def main():
     inner=members(outer[nested])
     for name in (OW_FAST,NN_PLACE,NN_MODE,NN_PROFILE):
         need(name in inner,'baseline kernel missing '+name)
-    need(NN_POLICY not in inner,'NeverNetherFastLocatePolicy already present unexpectedly')
+    need(NN_POLICY not in inner and NN_POLICY_MODE not in inner and NN_POLICY_PROFILE not in inner,
+         'NeverNetherFastLocatePolicy already present unexpectedly')
 
     libs=WORK/'libs';libs.mkdir()
     for i,(n,raw) in enumerate(outer.items()):
@@ -79,6 +82,8 @@ def main():
     replacements={
       OW_FAST:new_fast.read_bytes(),
       NN_POLICY:(classes/NN_POLICY).read_bytes(),
+      NN_POLICY_MODE:(classes/NN_POLICY_MODE).read_bytes(),
+      NN_POLICY_PROFILE:(classes/NN_POLICY_PROFILE).read_bytes(),
     }
     need(all(int.from_bytes(v[6:8],'big')==69 for v in replacements.values()),'wrong bytecode version')
 
