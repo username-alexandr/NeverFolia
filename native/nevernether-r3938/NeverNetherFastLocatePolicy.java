@@ -17,8 +17,9 @@ import net.minecraft.world.level.levelgen.structure.structures.NeverNetherStruct
  * NeverNether placement resolver.
  *
  * <p>Locate and normal generation intentionally share the same bounded
- * coarse-to-fine resolver. No exact Jigsaw assembly is executed while locating;
- * that was measured at 30+ seconds for a single candidate.</p>
+ * coarse-to-fine resolver. Locate additionally validates the root GenerationStub
+ * so it cannot return a candidate whose selected start piece/jigsaw/padding is
+ * invalid. Recursive Jigsaw expansion is not executed while locating.</p>
  */
 final class NeverNetherFastLocatePolicy {
     private static final Set<String> CUSTOM_IDS = Set.of(
@@ -102,17 +103,26 @@ final class NeverNetherFastLocatePolicy {
             return false;
         }
 
-        // Mirror Structure.isValidBiome() at the Jigsaw start position without
-        // building any Jigsaw pieces. This removes a major source of locate
-        // false positives while remaining O(1).
-        return structure.biomes().contains(
+        // Mirror Structure.isValidBiome() before touching the root pool.
+        if (!structure.biomes().contains(
             generator.getBiomeSource().getNoiseBiome(
                 QuartPos.fromBlock(chunkPos.getMinBlockX()),
                 QuartPos.fromBlock(startY),
                 QuartPos.fromBlock(chunkPos.getMinBlockZ()),
                 state.randomState().sampler()
             )
-        );
+        )) {
+            return false;
+        }
+
+        // R39.38 root confirmation. With the old getBaseColumn resolver this
+        // call was too expensive; with the shared coarse-to-fine resolver it is
+        // bounded. findValidGenerationPoint creates only the GenerationStub:
+        // it validates the selected root pool element, start_jigsaw_name,
+        // rotation/bounding box, dimension padding and biome. The size=11
+        // recursive Jigsaw expansion is stored in the stub's consumer and is
+        // NOT executed by /locate.
+        return structure.findValidGenerationPoint(context).isPresent();
     }
 
     private static String structureId(Holder<Structure> holder) {
