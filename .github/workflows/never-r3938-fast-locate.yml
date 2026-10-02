@@ -91,6 +91,7 @@ jobs:
           assert b['start_y_root_confirmation_cache'] is True
           assert b['existing_fast_locate_engine_reused'] is True
           assert r['fast_locate']['elapsed_ms'] < 4000
-          assert r['fast_locate']['generated_nether_keep'] is True
+          assert r['fast_locate']['located_id'] == 'nova_structures:nether_keep'
+          assert r['fast_locate']['root_generation_stub_confirmed'] is True
           print('R39.38 NeverNether fast-locate gates passed.')
           PY
