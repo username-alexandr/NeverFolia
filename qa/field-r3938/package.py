@@ -37,7 +37,7 @@ shutil.copyfile(ROOT/'artifacts/runtime-r3938.json',OUT/'runtime-r3938.json')
   'обычной генерацией, поэтому отдельного приближённого locate predictor нет. '
   'Runtime QA требует locate <4 секунд и затем генерирует найденный chunk, '
   'проверяя что nova_structures:nether_keep действительно появился. '
-  'NeverNether.zip R39.37 и NeverOverworld.zip R39.36 не меняются.\n',
+  'NeverOverworld.zip R39.36 не меняется. NeverNether.zip обновлён: у всех 20 custom structures исправлен R14 dimension_padding с top=517 на top=149, что соответствует technical maxY=527 и разрешённому BB до Y=378. Fingerprint пересчитан.\n',
   encoding='utf-8'
 )
 
