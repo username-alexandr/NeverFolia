@@ -1,0 +1,60 @@
+name: NeverEnd R3943 source intake
+on:
+  push:
+    branches: ['work/neverend-r3943-source-intake']
+    paths: ['.github/workflows/neverend-r3943-source-intake.yml']
+permissions:
+  contents: read
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download approved original datapacks and record provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p intake
+          python3 - <<'PY'
+          import hashlib, json, pathlib, urllib.request, urllib.parse, zipfile, io
+          root=pathlib.Path('intake')
+          def get(url, limit=80000000):
+              parsed=urllib.parse.urlsplit(url)
+              if parsed.scheme!='https' or parsed.hostname not in {'api.modrinth.com','cdn.modrinth.com'}:
+                  raise ValueError('Unexpected upstream URL')
+              request=urllib.request.Request(url,headers={'User-Agent':'NeverFolia-Compatibility-Intake/1.0'})
+              with urllib.request.urlopen(request,timeout=60) as response:
+                  data=response.read(limit+1)
+              if len(data)>limit: raise ValueError('Upstream exceeds size limit')
+              return data
+          sources=[('endercon','nSSMvMTk'),('yanzas-end-city-overhaul','d1So6ykK'),('eligius',None)]
+          rows=[]
+          for slug,version in sources:
+              project=json.loads(get('https://api.modrinth.com/v2/project/'+slug))
+              (root/(slug+'-project.json')).write_text(json.dumps(project,ensure_ascii=False,indent=2))
+              if version:
+                  v=json.loads(get('https://api.modrinth.com/v2/version/'+version))
+              else:
+                  versions=json.loads(get('https://api.modrinth.com/v2/project/'+slug+'/version'))
+                  candidates=[v for v in versions if 'datapack' in v['loaders'] and v['version_type']=='release']
+                  if not candidates: raise ValueError('No Eligius release')
+                  v=sorted(candidates,key=lambda x:x['date_published'],reverse=True)[0]
+              if v['project_id']!=project['id'] or 'datapack' not in v['loaders']: raise ValueError('Wrong project or loader')
+              primary=next(f for f in v['files'] if f['primary'])
+              data=get(primary['url'])
+              if hashlib.sha512(data).hexdigest()!=primary['hashes']['sha512']: raise ValueError('Upstream hash mismatch')
+              with zipfile.ZipFile(io.BytesIO(data)) as z:
+                  if z.testzip() is not None: raise ValueError('Corrupt upstream ZIP')
+              name=slug+'-'+v['id']+'.zip'
+              (root/name).write_bytes(data)
+              (root/(slug+'-version.json')).write_text(json.dumps(v,ensure_ascii=False,indent=2))
+              rows.append({'project':slug,'version':v['id'],'filename':name,'url':primary['url'],'sha256':hashlib.sha256(data).hexdigest(),'license':project['license'],'source_page':'https://modrinth.com/datapack/'+slug})
+          (root/'PROVENANCE.json').write_text(json.dumps(rows,ensure_ascii=False,indent=2))
+          (root/'NOTICE.txt').write_text('Original upstream archives for isolated compatibility evaluation only. Endercon remains CC-BY-NC-SA-4.0; no commercial-use permission is asserted. Eligius remains Apache-2.0. Yanza remains MIT. Original notices and files are unmodified. Not a NeverFolia release; no production deployment or server configuration is changed. See each project JSON and original archive for authorship and terms. Dungeons and Taverns is not fetched or republished by this workflow.\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: NeverEnd-R3943-Original-Source-Intake
+          path: intake/
+          retention-days: 1
+          compression-level: 0
