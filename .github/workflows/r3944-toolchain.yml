@@ -15,11 +15,12 @@ jobs:
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
-          java-version: '25.0.4.1'
+          java-version: '25'
       - name: Export compiler runtime and original repository source
         run: |
           set -euo pipefail
           mkdir -p /tmp/r3944-toolchain
+          grep -F 'JAVA_VERSION="25.0.4.1"' "$JAVA_HOME/release"
           tar -C "$JAVA_HOME" --exclude='lib/src.zip' -czf /tmp/r3944-toolchain/jdk25-runtime.tar.gz bin lib conf release legal
           git archive --format=tar.gz HEAD > /tmp/r3944-toolchain/repository-source.tar.gz
           cd /tmp/r3944-toolchain
